@@ -53,6 +53,18 @@ Les contrats sont identifiés mais pas encore produits. Ils seront détaillés e
 | C-MEDIA | Profils média, pipeline, audio, licences | À produire |
 | C-POSTIZ | Adaptateur Postiz détaillé | À produire |
 
+## 2.4 Sources et versions
+
+| Source | Version | Rôle | Empreinte |
+|---|---|---|---|
+| docs/01_PRD_V1.md | 1.2 | Exigences produit | 2e94370887298f08eb695017c9260b7395e82adf073dae3c7e1eb2c22ecd725a |
+| docs/02_CAHIER_DES_CHARGES_V1.md | 1.2 | Exigences testables et recette | 6b220a4c597bb878512f803a78175bf472aee5fdbc0814f70db17adbf70bc95b |
+| docs/03_ARCHITECTURE_V1.md | 1.0 | Architecture de référence | 194644c0a573837551eb17b519c042c79b0504362c629644377004eafca1a12f |
+| docs/11_BACKLOG.md | 1.0 | Épics et Definition of Done | 4fa387ef8e36d33c4ebaefa9615af060aed000ac469bdb7423375dc7145f6000 |
+| docs/10_ACCEPTANCE_TESTS.md | 1.1 | Tests d'acceptation M01 | Versionnée dans la branche M01 |
+
+Les versions 1.0/1.2 sont celles des documents reçus. Les hashes sont ceux de la Mission 00 et sont contrôlés par scripts/verify-foundation-docs.ps1.
+
 ## 3. Matrice des exigences PRD
 
 | PRD | Intitulé | CDC principal | Épics | Lots | Contrats | Tests | Statut | Source |
