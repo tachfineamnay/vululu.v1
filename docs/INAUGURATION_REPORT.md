@@ -18,7 +18,7 @@ Résultats principaux :
 - neuf fichiers fondateurs préservés (six markdown vérifiés par SHA256, trois originaux docx) ;
 - documentation d'inauguration, cinq ADR, roadmap, proposition P0-0 et garde-fou V2 ;
 - aucune fonctionnalité métier, aucune structure applicative, aucun secret ;
-- audit de cohérence documentaire livré avec quinze constats et treize décisions ouvertes ;
+- audit de cohérence documentaire livré avec dix-huit constats et treize décisions ouvertes ;
 - dépôt GitHub public et vide au départ ; premier push effectué sans force après vérification.
 
 Deux décisions restent prioritaires avant la suite : la visibilité du dépôt (public alors que le produit est interne) et le GO du lot P0-0.
