@@ -1,36 +1,42 @@
 # VULULU AI — V0 FULLSTACK SPRINT — PROGRESS
 
-- **Phase courante** : V0 — verticale fonctionnelle certifiée
+- **Phase courante** : V0.1 — verticale fonctionnelle certifiée avec durées configurables
 - **Date** : 2026-10-23
 - **Branche** : v0-fullstack-sprint
 - **Base** : 0bb1bb610bf9b9b377ab70feca2450d10f890d70
-- **Commit de code certifié** : 0693b8f
-- **Statut** : V0 COMPLETE sur les 12 critères P0, avec composants MOCK explicites
-- **Avertissement** : cette accélération V0 ne vaut pas validation des gates de production V1.
+- **Commit de code initial** : 0693b8f
+- **Commit de correction V0.1** : 3a6d54f
+- **Statut** : V0.1 COMPLETE sur les 12 critères P0 et la correction critique des durées, avec composants MOCK explicites
+- **Recette indépendante** : Agent E (qa-verifier), PASS 9 contrôles, aucun FAIL produit ; réserve de sélection verify-v0 corrigée par le paramètre -ProjectId
+- **Avertissement** : cette accélération V0.1 ne vaut pas validation des gates de production V1.
 
 ## 1. Fonctionnalités réalisées
 
 - Authentification locale par session cookie chiffrée, utilisateur démo seedé.
-- Base PostgreSQL 17.2 locale persistante, schéma Prisma et migration.
+- Base PostgreSQL 17.2 locale persistante, schéma Prisma et migrations.
 - Contextes de marque persistants avec couleurs, audience, ton et description.
 - Projets, brief versionné, conversation scriptée avec Vululu.
 - Storyboard de cinq scènes SCENE-001 à SCENE-005, Character CHAR-001.
+- Durée configurable par scène : Scene.durationSeconds, preset projet 2 s ou 10 s, ajustement par scène via PATCH.
 - Génération réelle de cinq PNG 1080x1920.
-- Assemblage d'un master MP4 H.264 yuv420p 1080x1920, durée 10 secondes, audio AAC silencieux.
-- Contrôle QA média automatique : dimensions PNG, dimensions/durée/codecs du MP4, checksums.
+- Assemblage MP4 H.264 yuv420p 1080x1920 avec durées réelles par scène, audio AAC silencieux.
+- Deux scénarios produits et vérifiés : smoke 5 x 2 s = 10 s ; cible 5 x 10 s = 50 s.
+- Contrôle QA média automatique : dimensions PNG, dimensions, durée attendue et codecs du MP4, checksums.
 - Correction ciblée de SCENE-003 avec nouvelle version de scène, master reconstruit et anciennes versions conservées.
-- Studio de prévisualisation avec lecteur vidéo, sélecteur de version et historique des masters.
-- Approbation d'une version exacte par identifiant et checksum ; checksum erroné refusé.
-- Transfert Postiz mock idempotent, statut submitted puis acknowledged, aucun appel réseau.
+- Invalidation automatique des approbations antérieures dès qu'un nouveau master est créé (Approval.invalidatedAt).
+- Approbation liée à la version exacte et au checksum ; checksum erroné refusé ; ancien master refusé.
+- Transfert Postiz mock interdit sans approbation valide ; statut submitted puis acknowledged, aucun réseau.
+- Studio de prévisualisation avec lecteur vidéo, sélecteur de version, historique des masters et approbations invalidées.
 - Permissions par propriétaire, test d'isolation API entre utilisateurs.
 - Interface Next.js responsive : login, dashboard, contexte, projet, conversation, brief, storyboard, studio, QA, approbation, transfert.
 
 ## 2. Agents ayant travaillé
 
-- **Agent A — Technical Lead** : Lead unique, scaffold, contrats, schéma Prisma, auth, API, média, UI, tests, Git.
-- **Agents B, C, D, E** : responsabilités couvertes séquentiellement par le Lead pour cette itération V0 accélérée. Aucun sous-agent n'a été lancé ; il n'est pas prétendu qu'ils ont exécuté du travail.
-- **Justification** : la priorité était une verticale fonctionnelle cohérente de bout en bout ; l'exécution séquentielle évitait les conflits de fichiers et les intégrations partielles.
-- **Agent Teams** : non utilisé. L'état agent est donc A uniquement.
+- **Agent A — Technical Lead** : Lead unique, scaffold, contrats, schéma Prisma, auth, API, média, UI, tests, Git, intégration.
+- **Agent E — qa-verifier** : activé pour la recette indépendante V0.1, en lecture seule. Il a exécuté typecheck, tests, E2E, verify-v0, scan de secrets, inspection code et bundle cible. Verdict PASS 9 contrôles, aucun FAIL produit, aucune modification de fichier, aucun commit.
+- **Agents B, C, D** : responsabilités backend, frontend et média exécutées séquentiellement par le Lead pour cette itération accélérée. Aucun sous-agent B/C/D n'a été lancé ; il n'est pas prétendu qu'ils ont exécuté du travail.
+- **Justification** : intégration séquentielle pour garantir la cohérence des contrats et du schéma partagé, puis recette indépendante par l'Agent E.
+- **Réserve Agent E** : verify-v0 sélectionnait le dernier projet transféré, donc le smoke 10 s après l'E2E. Correction appliquée : paramètre -ProjectId ; la cible 50 s est maintenant vérifiable explicitement (PASS 23/23).
 
 ## 3. Fichiers créés ou modifiés
 
@@ -46,7 +52,7 @@ Applications et paquets :
 - apps/api/src : server, env, auth, routes, services, types
 - apps/web : layout, login, dashboard, contextes, projets, ProjectStudio, styles, client API
 - packages/contracts, packages/db, packages/media
-- packages/db/prisma/schema.prisma et migration initiale
+- packages/db/prisma/schema.prisma, migration initiale et migration 20261023082309_scene_durations_approval_invalidation
 
 Tests et preuves :
 
@@ -61,20 +67,22 @@ Aucun secret, aucun .env, aucun artefact média, aucun node_modules et aucun fic
 | Test ou contrôle | Statut | Preuve |
 |---|---|---|
 | pnpm typecheck | PASS | 5 projets TypeScript, aucune erreur |
-| pnpm test | PASS | 7 tests Vitest : 6 API + 1 média |
-| Tests API | PASS | santé, auth, contexte, projet, brief, storyboard, refus approbation/transfert, isolation |
-| Test média | PASS | 5 PNG 1080x1920, MP4 H.264/AAC 10s, QA PASS |
+| pnpm test | PASS | 8 tests Vitest : 7 API + 1 média, 41,5 s (recette Agent E) |
+| Tests API | PASS | santé, auth, contexte, projet, brief, storyboard, durées configurables, refus approbation/transfert, isolation |
+| Test média | PASS | 5 PNG 1080x1920, masters 10 s et 50 s, H.264/AAC, QA PASS |
 | pnpm build | PASS | API TypeScript + Next.js production build |
-| Playwright E2E | PASS | 1/1, parcours complet, 47,3 s |
-| scripts/verify-v0.ps1 | PASS | 22 contrôles, projet transféré |
-| scripts/check-secrets.ps1 | PASS | 85 fichiers versionnables, 0 secret |
-| scripts/verify-foundation-docs.ps1 | PASS | 9 hashes sources, documents requis, aucun secret suivi |
+| Playwright E2E | PASS | 1/1, 45,8 à 46,8 s, approbation v1, correction, invalidation, refus transfert, approbation v2, transfert |
+| verify-v0.ps1 cible 50 s | PASS | V0_VERIFY_PASS, 23 contrôles, 49,97 s / attendu 50 s |
+| verify-v0.ps1 auto | PASS | V0_VERIFY_PASS, 23 contrôles, smoke 9,97 s / attendu 10 s |
+| check-secrets.ps1 | PASS | 88 fichiers versionnables, 0 secret (recette Agent E) |
+| verify-foundation-docs.ps1 | PASS | 9 hashes sources, documents requis, aucun secret suivi |
 
 MOCK explicites :
 
 - Vululu est scripté et déterministe ; aucun LLM réel.
 - Postiz est un mock local ; aucun réseau, aucune publication.
 - L'audio du master est une piste AAC silencieuse ; pas de voix ou musique réelle.
+- Le rendu vidéo est déterministe et local ; ce n'est pas une génération vidéo IA.
 - Aucun provider IA payant n'est appelé.
 
 NOT_RUN explicites :
@@ -88,22 +96,39 @@ NOT_RUN explicites :
 
 ## 5. Artefacts de la verticale certifiée
 
+### Smoke 10 s
+
 | Élément | Valeur |
 |---|---|
-| Projet | cmvko67u10003haqg3tz7xwkn |
-| Titre | Campagne E2E 1792741774850 |
+| Projet | cmvkpoo6j0003hay8hgudliji |
+| Preset | 2 s par scène, total 10 s |
 | Statut | transferred |
-| Scènes | SCENE-001 à SCENE-005 |
+| Scènes | SCENE-001 à SCENE-005, durationSeconds = 2 |
+| Scene 3 versions | v2, v1 (correction ciblée) |
+| Master versions | v2, v1 |
+| Master v2 | checksum c450de3dc56c89134b4da1b0c5f1a85c3b7fec45d07aa64d261106182c5f5af5 |
+| QA | PASS, durée 9,97 s / attendu 10 s |
+| Transfert | acknowledged, provider postiz-mock |
+
+### Cible 50 s
+
+| Élément | Valeur |
+|---|---|
+| Projet | cmvkpptgv001fhay80yurse1h |
+| Preset | 10 s par scène, total 50 s |
+| Statut | transferred |
+| Scènes | SCENE-001 à SCENE-005, durationSeconds = 10 |
 | Scene 3 versions | v2, v1 (correction ciblée) |
 | Autres scènes | v1 (inchangées après correction) |
-| Master versions | v2, v1 (ancienne version conservée) |
-| Master v2 | checksum fede6902a471b8009ad90da65044b10aa1e2a405c9f3c004a5c468ad817f0d0a |
-| QA | PASS, 9 contrôles |
-| Approbation | cmvko6ta70017haqguge144zp |
+| Master versions | v2, v1 |
+| Master v2 | checksum b436c3e322a59ae8859ff9f5765c30f2b7d573aa40fc0637839374dbc0732072 |
+| QA | PASS, durée 49,97 s / attendu 50 s |
+| Approbation v2 | valide, invalidatedAt = null |
+| Approbation v1 | invalidée à la création du master v2 (invalidatedAt = 2026-10-23 08:34:24) |
 | Transfert | acknowledged, provider postiz-mock |
-| Fichiers | data/artifacts/cmvko67u10003haqg3tz7xwkn (ignoré par Git) |
+| Fichiers | data/artifacts/cmvkpptgv001fhay80yurse1h (ignoré par Git) |
 
-Fichiers vérifiés : cinq PNG 1080x1920, master v1.mp4 et v2.mp4, frames v1/v2. Le contenu est fictif et généré localement.
+Le fichier master cible v2.mp4 fait 767 828 octets ; ffprobe indépendant confirme 49,97 s, 1080x1920, h264, aac. Le contenu est fictif et généré localement.
 
 ## 6. Erreurs rencontrées et corrections
 
@@ -114,13 +139,17 @@ Fichiers vérifiés : cinq PNG 1080x1920, master v1.mp4 et v2.mp4, frames v1/v2.
 5. E2E projet id new : la regex acceptait /projects/new. Correction : attente d'une URL dont le dernier segment n'est pas new.
 6. HMR Next bloqué depuis 127.0.0.1 : allowedDevOrigins ajouté et serveur web redémarré.
 7. Test API cookie : le test envoyait le header Set-Cookie complet. Correction : paire nom=valeur uniquement.
-8. Sous-agents non lancés : exécution séquentielle par le Lead, documentée sans prétendre le contraire.
+8. Durée fixe de 2 s par scène : remplacée par durationSeconds configurable (1-15 s), preset projet 2/10, PATCH par scène, concat FFmpeg avec durée réelle et QA sur la durée attendue.
+9. Approbation non invalidée sur nouveau master : ajout de Approval.invalidatedAt, invalidation après création d'un nouveau master, refus de transfert si approbation invalidée.
+10. verify-v0 non épinglé : ajout du paramètre -ProjectId pour certifier explicitement le projet 50 s ; réserve Agent E corrigée.
+11. Sous-agents B/C/D non lancés : exécution séquentielle par le Lead, documentée sans prétendre le contraire ; Agent E activé pour la recette indépendante.
 
 ## 7. Branche et SHA
 
 - Branche : v0-fullstack-sprint.
-- Commit de code : 0693b8f.
-- Ce document et le runbook sont ajoutés dans le commit de certification suivant.
+- Commit de code initial : 0693b8f.
+- Commit de correction V0.1 : 3a6d54f.
+- Ce document et le runbook sont ajoutés dans le commit de certification V0.1 suivant.
 - main et origin/main restent inchangés à 69c6549.
 - Aucun push, aucun merge dans main, aucun déploiement.
 
@@ -133,7 +162,7 @@ Fichiers vérifiés : cinq PNG 1080x1920, master v1.mp4 et v2.mp4, frames v1/v2.
 | 3 | Brief enregistré | PASS | version 1, E2E |
 | 4 | Storyboard de cinq scènes | PASS | SCENE-001 à SCENE-005 |
 | 5 | PNG réellement produit | PASS | 5 fichiers 1080x1920, QA |
-| 6 | MP4 réellement lisible | PASS | H.264, AAC, 10s, ffmpeg + player |
+| 6 | MP4 réellement lisible | PASS | H.264, AAC, 10 s et 50 s, ffmpeg + player |
 | 7 | Correction ciblée SCENE-003 | PASS | v2, checksum modifié |
 | 8 | Versions précédentes préservées | PASS | scènes v1, master v1 conservés |
 | 9 | Prévisualisation fonctionnelle | PASS | lecteur vidéo E2E |
@@ -141,13 +170,28 @@ Fichiers vérifiés : cinq PNG 1080x1920, master v1.mp4 et v2.mp4, frames v1/v2.
 | 11 | Postiz mock fonctionnel | PASS | transfer acknowledged |
 | 12 | Parcours E2E validé | PASS | Playwright 1/1 |
 
-## 9. Verdict V0
+## 8 bis. Correction critique V0.1
 
-V0 COMPLETE pour le périmètre expérimental des 12 critères P0, avec les limitations MOCK et NOT_RUN ci-dessus. Cette V0 n'est pas une validation V1 de production : Hatchet, MCP, sécurité complète, providers réels, S3, Postiz réel et déploiement restent hors périmètre.
+| Contrôle | Statut | Preuve |
+|---|---|---|
+| duration_seconds par scène | PASS | schéma, contrat, API, UI, média |
+| Smoke 5 x 2 s = 10 s | PASS | master 9,97 s, QA PASS |
+| Cible 5 x 10 s = 50 s | PASS | master 49,97 s, QA PASS |
+| Preset projet et ajustement par scène | PASS | création 10 s, PATCH SCENE-003 à 2 s, test API |
+| Correction SCENE-003 sans régénérer les autres | PASS | SCENE-003 v2, autres scènes v1 |
+| Nouveau master après correction | PASS | master v2, v1 conservé |
+| Approbation liée version + checksum | PASS | approve API + E2E |
+| Approbation invalidée si master change | PASS | v1 invalidatedAt non nul après v2 |
+| Transfert interdit sans approbation valide | PASS | E2E POST transfer 400, code 409 si invalidée |
+| Isolation entre utilisateurs | PASS | test API second user 404 |
+
+## 9. Verdict V0.1
+
+V0.1 COMPLETE pour le périmètre expérimental des 12 critères P0 et de la correction critique des durées, avec les limitations MOCK et NOT_RUN ci-dessus. Cette V0.1 n'est pas une validation V1 de production : Hatchet, MCP, sécurité complète, providers réels, S3, Postiz réel et déploiement restent hors périmètre.
 
 ## 10. Prochaine action
 
 1. Revue humaine de la branche v0-fullstack-sprint et du diff.
-2. Décision de conserver, corriger ou promouvoir cette V0.
+2. Décision de conserver, corriger ou promouvoir cette V0.1.
 3. Ne pas fusionner dans main ni pousser sans autorisation.
 4. Reprendre le plan de fondations V1 pour les gates restants.

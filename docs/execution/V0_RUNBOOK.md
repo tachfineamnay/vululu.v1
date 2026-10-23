@@ -51,6 +51,15 @@ Arrêt et statut :
 
 Parcours : login, créer un contexte, créer un projet, enregistrer le brief, générer le storyboard, produire les cinq scènes, corriger SCENE-003, valider le master, transférer vers Postiz mock.
 
+### 4.1 Scénarios de durée
+
+Chaque scène possède un champ durationSeconds configurable (1 à 15 secondes). Le projet propose deux presets :
+
+- Smoke : 5 scènes x 2 s = 10 s, pour valider rapidement FFmpeg et l intégrité des médias.
+- Cible : 5 scènes x 10 s = 50 s, pour démontrer le storyboard et l assemblage sur la durée cible.
+
+Le preset est choisi à la création du projet. La durée de chaque scène peut ensuite être ajustée dans le studio, scène par scène, avant une nouvelle production. Le master est assemblé par concaténation avec les durées réelles, et la QA compare la durée obtenue à la somme attendue.
+
 ## 5. Vérifications
 
     pnpm typecheck
@@ -58,9 +67,10 @@ Parcours : login, créer un contexte, créer un projet, enregistrer le brief, g�
     pnpm build
     pnpm exec playwright test e2e/v0.spec.ts
     pwsh -NoProfile -File scripts/verify-v0.ps1
+    pwsh -NoProfile -File scripts/verify-v0.ps1 -ProjectId cmvkpptgv001fhay80yurse1h
     pwsh -NoProfile -File scripts/check-secrets.ps1
 
-Le script verify-v0 retrouve le dernier projet transféré, vérifie cinq PNG, le master MP4, la QA, l approbation, le transfert mock et les dimensions/codecs.
+Le script verify-v0 retrouve le dernier projet transféré ou le projet fourni via -ProjectId. Il vérifie cinq PNG, le master MP4, la QA, l approbation, le transfert mock, les dimensions/codecs et la durée totale attendue (10 s ou 50 s selon les scènes). La variante -ProjectId est recommandée pour une preuve reproductible de la cible 50 s.
 
 ## 6. Limitations V0
 
@@ -68,6 +78,7 @@ Le script verify-v0 retrouve le dernier projet transféré, vérifie cinq PNG, l
 - Postiz est mocké : aucun envoi réseau, aucune publication.
 - Audio silencieux AAC : pas de voix/musique réelle.
 - Jobs de production in-process : pas de reprise après crash, pas de Hatchet.
+- Durées de scènes limitées à 1-15 s ; pas de montage audio, transitions ou voix.
 - Stockage local : pas de S3.
 - Aucun MCP local minimal implémenté.
 - Pas d invitations par email ; compte démo seedé.
