@@ -3,14 +3,16 @@
 .SYNOPSIS
     Verification de la verticale V0 Vululu AI.
 .DESCRIPTION
-    Se connecte a l API locale, retrouve le dernier projet transfere,
-    verifie les cinq scenes, les versions, le master MP4, la QA, l approbation
-    et le transfert Postiz mock. Ne modifie aucune donnee.
+    Se connecte a l API locale, retrouve le dernier projet transfere ou le
+    projet cible fourni via -ProjectId, verifie les cinq scenes, les versions,
+    le master MP4, la QA, l approbation et le transfert Postiz mock.
+    Ne modifie aucune donnee.
 #>
 [CmdletBinding()]
 param(
     [string]$Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path,
-    [string]$ApiBase = 'http://127.0.0.1:3001'
+    [string]$ApiBase = 'http://127.0.0.1:3001',
+    [string]$ProjectId = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -56,11 +58,15 @@ $projects = (Invoke-RestMethod -Uri ($ApiBase + '/api/projects') -WebSession $se
 Check 'projects exist' (@($projects).Count -gt 0) ('count=' + @($projects).Count)
 
 $bundle = $null
-foreach ($project in $projects) {
-    $candidate = Invoke-RestMethod -Uri ($ApiBase + '/api/projects/' + $project.id) -WebSession $session -TimeoutSec 10
-    if ($candidate.master -and $candidate.master.approval -and $candidate.master.approval.transfer -and $candidate.master.approval.transfer.status -eq 'acknowledged') {
-        $bundle = $candidate
-        break
+if ($ProjectId) {
+    $bundle = Invoke-RestMethod -Uri ($ApiBase + '/api/projects/' + $ProjectId) -WebSession $session -TimeoutSec 10
+} else {
+    foreach ($project in $projects) {
+        $candidate = Invoke-RestMethod -Uri ($ApiBase + '/api/projects/' + $project.id) -WebSession $session -TimeoutSec 10
+        if ($candidate.master -and $candidate.master.approval -and $candidate.master.approval.transfer -and $candidate.master.approval.transfer.status -eq 'acknowledged') {
+            $bundle = $candidate
+            break
+        }
     }
 }
 
