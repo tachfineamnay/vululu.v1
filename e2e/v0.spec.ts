@@ -86,9 +86,13 @@ test('verticale V0 complete', async ({ page }) => {
   expect(before.master.qaStatus).toBe('PASS');
 
   const checksumsBefore: Record<string, string> = {};
+  const sceneIdsBefore: Record<string, string> = {};
   for (const scene of before.scenes) {
     checksumsBefore[scene.sceneKey] = scene.versions[0].checksum;
+    sceneIdsBefore[scene.sceneKey] = scene.id;
   }
+  const characterIdBefore = before.characters[0].id;
+  expect(before.brief.revisions.length).toBe(1);
 
   const videoDuration = await page.locator('[data-testid=master-video]').evaluate((element) => {
     const video = element as HTMLVideoElement;
@@ -119,6 +123,10 @@ test('verticale V0 complete', async ({ page }) => {
   expect(checksumsAfter['SCENE-002']).toBe(checksumsBefore['SCENE-002']);
   expect(checksumsAfter['SCENE-004']).toBe(checksumsBefore['SCENE-004']);
   expect(checksumsAfter['SCENE-005']).toBe(checksumsBefore['SCENE-005']);
+  for (const scene of after.scenes) {
+    expect(scene.id).toBe(sceneIdsBefore[scene.sceneKey]);
+  }
+  expect(after.characters[0].id).toBe(characterIdBefore);
 
   expect(after.master.approval).toBeNull();
   const invalidatedMaster = after.masterVersions.find((version: any) => version.version === 1);
