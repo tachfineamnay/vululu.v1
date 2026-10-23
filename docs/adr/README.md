@@ -28,6 +28,7 @@ Chaque décision suit [template.md](template.md) :
 | [0004](0004-mcp-meme-domaine-entree-differente.md) | MCP : même domaine, entrée différente | Acceptée | 2026-10-21 |
 | [0005](0005-postiz-transfert-apres-approbation.md) | Postiz : transfert après approbation exacte | Acceptée | 2026-10-21 |
 | [0006](0006-application-layer-et-snapshots-versionnes.md) | Application Layer par use cases et snapshots versionnés | Acceptée | 2026-10-23 |
+| [0007](0007-consolidation-applicative-et-suppression-legacy.md) | Consolidation applicative et suppression du workflow legacy | Acceptée | 2026-10-23 |
 
 ## Décisions encore ouvertes
 
