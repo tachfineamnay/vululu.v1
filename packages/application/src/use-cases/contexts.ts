@@ -54,27 +54,16 @@ export class ContextUseCases {
   }
 
   async create(actor: Actor, input: ContextInput): Promise<PublicContext> {
-    const row = await this.contexts.create({
+    const domainContext: BrandContext = createBrandContext({
+      id: this.ids.next(),
       userId: actor.id,
       name: input.name,
-      website: input.website ?? null,
       description: input.description,
+      website: input.website ?? null,
       audience: input.audience ?? null,
       tone: input.tone ?? null,
       colorPrimary: input.colorPrimary ?? '#6C5CE7',
       colorSecondary: input.colorSecondary ?? '#00D2FF'
-    });
-
-    const domainContext: BrandContext = createBrandContext({
-      id: row.id,
-      userId: row.userId,
-      name: row.name,
-      description: row.description,
-      website: row.website,
-      audience: row.audience,
-      tone: row.tone,
-      colorPrimary: row.colorPrimary,
-      colorSecondary: row.colorSecondary
     });
 
     const revision: ContextRevision = createContextRevision({
@@ -84,11 +73,22 @@ export class ContextUseCases {
       createdAt: this.clock.now().toISOString()
     }).version;
 
-    await this.contexts.addRevision(
-      row.id,
-      revision.version,
-      revision.checksum,
-      revision.snapshot as unknown as Record<string, unknown>
+    const row = await this.contexts.createWithRevision(
+      {
+        userId: actor.id,
+        name: domainContext.name,
+        website: domainContext.website,
+        description: domainContext.description,
+        audience: domainContext.audience,
+        tone: domainContext.tone,
+        colorPrimary: domainContext.colorPrimary,
+        colorSecondary: domainContext.colorSecondary
+      },
+      {
+        version: revision.version,
+        checksum: revision.checksum,
+        data: revision.snapshot as unknown as Record<string, unknown>
+      }
     );
     return toPublicContext(row);
   }

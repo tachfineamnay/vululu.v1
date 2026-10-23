@@ -8,8 +8,8 @@ const demoPassword = process.env.V0_DEMO_PASSWORD || 'vululu-demo';
 
 async function login(page: Page) {
   await page.goto('/login');
-  await page.waitForLoadState('networkidle');
-  await page.waitForTimeout(1200);
+  await page.waitForLoadState('domcontentloaded');
+  await page.waitForTimeout(1500);
   await page.locator('[data-testid=login-email]').fill(demoEmail);
   await page.locator('[data-testid=login-password]').fill(demoPassword);
   await page.locator('[data-testid=login-submit]').click();

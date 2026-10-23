@@ -16,3 +16,6 @@ export {
 } from './orchestrator/localOrchestratorAdapter';
 export type { LocalOrchestratorOptions } from './orchestrator/localOrchestratorAdapter';
 export { POSTIZ_MOCK_PROVIDER, PostizMockAdapter } from './postiz/postizMockAdapter';
+export { PrismaReproducibilityAdapter } from './prisma/reproducibilityAdapter';
+export { PrismaJobRunRepository } from './prisma/jobRunRepository';
+export { LegacyWorkflowAdapter } from './legacy/legacyWorkflowAdapter';

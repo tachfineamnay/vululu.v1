@@ -281,11 +281,15 @@ model JobRun {
   projectId String
   type      String
   status    String    @default("queued")
-  snapshot  Json?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  steps     StepRun[]
+  snapshot         Json?
+  snapshotVersion  Int       @default(1)
+  snapshotChecksum String?
+  outputs          Json?
+  outputsChecksum  String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  project          Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  steps            StepRun[]
 
   @@index([projectId])
 }

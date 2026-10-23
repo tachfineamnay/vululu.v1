@@ -3,14 +3,13 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { approvalInputSchema, correctionInputSchema } from '@vululu/contracts';
 import { HttpError } from '../errors';
 import { artifactPath } from '../paths';
-import { getProjectBundle } from '../services/projects';
-import {
-  approveMaster,
-  getQa,
-  startCorrection,
-  startProduction,
-  transferToPostiz
-} from '../services/production';
+import { actorOf, production, projectWorkflow } from '../application/container';
+
+type BundleShape = {
+  scenes: Array<{ sceneKey: string; versions: Array<{ imagePath: string }> }>;
+  master: { masterPath: string } | null;
+  masterVersions: Array<{ version: number; masterPath: string }>;
+};
 
 function sendVideo(request: FastifyRequest, reply: FastifyReply, file: string) {
   const stat = fs.statSync(file);
@@ -38,25 +37,30 @@ function sendVideo(request: FastifyRequest, reply: FastifyReply, file: string) {
 export async function productionRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/projects/:id/produce', { preHandler: [app.authenticate] }, async (request, reply) => {
     const params = request.params as { id: string };
-    const job = await startProduction(request.currentUser!.id, params.id);
-    return reply.code(202).send({ job });
+    const result = await production.startProduction(actorOf(request.currentUser), params.id);
+    return reply.code(202).send({ job: result.job, jobRun: result.jobRun });
   });
 
   app.get('/api/projects/:id/status', { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { id: string };
-    return getProjectBundle(request.currentUser!.id, params.id);
+    return projectWorkflow.getBundle(actorOf(request.currentUser), params.id);
   });
 
   app.post('/api/projects/:id/scenes/:sceneKey/correct', { preHandler: [app.authenticate] }, async (request, reply) => {
     const params = request.params as { id: string; sceneKey: string };
     const input = correctionInputSchema.parse(request.body);
-    const job = await startCorrection(request.currentUser!.id, params.id, params.sceneKey, input.instruction);
-    return reply.code(202).send({ job });
+    const result = await production.startCorrection(
+      actorOf(request.currentUser),
+      params.id,
+      params.sceneKey,
+      input.instruction
+    );
+    return reply.code(202).send({ job: result.job, jobRun: result.jobRun });
   });
 
   app.get('/api/projects/:id/scenes/:sceneKey/image', { preHandler: [app.authenticate] }, async (request, reply) => {
     const params = request.params as { id: string; sceneKey: string };
-    const bundle = await getProjectBundle(request.currentUser!.id, params.id);
+    const bundle = (await projectWorkflow.getBundle(actorOf(request.currentUser), params.id)) as BundleShape;
     const scene = bundle.scenes.find((item) => item.sceneKey === params.sceneKey);
     if (!scene || scene.versions.length === 0) {
       throw new HttpError(404, 'image_not_found', 'Image de scene introuvable.');
@@ -73,7 +77,7 @@ export async function productionRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/projects/:id/master', { preHandler: [app.authenticate] }, async (request, reply) => {
     const params = request.params as { id: string };
     const query = request.query as { version?: string };
-    const bundle = await getProjectBundle(request.currentUser!.id, params.id);
+    const bundle = (await projectWorkflow.getBundle(actorOf(request.currentUser), params.id)) as BundleShape;
     const requested = query.version ? Number(query.version) : 0;
     const master = requested > 0
       ? bundle.masterVersions.find((item) => item.version === requested)
@@ -91,23 +95,22 @@ export async function productionRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/projects/:id/approve', { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { id: string };
     const input = approvalInputSchema.parse(request.body);
-    const approval = await approveMaster(
-      request.currentUser!.id,
+    return production.approve(
+      actorOf(request.currentUser),
       params.id,
       input.artifactVersionId,
       input.checksum
     );
-    return { approval };
   });
 
   app.post('/api/projects/:id/transfer', { preHandler: [app.authenticate] }, async (request, reply) => {
     const params = request.params as { id: string };
-    const transfer = await transferToPostiz(request.currentUser!.id, params.id);
-    return reply.code(202).send({ transfer });
+    const result = await production.transfer(actorOf(request.currentUser), params.id);
+    return reply.code(202).send(result);
   });
 
   app.get('/api/projects/:id/qa', { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { id: string };
-    return getQa(request.currentUser!.id, params.id);
+    return production.getQa(actorOf(request.currentUser), params.id);
   });
 }

@@ -133,7 +133,11 @@ export function toJobRunRecord(row: PrismaJobRun): JobRunRecord {
     projectId: row.projectId,
     type: row.type,
     status: row.status,
-    snapshot: row.snapshot === null ? null : (row.snapshot as unknown as Record<string, unknown>)
+    snapshot: row.snapshot === null ? null : (row.snapshot as unknown as Record<string, unknown>),
+    snapshotVersion: row.snapshotVersion,
+    snapshotChecksum: row.snapshotChecksum,
+    outputs: row.outputs === null ? null : (row.outputs as unknown as Record<string, unknown>),
+    outputsChecksum: row.outputsChecksum
   };
 }
 

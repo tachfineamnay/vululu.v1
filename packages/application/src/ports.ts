@@ -109,6 +109,10 @@ export type JobRunRecord = {
   type: string;
   status: string;
   snapshot: Record<string, unknown> | null;
+  snapshotVersion: number;
+  snapshotChecksum: string | null;
+  outputs: Record<string, unknown> | null;
+  outputsChecksum: string | null;
 };
 
 export type SceneRenderRequest = {
@@ -166,6 +170,10 @@ export type QaReport = {
 
 export interface ContextRepository {
   create(input: Omit<ContextRecord, 'id'>): Promise<ContextRecord>;
+  createWithRevision(
+    input: Omit<ContextRecord, 'id'>,
+    revision: { version: number; checksum: string; data: Record<string, unknown> }
+  ): Promise<ContextRecord>;
   findOwned(contextId: string, userId: string): Promise<ContextRecord | null>;
   listOwned(userId: string): Promise<ContextRecord[]>;
   addRevision(contextId: string, version: number, checksum: string, data: Record<string, unknown>): Promise<void>;
@@ -244,4 +252,96 @@ export interface PostizPort {
 
 export interface AuditPort {
   record(input: { actorId: string | null; action: string; targetType: string; targetId: string | null; metadata?: Record<string, unknown> }): Promise<void>;
+}
+export type BriefInput = {
+  objective: string;
+  audience: string;
+  tone: string;
+  cta: string;
+  platform: 'TikTok' | 'Instagram' | 'LinkedIn';
+  format: 'Affiche' | 'Carrousel' | 'Video' | 'Reel' | 'Motion';
+};
+
+export interface ProjectWorkflowPort {
+  getBundle(actor: Actor, projectId: string): Promise<unknown>;
+  updateBrief(actor: Actor, projectId: string, input: BriefInput): Promise<unknown>;
+  generateStoryboard(actor: Actor, projectId: string): Promise<unknown>;
+  addMessage(actor: Actor, projectId: string, content: string): Promise<unknown>;
+  updateSceneDuration(actor: Actor, projectId: string, sceneKey: string, durationSeconds: number): Promise<unknown>;
+}
+
+export interface ProductionWorkflowPort {
+  startProduction(actor: Actor, projectId: string, jobRunId?: string): Promise<unknown>;
+  startCorrection(actor: Actor, projectId: string, sceneKey: string, instruction: string, jobRunId?: string): Promise<unknown>;
+  approve(actor: Actor, projectId: string, artifactVersionId: string, checksum: string): Promise<unknown>;
+  transfer(actor: Actor, projectId: string): Promise<unknown>;
+  getQa(actor: Actor, projectId: string): Promise<unknown>;
+}
+
+export type ReproducibilitySnapshot = {
+  schemaVersion: 1;
+  capturedAt: string;
+  project: {
+    id: string;
+    platform: string;
+    format: string;
+    sceneDurationSeconds: number;
+    status: string;
+  };
+  context: {
+    revisionId: string | null;
+    checksum: string | null;
+    data: Record<string, unknown>;
+  };
+  brief: {
+    revisionId: string | null;
+    version: number | null;
+    checksum: string | null;
+    data: Record<string, unknown>;
+  };
+  scenes: Array<{
+    sceneId: string;
+    sceneKey: string;
+    position: number;
+    durationSeconds: number;
+    version: number;
+    checksum: string;
+  }>;
+  characters: Array<{
+    characterId: string;
+    characterKey: string;
+    version: number | null;
+    checksum: string | null;
+    name: string;
+    description: string;
+  }>;
+  providerPolicy: {
+    provider: string;
+    model: string;
+    deterministic: boolean;
+  };
+  render: {
+    width: number;
+    height: number;
+    fps: number;
+    imageFormat: string;
+    videoCodec: string;
+    audioCodec: string;
+    audioSilent: boolean;
+  };
+};
+
+export interface ReproducibilityPort {
+  capture(projectId: string, userId: string): Promise<ReproducibilitySnapshot>;
+}
+
+export interface JobRunRepository {
+  createWithSteps(input: {
+    projectId: string;
+    type: string;
+    snapshot: ReproducibilitySnapshot;
+    steps: string[];
+  }): Promise<JobRunRecord>;
+  findRunning(projectId: string): Promise<JobRunRecord | null>;
+  markStatus(jobRunId: string, status: string, error?: string): Promise<void>;
 }

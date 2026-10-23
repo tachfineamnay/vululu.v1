@@ -245,6 +245,24 @@ export async function generateStoryboard(userId: string, projectId: string) {
     }
   });
 
+  const character = await prisma.character.findUnique({
+    where: { projectId_characterKey: { projectId, characterKey: 'CHAR-001' } },
+    include: { versions: { orderBy: { version: 'desc' }, take: 1 } }
+  });
+  if (character && character.versions.length === 0) {
+    const characterData = { name: character.name, description: character.description };
+    const characterChecksum = crypto.createHash('sha256').update(JSON.stringify(characterData)).digest('hex');
+    await prisma.characterVersion.create({
+      data: {
+        characterId: character.id,
+        version: 1,
+        name: character.name,
+        description: character.description,
+        checksum: characterChecksum
+      }
+    });
+  }
+
   for (let index = 0; index < sceneTemplates.length; index += 1) {
     const template = sceneTemplates[index];
     await prisma.scene.upsert({
