@@ -10,11 +10,10 @@ let app: any;
 let prisma: any;
 let bcrypt: any;
 let email = '';
-let password = 'vululu-test-password';
+const password = 'vululu-test-password';
 let cookie = '';
 let csrfToken = '';
 let secondCookie = '';
-let secondCsrfToken = '';
 let contextId = '';
 let projectId = '';
 
@@ -320,7 +319,6 @@ describe('API V0', () => {
     const secondLogin = await login(secondEmail, password);
     expect(secondLogin.status).toBe(200);
     secondCookie = secondLogin.cookie;
-    secondCsrfToken = secondLogin.csrfToken;
 
     const forbiddenResponse = await app.inject({
       method: 'GET',

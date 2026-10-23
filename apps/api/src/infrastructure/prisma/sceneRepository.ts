@@ -74,7 +74,7 @@ export class PrismaSceneRepository implements SceneRepository {
       return toSceneRecord(row);
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-        throw new Error('scene_introuvable: ' + projectId + '/' + sceneKey);
+        throw new Error('scene_introuvable: ' + projectId + '/' + sceneKey, { cause: error });
       }
       throw error;
     }

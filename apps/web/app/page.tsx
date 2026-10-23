@@ -10,7 +10,6 @@ export default function DashboardPage() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [contexts, setContexts] = useState<BrandContext[]>([]);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
-  const [error, setError] = useState('');
 
   useEffect(() => {
     async function load() {
@@ -64,8 +63,6 @@ export default function DashboardPage() {
             <Link className="btn btn-secondary" data-testid="new-project" href="/projects/new">Nouvelle creation</Link>
           </div>
         </section>
-
-        {error ? <p className="error">{error}</p> : null}
 
         <div className="dashboard-grid">
           <section className="card">

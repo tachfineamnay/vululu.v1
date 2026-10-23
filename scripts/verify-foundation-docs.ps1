@@ -85,7 +85,19 @@ $required = @(
     'docs/reviews/V0_FINAL_AUDIT.md',
     'docs/reviews/V0_TEST_EVIDENCE.md',
     'docs/reviews/V1_TECHNICAL_GAPS.md',
-    'docs/reviews/V1_IMPLEMENTATION_BASELINE.md'
+    'docs/reviews/V1_IMPLEMENTATION_BASELINE.md',
+    'packages/domain/src/index.ts',
+    'packages/application/src/ports.ts',
+    'packages/db/prisma/migrations/20261023124017_v1_00_foundation/migration.sql',
+    'apps/api/src/security/session.ts',
+    'eslint.config.mjs',
+    'scripts/ci.ps1',
+    'scripts/v1-acceptance.ps1',
+    'docs/execution/V1_00_PROGRESS.md',
+    'docs/execution/V1_00_ARCHITECTURE.md',
+    'docs/execution/V1_00_SECURITY_EVIDENCE.md',
+    'docs/execution/V1_00_ACCEPTANCE_REPORT.md',
+    'docs/execution/V1_00_NEXT_STEPS.md'
 )
 foreach ($relative in $required) {
     if (-not (Test-Path -LiteralPath (Join-Path $rootPath $relative))) {

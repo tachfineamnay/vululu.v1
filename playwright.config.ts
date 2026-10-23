@@ -19,7 +19,7 @@ export default defineConfig({
     },
     {
       command: 'pnpm --filter @vululu/web dev',
-      url: 'http://127.0.0.1:3000',
+      url: 'http://127.0.0.1:3100',
       reuseExistingServer: true,
       timeout: 120000
     }

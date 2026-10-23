@@ -28,7 +28,7 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
     }
   });
 
-  app.decorate('requireRole', (role: string) => async (request, reply) => {
+  app.decorate('requireRole', (role: string) => async (request, _reply) => {
     const session = await resolveRequestSession(request);
     if (!session) {
       throw new HttpError(401, 'unauthorized', 'Session requise.');
@@ -49,7 +49,7 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
     }
   });
 
-  app.decorate('requireSuperAdmin', async (request, reply) => {
+  app.decorate('requireSuperAdmin', async (request, _reply) => {
     const session = await resolveRequestSession(request);
     if (!session) {
       throw new HttpError(401, 'unauthorized', 'Session requise.');

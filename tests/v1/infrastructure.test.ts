@@ -43,7 +43,6 @@ let projectRepo: PrismaProjectRepository;
 let briefRepo: PrismaBriefRepository;
 let sceneRepo: PrismaSceneRepository;
 let productionRepo: PrismaProductionRepository;
-let storage: LocalStoragePort;
 let media: MediaRendererAdapter;
 let provider: DeterministicProviderAdapter;
 let orchestrator: LocalOrchestratorAdapter;
@@ -97,7 +96,6 @@ beforeAll(async () => {
   briefRepo = new PrismaBriefRepository(db);
   sceneRepo = new PrismaSceneRepository(db);
   productionRepo = new PrismaProductionRepository(db);
-  storage = new LocalStoragePort();
   media = new MediaRendererAdapter();
   provider = new DeterministicProviderAdapter();
   orchestrator = new LocalOrchestratorAdapter({ database: db });

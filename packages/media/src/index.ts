@@ -323,7 +323,7 @@ export async function runQa(scenes: SceneRenderOutput[], master: MasterOutput): 
     status: master.audioCodec === 'aac' ? 'PASS' : 'FAIL',
     detail: master.audioCodec
   });
-  let masterChecksum = '';
+  let masterChecksum: string;
   try {
     masterChecksum = sha256File(master.absolutePath);
   } catch {

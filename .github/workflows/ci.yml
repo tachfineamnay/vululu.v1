@@ -1,0 +1,345 @@
+# =============================================================================
+# Vululu AI — CI V1-00 (GitHub Actions)
+#
+# Objectif : gate de qualite reproductible pour le monorepo pnpm.
+# Ce workflow ne pousse rien, ne publie rien et ne deploie rien :
+#   - permissions minimales (contents: read) ;
+#   - aucune action d'ecriture distante, de tag, de release ou de deploy ;
+#   - PostgreSQL et FFmpeg restent des services de test ephemeres.
+#
+# Couverture :
+#   lint            ESLint 10 flat config (eslint.config.mjs)
+#   typecheck       tsc --noEmit sur tous les packages (Prisma genere d'abord)
+#   domain-tests    tests du Domain Core pur, sans base de donnees
+#   database-tests  PostgreSQL 17 en service + tests API/V1 (migrations inclues)
+#   media-tests     FFmpeg installe + tests media (PNG/MP4/QA)
+#   build           build API (tsc) + build web (next build)
+#   secrets         scripts/check-secrets.ps1 sous PowerShell (ubuntu-latest)
+#   e2e             Playwright, UNIQUEMENT sur workflow_dispatch ; NOT_RUN a ce jour
+#
+# Statut E2E : le job e2e est documente, garde par workflow_dispatch et
+# continue-on-error. Il n'a jamais ete execute au moment de V1-00 et ne doit
+# pas etre considere comme vert. Voir les commentaires du job e2e.
+# =============================================================================
+
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      e2e:
+        description: >-
+          Executer le job E2E Playwright. Etat V1-00 : NON execute, blocage
+          connu documente dans le job (playwright.config.ts).
+        required: false
+        type: boolean
+        default: false
+
+# Lecture seule : aucun job ne peut ecrire dans le depot distant.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: 'true'
+  # Versions epinglees et repetees dans chaque job : le contexte env n'est pas
+  # garanti dans certains champs "with" des actions GitHub.
+  # Node 24 / pnpm 10.6.1 sont les versions de reference du depot.
+
+jobs:
+  lint:
+    name: Lint (ESLint 10 flat config)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Installer pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: '10.6.1'
+      - name: Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Installer les dependances
+        run: pnpm install --frozen-lockfile
+      - name: ESLint (0 erreur requise, dette V0 en warnings)
+        run: pnpm lint
+      - name: Rappel mode strict
+        run: |
+          echo "Gate : 0 erreur ESLint. La dette V0 restante est en warnings."
+          echo "Mode strict : LINT_STRICT=1 pnpm lint (echoue sur la dette connue)."
+
+  typecheck:
+    name: Typecheck (tsc --noEmit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Installer pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: '10.6.1'
+      - name: Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Installer les dependances
+        run: pnpm install --frozen-lockfile
+      - name: Generer le client Prisma
+        run: pnpm db:generate
+      - name: Typecheck du monorepo
+        run: pnpm typecheck
+
+  domain-tests:
+    name: Tests domaine (sans base)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Installer pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: '10.6.1'
+      - name: Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Installer les dependances
+        run: pnpm install --frozen-lockfile
+      - name: Tests du Domain Core pur
+        run: pnpm exec vitest run tests/domain
+
+  database-tests:
+    name: Tests API/V1 (PostgreSQL 17)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      # Base de test isolee uniquement : jamais la base de demonstration.
+      DATABASE_URL: postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public
+      DATABASE_URL_TEST: postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: vululu
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: vululu_v1_00_test
+        ports:
+          # Port 55432 identique au poste de reference : les tests V1 codent
+          # cette URL dans une base de test isolee (jamais la base de demo).
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U vululu -d vululu_v1_00_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Installer pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: '10.6.1'
+      - name: Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Installer les dependances
+        run: pnpm install --frozen-lockfile
+      - name: Generer le client Prisma
+        run: pnpm db:generate
+      - name: Secret de session ephemere (jamais versionne)
+        run: |
+          echo "SESSION_SECRET=ci-session-$(openssl rand -hex 24)" >> "$GITHUB_ENV"
+      - name: Attendre PostgreSQL
+        run: |
+          for i in $(seq 1 30); do
+            if node -e "const s=require('net').connect(55432,'127.0.0.1',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1));"; then
+              echo "PostgreSQL pret sur 127.0.0.1:55432"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "PostgreSQL indisponible sur 127.0.0.1:55432" >&2
+          exit 1
+      - name: Appliquer les migrations sur la base de test
+        run: pnpm exec prisma migrate deploy --schema packages/db/prisma/schema.prisma
+      - name: Tests API, securite des sessions/RBAC et infrastructure
+        run: >-
+          pnpm exec vitest run
+          tests/api.test.ts
+          tests/v1/auth-security.test.ts
+          tests/v1/infrastructure.test.ts
+
+  media-tests:
+    name: Tests media (FFmpeg)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      FFMPEG_PATH: /usr/bin/ffmpeg
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Installer pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: '10.6.1'
+      - name: Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Installer les dependances
+        run: pnpm install --frozen-lockfile
+      - name: Installer FFmpeg (libx264 + AAC)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -hide_banner -version | head -n 1
+      - name: Tests de rendu PNG/MP4 et controle qualite
+        run: pnpm exec vitest run tests/media.test.ts
+
+  build:
+    name: Build (API + Web)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Installer pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: '10.6.1'
+      - name: Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Installer les dependances
+        run: pnpm install --frozen-lockfile
+      - name: Generer le client Prisma
+        run: pnpm db:generate
+      - name: Build API + Web
+        run: pnpm build
+
+  secrets:
+    name: Scan de secrets (PowerShell)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Verifier PowerShell
+        run: pwsh -NoProfile -Command '$PSVersionTable.PSVersion.ToString()'
+      - name: Scanner les secrets versionnes
+        run: pwsh -NoProfile -File scripts/check-secrets.ps1
+
+  # ---------------------------------------------------------------------------
+  # E2E Playwright — DOCUMENTE, NON EXECUTE a ce jour (V1-00).
+  #
+  # Garde-fous :
+  #   - uniquement workflow_dispatch (jamais sur push/PR) ;
+  #   - continue-on-error : ne peut pas produire un faux vert bloquant ;
+  #   - le message final indique explicitement NOT_RUN si le job est declenche.
+  #
+  # Etat local V1-00 : Playwright E2E PASS sur API 3101 / Web 3100, mais le
+  # workflow GitHub n'a jamais ete execute (aucun push autorise).
+  # Le scenario cree des donnees persistantes : la base de test/jetable est
+  # obligatoire (G-20). La verticale doit rester rejouee via les ports au fur
+  # et a mesure de la migration Application Layer.
+  # ---------------------------------------------------------------------------
+  e2e:
+    name: E2E Playwright (workflow_dispatch — NOT_RUN a ce jour)
+    if: github.event_name == 'workflow_dispatch' && inputs.e2e == true
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      APP_ENV: local
+      API_PORT: '3101'
+      V1_API_PORT: '3101'
+      V1_WEB_PORT: '3100'
+      V0_DEMO_EMAIL: demo@vululu.local
+      V0_DEMO_PASSWORD: vululu-demo
+      V1_BOOTSTRAP_EMAIL: demo@vululu.local
+      V1_BOOTSTRAP_PASSWORD: vululu-demo
+      DATABASE_URL: postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public
+      DATABASE_URL_TEST: postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: vululu
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: vululu_v1_00_test
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U vululu -d vululu_v1_00_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Statut explicite
+        run: |
+          echo "::notice::Job E2E declenche manuellement. Si ce workflow n'a pas ete lance, le statut reste NOT_RUN."
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Installer pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: '10.6.1'
+      - name: Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Installer les dependances
+        run: pnpm install --frozen-lockfile
+      - name: Generer le client Prisma
+        run: pnpm db:generate
+      - name: Secret de session ephemere (jamais versionne)
+        run: |
+          echo "SESSION_SECRET=ci-session-$(openssl rand -hex 24)" >> "$GITHUB_ENV"
+      - name: Migrations et seed de la base jetable
+        run: |
+          pnpm exec prisma migrate deploy --schema packages/db/prisma/schema.prisma
+          pnpm exec tsx packages/db/prisma/seed.ts
+      - name: Installer Chromium Playwright
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Lancer API (3101) et Web (3100)
+        run: |
+          pnpm --filter @vululu/api start > /tmp/vululu-api.log 2>&1 &
+          pnpm --filter @vululu/web dev > /tmp/vululu-web.log 2>&1 &
+          for i in $(seq 1 60); do
+            api=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3101/api/health || true)
+            web=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3100/login || true)
+            if [ "$api" = "200" ] && [ "$web" = "200" ]; then
+              echo "API et Web disponibles."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "--- log API ---"; cat /tmp/vululu-api.log || true
+          echo "--- log Web ---"; cat /tmp/vululu-web.log || true
+          echo "Services indisponibles (3101/3100)." >&2
+          exit 1
+      - name: 'E2E Playwright (blocage connu : voir commentaire du job)'
+        run: pnpm exec playwright test e2e/v0.spec.ts --reporter=list
+      - name: Statut final explicite
+        if: always()
+        run: |
+          echo "::warning::E2E : job documente V1-00. Ne pas le declarer PASS sans execution reelle et correction des blocages connus."
