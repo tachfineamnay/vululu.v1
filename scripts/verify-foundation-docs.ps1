@@ -97,7 +97,19 @@ $required = @(
     'docs/execution/V1_00_ARCHITECTURE.md',
     'docs/execution/V1_00_SECURITY_EVIDENCE.md',
     'docs/execution/V1_00_ACCEPTANCE_REPORT.md',
-    'docs/execution/V1_00_NEXT_STEPS.md'
+    'docs/execution/V1_00_NEXT_STEPS.md',
+    'packages/db/prisma/migrations/20261023160509_v1_01_a_snapshot_versioning/migration.sql',
+    'packages/application/src/use-cases/project-workflow.ts',
+    'packages/application/src/use-cases/production.ts',
+    'apps/api/src/infrastructure/legacy/legacyWorkflowAdapter.ts',
+    'apps/api/src/infrastructure/prisma/reproducibilityAdapter.ts',
+    'apps/api/src/infrastructure/prisma/jobRunRepository.ts',
+    'tests/v1/v1-01-application.test.ts',
+    'docs/execution/V1_01_A_LEGACY_MIGRATION.md',
+    'docs/execution/V1_01_A_SNAPSHOTS.md',
+    'docs/execution/V1_01_A_TEST_EVIDENCE.md',
+    'docs/execution/V1_01_A_RISKS_VERDICT.md',
+    'docs/adr/0006-application-layer-et-snapshots-versionnes.md'
 )
 foreach ($relative in $required) {
     if (-not (Test-Path -LiteralPath (Join-Path $rootPath $relative))) {
