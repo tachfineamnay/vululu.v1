@@ -1,0 +1,192 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String         @id @default(cuid())
+  email        String         @unique
+  passwordHash String
+  name         String
+  role         String         @default("user")
+  createdAt    DateTime       @default(now())
+  contexts     BrandContext[]
+  projects     Project[]
+}
+
+model BrandContext {
+  id             String   @id @default(cuid())
+  userId         String
+  name           String
+  website        String?
+  description    String
+  audience       String?
+  tone           String?
+  colorPrimary   String   @default("#6C5CE7")
+  colorSecondary String   @default("#00D2FF")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projects       Project[]
+
+  @@index([userId])
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  userId      String
+  contextId   String
+  title       String
+  platform    String
+  format      String
+  objective   String
+  status      String   @default("draft")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  context     BrandContext @relation(fields: [contextId], references: [id], onDelete: Restrict)
+  brief       Brief?
+  messages    Message[]
+  scenes      Scene[]
+  characters  Character[]
+  artifacts   Artifact[]
+  jobs        ProductionJob[]
+
+  @@index([userId])
+  @@index([contextId])
+}
+
+model Brief {
+  id        String   @id @default(cuid())
+  projectId String   @unique
+  objective String
+  audience  String
+  tone      String
+  cta       String
+  platform  String
+  format    String
+  version   Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  projectId String
+  role      String
+  content   String
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model Scene {
+  id           String         @id @default(cuid())
+  projectId    String
+  sceneKey     String
+  position     Int
+  title        String
+  description  String
+  characterKey String?
+  createdAt    DateTime       @default(now())
+  project      Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versions     SceneVersion[]
+
+  @@unique([projectId, sceneKey])
+  @@index([projectId])
+}
+
+model SceneVersion {
+  id        String   @id @default(cuid())
+  sceneId   String
+  version   Int
+  imagePath String
+  prompt    String
+  checksum  String
+  createdAt DateTime @default(now())
+  scene     Scene    @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+
+  @@unique([sceneId, version])
+  @@index([sceneId])
+}
+
+model Character {
+  id           String   @id @default(cuid())
+  projectId    String
+  characterKey String
+  name         String
+  description  String
+  createdAt    DateTime @default(now())
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, characterKey])
+}
+
+model Artifact {
+  id        String            @id @default(cuid())
+  projectId String
+  kind      String            @default("master")
+  createdAt DateTime          @default(now())
+  project   Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versions  ArtifactVersion[]
+
+  @@unique([projectId, kind])
+}
+
+model ArtifactVersion {
+  id         String    @id @default(cuid())
+  artifactId String
+  version    Int
+  masterPath String
+  checksum   String
+  qaStatus   String?
+  qaReport   Json?
+  createdAt  DateTime  @default(now())
+  artifact   Artifact  @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  approval   Approval?
+
+  @@unique([artifactId, version])
+  @@index([artifactId])
+}
+
+model Approval {
+  id                String          @id @default(cuid())
+  artifactVersionId String          @unique
+  approvedBy        String
+  checksum          String
+  createdAt         DateTime        @default(now())
+  artifactVersion   ArtifactVersion @relation(fields: [artifactVersionId], references: [id], onDelete: Cascade)
+  transfer          Transfer?
+}
+
+model Transfer {
+  id         String   @id @default(cuid())
+  approvalId String   @unique
+  status     String   @default("submitted")
+  provider   String   @default("postiz-mock")
+  externalId String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  approval   Approval @relation(fields: [approvalId], references: [id], onDelete: Cascade)
+}
+
+model ProductionJob {
+  id        String   @id @default(cuid())
+  projectId String
+  type      String
+  status    String   @default("queued")
+  step      String   @default("queued")
+  progress  Int      @default(0)
+  error     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}

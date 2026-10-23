@@ -16,7 +16,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $rootPath = (Resolve-Path -LiteralPath $Root).Path
 
-$skipDirs = @('.git', '_inbox', 'node_modules', '.pnpm-store', 'dist', 'build', 'coverage')
+$skipDirs = @('.git', '_inbox', 'node_modules', '.pnpm-store', 'dist', 'build', 'coverage', '.v0', 'data', '.next', 'test-results', 'playwright-report', 'blob-report')
 $binaryExtensions = @(
     '.docx', '.doc', '.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp',
     '.mp4', '.mov', '.mp3', '.wav', '.zip', '.ico', '.woff', '.woff2',
@@ -38,13 +38,15 @@ $patterns = @(
     @{ Name = 'assigned-secret';   Regex = '(?i)(api[_-]?key|secret|password|passwd|token)[ ]*[:=][ ]*[A-Za-z0-9_+/=-]{24,}' }
 )
 
-$files = Get-ChildItem -LiteralPath $rootPath -Recurse -File -Force | Where-Object {
-    $relative = $_.FullName.Substring($rootPath.Length)
-    $parts = $relative.Split([char[]]@(47, 92), [System.StringSplitOptions]::RemoveEmptyEntries)
-    if ($parts -contains '.git') { return $false }
-    if ($parts -contains '_inbox') { return $false }
-    if ($binaryExtensions -contains $_.Extension.ToLowerInvariant()) { return $false }
-    return $true
+$trackedFiles = & git -C $rootPath ls-files --cached --others --exclude-standard
+$files = foreach ($relative in $trackedFiles) {
+    if ([string]::IsNullOrWhiteSpace($relative)) { continue }
+    $full = Join-Path $rootPath $relative
+    if (-not (Test-Path -LiteralPath $full -PathType Leaf)) { continue }
+    $item = Get-Item -LiteralPath $full
+    if ($item.Name -eq '.env' -or ($item.Name -like '.env.*' -and $item.Name -ne '.env.example')) { continue }
+    if ($binaryExtensions -contains $item.Extension.ToLowerInvariant()) { continue }
+    $item
 }
 
 $findings = New-Object System.Collections.Generic.List[object]

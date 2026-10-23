@@ -4,8 +4,8 @@
     Verification documentaire et garde-fous de la Mission 00 Vululu AI.
 .DESCRIPTION
     Verifie les empreintes des documents fondateurs, la presence des fichiers
-    obligatoires, l'absence de fichiers sensibles et l'absence de structure
-    applicative prematuree. Code de sortie : 0 si tout passe, 1 sinon.
+    obligatoires du socle et des livrables V0, et l'absence de secrets suivis.
+    Code de sortie : 0 si tout passe, 1 sinon.
 #>
 [CmdletBinding()]
 param(
@@ -70,7 +70,15 @@ $required = @(
     'docs/v2/README.md',
     'docs/v2/NOTE_SPECIALE_PROPOSITIONS_V2.md',
     'scripts/check-secrets.ps1',
-    'scripts/verify-foundation-docs.ps1'
+    'scripts/verify-foundation-docs.ps1',
+    'package.json',
+    'pnpm-workspace.yaml',
+    'apps/api/package.json',
+    'apps/web/package.json',
+    'packages/media/src/index.ts',
+    'e2e/v0.spec.ts',
+    'docs/execution/V0_24H_PROGRESS.md',
+    'docs/execution/V0_RUNBOOK.md'
 )
 foreach ($relative in $required) {
     if (-not (Test-Path -LiteralPath (Join-Path $rootPath $relative))) {
@@ -78,27 +86,14 @@ foreach ($relative in $required) {
     }
 }
 
-$forbiddenDirs = @('src', 'app', 'apps', 'packages')
-foreach ($directory in $forbiddenDirs) {
-    if (Test-Path -LiteralPath (Join-Path $rootPath $directory)) {
-        $failures.Add('FORBIDDEN_APP_STRUCTURE ' + $directory)
-    }
+$tracked = @(& git -C $rootPath ls-files)
+$secretTracked = $tracked | Where-Object {
+    $_ -match '(^|/)[.]env$' -or
+    ($_ -match '(^|/)[.]env[.]' -and $_ -notmatch '[.]env[.]example$') -or
+    $_ -match '[.](pem|key|p12|pfx)$'
 }
-
-foreach ($sensitive in @('.env', 'node_modules')) {
-    if (Test-Path -LiteralPath (Join-Path $rootPath $sensitive)) {
-        $failures.Add('FORBIDDEN_LOCAL_ARTIFACT ' + $sensitive)
-    }
-}
-
-$keyFiles = Get-ChildItem -LiteralPath $rootPath -Recurse -File -Force -ErrorAction SilentlyContinue | Where-Object {
-    $relative = $_.FullName.Substring($rootPath.Length)
-    if ($relative -match '[.]git') { return $false }
-    if ($relative -match '_inbox') { return $false }
-    return ($_.Extension.ToLowerInvariant() -in @('.pem', '.key', '.p12', '.pfx'))
-}
-foreach ($keyFile in $keyFiles) {
-    $failures.Add('FORBIDDEN_KEY_FILE ' + $keyFile.FullName.Substring($rootPath.Length))
+foreach ($trackedSecret in $secretTracked) {
+    $failures.Add('FORBIDDEN_TRACKED_SECRET ' + $trackedSecret)
 }
 
 if ($failures.Count -gt 0) {
