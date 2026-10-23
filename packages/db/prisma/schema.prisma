@@ -205,6 +205,7 @@ model Transfer {
 
 model ProductionJob {
   id        String   @id @default(cuid())
+  jobRunId  String?  @unique
   projectId String
   type      String
   status    String   @default("queued")
@@ -214,6 +215,7 @@ model ProductionJob {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  jobRun    JobRun?  @relation(fields: [jobRunId], references: [id], onDelete: SetNull)
 
   @@index([projectId])
 }
@@ -290,6 +292,7 @@ model JobRun {
   updatedAt        DateTime  @updatedAt
   project          Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   steps            StepRun[]
+  productionJob    ProductionJob?
 
   @@index([projectId])
 }
@@ -306,6 +309,7 @@ model StepRun {
   createdAt  DateTime  @default(now())
   jobRun     JobRun    @relation(fields: [jobRunId], references: [id], onDelete: Cascade)
 
+  @@unique([jobRunId, name])
   @@index([jobRunId])
 }
 

@@ -33,7 +33,9 @@ function toPublicContext(context: ContextRecord): PublicContext {
     audience: context.audience,
     tone: context.tone,
     colorPrimary: context.colorPrimary,
-    colorSecondary: context.colorSecondary
+    colorSecondary: context.colorSecondary,
+    createdAt: context.createdAt,
+    updatedAt: context.updatedAt
   };
 }
 

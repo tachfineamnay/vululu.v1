@@ -1,6 +1,6 @@
 import type { PrismaClient } from '@prisma/client';
 import { prisma } from '@vululu/db';
-import type { BriefRecord, BriefRepository } from '@vululu/application';
+import type { BriefRecord } from '@vululu/application';
 import { toBriefRecord } from './mappers';
 
 /**
@@ -9,7 +9,7 @@ import { toBriefRecord } from './mappers';
  * BriefRevision est immuable : une revision ne peut etre ajoutee qu'avec la
  * version suivante du brief courant (append-only, contrainte unique en base).
  */
-export class PrismaBriefRepository implements BriefRepository {
+export class PrismaBriefRepository {
   constructor(private readonly db: PrismaClient = prisma) {}
 
   async findCurrent(projectId: string): Promise<BriefRecord | null> {

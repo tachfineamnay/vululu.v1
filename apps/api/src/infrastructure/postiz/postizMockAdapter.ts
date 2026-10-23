@@ -13,10 +13,10 @@ export const POSTIZ_MOCK_PROVIDER = 'postiz-mock';
  *   renvoient le meme TransferRecord et ne creent qu'une ligne Transfer ;
  * - le transfert n'est possible que pour une approbation valide (non
  *   invalidee) et pour le checksum exact de la version approuvee ;
- * - statut `submitted` uniquement : ce mock ne pretend PAS que Postiz a
- *   acquitte (acknowledged) ni publie. Un vrai adaptateur devra implementer
- *   les etats pending/submitted/acknowledged/failed et l'idempotency key
- *   cote API Postiz.
+ * - statut initial `submitted`, puis acquittement local deterministe apres
+ *   400 ms (`acknowledged`). Aucun reseau, aucune publication : ce n'est pas
+ *   un acquittement Postiz reel. Un vrai adaptateur devra implementer les
+ *   etats pending/submitted/acknowledged/failed et l'idempotency key cote API.
  */
 export class PostizMockAdapter implements PostizPort {
   constructor(private readonly db: PrismaClient = prisma) {}
@@ -60,6 +60,14 @@ export class PostizMockAdapter implements PostizPort {
           externalId: null
         }
       });
+      // Mock deterministe : acquitte localement apres 400 ms, sans reseau ni publication.
+      setTimeout(async () => {
+        try {
+          await this.db.transfer.update({ where: { id: row.id }, data: { status: 'acknowledged' } });
+        } catch {
+          // Best-effort : le statut reste submitted si la base est indisponible.
+        }
+      }, 400);
       return toTransferRecord(row);
     } catch (error) {
       // Course concurrente : approvalId est unique, on renvoie la ligne gagnante.

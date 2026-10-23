@@ -39,7 +39,9 @@ export function toContextRecord(row: PrismaBrandContext): ContextRecord {
     audience: row.audience,
     tone: row.tone,
     colorPrimary: row.colorPrimary,
-    colorSecondary: row.colorSecondary
+    colorSecondary: row.colorSecondary,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt
   };
 }
 
@@ -53,7 +55,9 @@ export function toProjectRecord(row: PrismaProject): ProjectRecord {
     format: row.format,
     objective: row.objective,
     sceneDurationSeconds: row.sceneDurationSeconds,
-    status: row.status
+    status: row.status,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt
   };
 }
 
@@ -80,7 +84,8 @@ export function toSceneRecord(row: PrismaScene): SceneRecord {
     title: row.title,
     description: row.description,
     durationSeconds: row.durationSeconds,
-    characterKey: row.characterKey
+    characterKey: row.characterKey,
+    createdAt: row.createdAt
   };
 }
 

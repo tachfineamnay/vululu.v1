@@ -4,7 +4,7 @@ import type {
   ApprovalRecord,
   ArtifactVersionRecord,
   JobRunRecord,
-  ProductionRepository,
+  MasterRepository,
   SceneRecord,
   SceneVersionRecord,
   TransferRecord
@@ -36,7 +36,7 @@ import {
  * lecture compatible avec le schema existant et avec l'invariant
  * "approbation d'une version exacte".
  */
-export class PrismaProductionRepository implements ProductionRepository {
+export class PrismaProductionRepository implements MasterRepository {
   constructor(private readonly db: PrismaClient = prisma) {}
 
   async latestSceneVersions(

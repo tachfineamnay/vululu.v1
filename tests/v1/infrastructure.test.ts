@@ -545,8 +545,9 @@ describe('Repositories Prisma (integration base de test)', () => {
     await productionRepo.updateTransferStatus(transfer.id, 'acknowledged');
     expect((await productionRepo.findTransfer(secondApproval.id))?.status).toBe('acknowledged');
 
+    const jobProject = await createOtherProject('Projet JobRun isole');
     const jobRun = await productionRepo.createJobRun({
-      projectId: project.id,
+      projectId: jobProject.id,
       type: 'correction',
       status: 'queued',
       snapshot: { sceneKey: 'SCENE-001', instruction: 'corriger' }
@@ -614,7 +615,7 @@ describe('LocalOrchestratorAdapter (JobRun/StepRun, in-process)', () => {
 });
 
 describe('PostizMockAdapter (mock contractuel, idempotent)', () => {
-  it('cree un TransferRecord MOCK submitted et reste idempotent', async () => {
+  it('cree un TransferRecord MOCK puis l acquitte localement, sans publication', async () => {
     const first = await postiz.transfer({
       approvalId: approval.id,
       checksum: approval.checksum,
@@ -623,15 +624,16 @@ describe('PostizMockAdapter (mock contractuel, idempotent)', () => {
     expect(first.provider).toBe(POSTIZ_MOCK_PROVIDER);
     expect(first.status).toBe('submitted');
     expect(first.externalId).toBeNull();
-    expect(first.status).not.toBe('acknowledged');
     expect(first.status).not.toBe('published');
 
+    await new Promise((resolve) => setTimeout(resolve, 600));
     const second = await postiz.transfer({
       approvalId: approval.id,
       checksum: approval.checksum,
       artifactVersionId: master.id
     });
-    expect(second).toEqual(first);
+    expect(second.status).toBe('acknowledged');
+    expect(second.id).toBe(first.id);
     expect(await db.transfer.count({ where: { approvalId: approval.id } })).toBe(1);
   });
 

@@ -23,6 +23,8 @@ export type ContextRecord = {
   tone: string | null;
   colorPrimary: string;
   colorSecondary: string;
+  createdAt?: Date;
+  updatedAt?: Date;
 };
 
 export type ContextRevisionRecord = {
@@ -43,6 +45,8 @@ export type ProjectRecord = {
   objective: string;
   sceneDurationSeconds: number;
   status: string;
+  createdAt?: Date;
+  updatedAt?: Date;
 };
 
 export type BriefRecord = {
@@ -66,6 +70,7 @@ export type SceneRecord = {
   description: string;
   durationSeconds: number;
   characterKey: string | null;
+  createdAt?: Date;
 };
 
 export type SceneVersionRecord = {
@@ -186,11 +191,6 @@ export interface ProjectRepository {
   updateStatus(projectId: string, status: string): Promise<void>;
 }
 
-export interface BriefRepository {
-  findCurrent(projectId: string): Promise<BriefRecord | null>;
-  createRevision(input: Omit<BriefRecord, 'id'> & { checksum: string }): Promise<BriefRecord>;
-}
-
 export interface SceneRepository {
   listByProject(projectId: string): Promise<SceneRecord[]>;
   findOwned(projectId: string, sceneKey: string, userId: string): Promise<SceneRecord | null>;
@@ -198,22 +198,15 @@ export interface SceneRepository {
   updateDuration(projectId: string, sceneKey: string, durationSeconds: number): Promise<SceneRecord>;
 }
 
-export interface ProductionRepository {
-  latestSceneVersions(projectId: string): Promise<Array<{ scene: SceneRecord; version: SceneVersionRecord | null }>>;
-  createSceneVersion(input: Omit<SceneVersionRecord, 'id'>): Promise<SceneVersionRecord>;
+export interface MasterRepository {
   latestMaster(projectId: string): Promise<ArtifactVersionRecord | null>;
-  nextMasterVersion(projectId: string): Promise<number>;
-  createMasterVersion(input: Omit<ArtifactVersionRecord, 'id'>): Promise<ArtifactVersionRecord>;
-  updateQa(artifactId: string, status: string, report: unknown): Promise<void>;
-  findApproval(artifactId: string): Promise<ApprovalRecord | null>;
-  createOrUpdateApproval(input: { artifactVersionId: string; approvedBy: string; checksum: string }): Promise<ApprovalRecord>;
-  invalidateApprovals(projectId: string): Promise<void>;
+  findApproval(artifactVersionId: string): Promise<ApprovalRecord | null>;
+  createOrUpdateApproval(input: {
+    artifactVersionId: string;
+    approvedBy: string;
+    checksum: string;
+  }): Promise<ApprovalRecord>;
   findTransfer(approvalId: string): Promise<TransferRecord | null>;
-  createTransfer(input: { approvalId: string; status: string; provider: string; externalId: string | null }): Promise<TransferRecord>;
-  updateTransferStatus(transferId: string, status: string): Promise<void>;
-  findJobRun(jobRunId: string): Promise<JobRunRecord | null>;
-  createJobRun(input: Omit<JobRunRecord, 'id'>): Promise<JobRunRecord>;
-  updateJobRunStatus(jobRunId: string, status: string): Promise<void>;
 }
 
 export interface UserRepository {
@@ -261,22 +254,6 @@ export type BriefInput = {
   platform: 'TikTok' | 'Instagram' | 'LinkedIn';
   format: 'Affiche' | 'Carrousel' | 'Video' | 'Reel' | 'Motion';
 };
-
-export interface ProjectWorkflowPort {
-  getBundle(actor: Actor, projectId: string): Promise<unknown>;
-  updateBrief(actor: Actor, projectId: string, input: BriefInput): Promise<unknown>;
-  generateStoryboard(actor: Actor, projectId: string): Promise<unknown>;
-  addMessage(actor: Actor, projectId: string, content: string): Promise<unknown>;
-  updateSceneDuration(actor: Actor, projectId: string, sceneKey: string, durationSeconds: number): Promise<unknown>;
-}
-
-export interface ProductionWorkflowPort {
-  startProduction(actor: Actor, projectId: string, jobRunId?: string): Promise<unknown>;
-  startCorrection(actor: Actor, projectId: string, sceneKey: string, instruction: string, jobRunId?: string): Promise<unknown>;
-  approve(actor: Actor, projectId: string, artifactVersionId: string, checksum: string): Promise<unknown>;
-  transfer(actor: Actor, projectId: string): Promise<unknown>;
-  getQa(actor: Actor, projectId: string): Promise<unknown>;
-}
 
 export type ReproducibilitySnapshot = {
   schemaVersion: 1;
@@ -329,19 +306,298 @@ export type ReproducibilitySnapshot = {
     audioCodec: string;
     audioSilent: boolean;
   };
+  correction?: {
+    targetSceneKey: string;
+    instruction: string;
+  };
+};
+// ---------------------------------------------------------------------------
+// V1-01-A.1 : contrats applicatifs specialises.
+// ---------------------------------------------------------------------------
+
+export type BriefContentRecord = {
+  objective: string;
+  audience: string;
+  tone: string;
+  cta: string;
+  platform: 'TikTok' | 'Instagram' | 'LinkedIn';
+  format: 'Affiche' | 'Carrousel' | 'Video' | 'Reel' | 'Motion';
 };
 
-export interface ReproducibilityPort {
-  capture(projectId: string, userId: string): Promise<ReproducibilitySnapshot>;
+export type BriefRevisionRecord = BriefContentRecord & {
+  id: string;
+  briefId: string;
+  version: number;
+  checksum: string;
+  createdAt: Date;
+};
+
+export type BriefWithRevisions = BriefRecord & {
+  createdAt: Date;
+  updatedAt: Date;
+  revisions: BriefRevisionRecord[];
+};
+
+export type MessageRecord = {
+  id: string;
+  projectId: string;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: Date;
+};
+
+export type CharacterRecord = {
+  id: string;
+  projectId: string;
+  characterKey: string;
+  name: string;
+  description: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+};
+
+export type CharacterVersionRecord = {
+  id: string;
+  characterId: string;
+  version: number;
+  name: string;
+  description: string;
+  checksum: string;
+  createdAt: Date;
+};
+
+export type SceneWithVersionsRecord = SceneRecord & {
+  createdAt?: Date;
+  updatedAt?: Date;
+  versions: SceneVersionRecordWithMeta[];
+};
+
+export type SceneVersionRecordWithMeta = SceneVersionRecord & {
+  createdAt?: Date;
+  instruction?: string | null;
+};
+
+export type ProductionJobRecord = {
+  id: string;
+  projectId: string;
+  type: string;
+  status: string;
+  step: string;
+  progress: number;
+  error: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type ApprovalView = ApprovalRecord & {
+  createdAt?: Date;
+  transfer?: TransferRecord | null;
+};
+
+export type MasterVersionView = ArtifactVersionRecord & {
+  createdAt?: Date;
+  approval?: ApprovalView | null;
+};
+
+export type ProjectBundleRecord = {
+  project: {
+    id: string;
+    title: string;
+    status: string;
+    platform: string;
+    format: string;
+    objective: string;
+    sceneDurationSeconds: number;
+    contextId: string;
+    createdAt: Date;
+    updatedAt: Date;
+  };
+  context: {
+    id: string;
+    name: string;
+    website: string | null;
+    description: string;
+    audience: string | null;
+    tone: string | null;
+    colorPrimary: string;
+    colorSecondary: string;
+    createdAt: Date;
+    updatedAt: Date;
+  };
+  brief: BriefWithRevisions | null;
+  messages: MessageRecord[];
+  scenes: SceneWithVersionsRecord[];
+  characters: CharacterRecord[];
+  master: MasterVersionView | null;
+  masterVersions: MasterVersionView[];
+  job: ProductionJobRecord | null;
+};
+
+export type QaView = {
+  status: string;
+  report: unknown;
+  version: number | null;
+};
+
+export interface BriefStore {
+  findWithRevisions(projectId: string): Promise<BriefWithRevisions | null>;
+  saveRevision(input: {
+    userId: string;
+    projectId: string;
+    briefId: string;
+    revisionId: string;
+    version: number;
+    content: BriefContentRecord;
+    checksum: string;
+    createdAt: Date;
+    projectStatus: string;
+  }): Promise<BriefWithRevisions>;
 }
 
-export interface JobRunRepository {
-  createWithSteps(input: {
+export type StoryboardCharacterWrite = {
+  id: string;
+  characterKey: string;
+  name: string;
+  description: string;
+  expectedVersion: number | null;
+  nextVersion: {
+    id: string;
+    version: number;
+    checksum: string;
+    createdAt: Date;
+  } | null;
+};
+
+export type StoryboardSceneWrite = {
+  id: string;
+  sceneKey: string;
+  position: number;
+  title: string;
+  description: string;
+  durationSeconds: number;
+  characterKey: string | null;
+};
+
+export interface StoryboardStore {
+  findCharacter(
+    projectId: string,
+    characterKey: string
+  ): Promise<{ character: CharacterRecord; versions: CharacterVersionRecord[] } | null>;
+  saveAtomic(input: {
     projectId: string;
-    type: string;
-    snapshot: ReproducibilitySnapshot;
+    userId: string;
+    projectStatus: string;
+    character: StoryboardCharacterWrite;
+    scenes: StoryboardSceneWrite[];
+  }): Promise<void>;
+}
+
+export interface MessageStore {
+  createPair(input: {
+    projectId: string;
+    userContent: string;
+    assistantContent: string;
+  }): Promise<{ userMessage: MessageRecord; assistantMessage: MessageRecord }>;
+}
+
+export interface ProjectBundleQueryPort {
+  getOwnedBundle(userId: string, projectId: string): Promise<ProjectBundleRecord>;
+}
+
+export interface ProductionRunRepository {
+  startRun(input: {
+    userId: string;
+    projectId: string;
+    type: 'produce' | 'correction';
+    targetSceneKey: string | null;
+    instruction: string | null;
     steps: string[];
-  }): Promise<JobRunRecord>;
-  findRunning(projectId: string): Promise<JobRunRecord | null>;
-  markStatus(jobRunId: string, status: string, error?: string): Promise<void>;
+  }): Promise<{ job: ProductionJobRecord; jobRun: JobRunRecord }>;
+  updateJob(jobId: string, input: { status?: string; step?: string; progress?: number; error?: string | null }): Promise<void>;
+  updateStep(jobRunId: string, name: string, status: string, error?: string): Promise<void>;
+}
+
+export type ExecutionScene = SceneRecord & {
+  latestVersion: SceneVersionRecord | null;
+};
+
+export type ExecutionProject = {
+  id: string;
+  status: string;
+  sceneDurationSeconds: number;
+  context: {
+    name: string;
+    colorPrimary: string;
+    colorSecondary: string;
+  };
+  scenes: ExecutionScene[];
+};
+
+export type ProductionFinalization = {
+  jobRunId: string;
+  jobId: string;
+  projectId: string;
+  masterVersion: number;
+  master: {
+    relativePath: string;
+    checksum: string;
+    duration: number;
+    expectedDurationSeconds: number;
+    videoCodec: string;
+    audioCodec: string;
+    width: number;
+    height: number;
+  };
+  qa: QaReport;
+  scenes: Array<{
+    sceneId: string;
+    sceneKey: string;
+    position: number;
+    version: number;
+    imagePath: string;
+    prompt: string;
+    checksum: string;
+  }>;
+  outputs: Record<string, unknown>;
+};
+
+export interface ProductionExecutionStore {
+  markRunning(jobRunId: string): Promise<void>;
+  updateJob(jobId: string, input: { status?: string; step?: string; progress?: number; error?: string | null }): Promise<void>;
+  updateStep(jobRunId: string, name: string, status: string, error?: string): Promise<void>;
+  loadExecutionProject(projectId: string): Promise<ExecutionProject>;
+  nextMasterVersion(projectId: string): Promise<number>;
+  finalizeRun(input: ProductionFinalization): Promise<void>;
+  failRun(input: {
+    jobRunId: string;
+    jobId: string;
+    projectId: string;
+    error: string;
+  }): Promise<void>;
+}
+
+export interface ProductionExecutorPort {
+  start(input: {
+    projectId: string;
+    jobId: string;
+    jobRunId: string;
+    type: 'produce' | 'correction';
+    targetSceneKey: string | null;
+    instruction: string | null;
+  }): Promise<void>;
+}
+export type ArtifactFile = {
+  absolutePath: string;
+  contentType: 'image/png' | 'video/mp4';
+  size: number;
+};
+
+export interface ArtifactAccessPort {
+  getSceneImage(userId: string, projectId: string, sceneKey: string): Promise<ArtifactFile>;
+  getMaster(userId: string, projectId: string, version?: number): Promise<ArtifactFile>;
+}
+
+export interface ArtifactAccessUseCasesPort {
+  getSceneImage(actor: Actor, projectId: string, sceneKey: string): Promise<ArtifactFile>;
+  getMaster(actor: Actor, projectId: string, version?: number): Promise<ArtifactFile>;
 }

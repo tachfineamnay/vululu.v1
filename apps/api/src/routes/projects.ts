@@ -5,7 +5,7 @@ import {
   projectInputSchema,
   sceneDurationInputSchema
 } from '@vululu/contracts';
-import { actorOf, projectWorkflow, projects } from '../application/container';
+import { actorOf, briefs, bundles, messages, projects, scenes, storyboards } from '../application/container';
 
 export async function projectRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/projects', { preHandler: [app.authenticate] }, async (request) => {
@@ -21,32 +21,32 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/projects/:id', { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { id: string };
-    return projectWorkflow.getBundle(actorOf(request.currentUser), params.id);
+    return bundles.get(actorOf(request.currentUser), params.id);
   });
 
   app.patch('/api/projects/:id/brief', { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { id: string };
     const input = briefInputSchema.parse(request.body);
-    const brief = await projectWorkflow.updateBrief(actorOf(request.currentUser), params.id, input);
+    const brief = await briefs.update(actorOf(request.currentUser), params.id, input);
     return { brief };
   });
 
   app.post('/api/projects/:id/messages', { preHandler: [app.authenticate] }, async (request, reply) => {
     const params = request.params as { id: string };
     const input = messageInputSchema.parse(request.body);
-    const messages = await projectWorkflow.addMessage(actorOf(request.currentUser), params.id, input.content);
-    return reply.code(201).send(messages);
+    const pair = await messages.add(actorOf(request.currentUser), params.id, input.content);
+    return reply.code(201).send(pair);
   });
 
   app.post('/api/projects/:id/storyboard', { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { id: string };
-    return projectWorkflow.generateStoryboard(actorOf(request.currentUser), params.id);
+    return storyboards.generate(actorOf(request.currentUser), params.id);
   });
 
   app.patch('/api/projects/:id/scenes/:sceneKey', { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { id: string; sceneKey: string };
     const input = sceneDurationInputSchema.parse(request.body);
-    const scene = await projectWorkflow.updateSceneDuration(
+    const scene = await scenes.updateDuration(
       actorOf(request.currentUser),
       params.id,
       params.sceneKey,

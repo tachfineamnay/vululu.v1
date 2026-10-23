@@ -19,6 +19,8 @@ export type PublicProject = {
   objective: string;
   sceneDurationSeconds: number;
   contextId: string;
+  createdAt?: Date;
+  updatedAt?: Date;
   context?: PublicContext | null;
 };
 
@@ -40,7 +42,9 @@ function toPublicProject(project: ProjectRecord): PublicProject {
     format: project.format,
     objective: project.objective,
     sceneDurationSeconds: project.sceneDurationSeconds,
-    contextId: project.contextId
+    contextId: project.contextId,
+    createdAt: project.createdAt,
+    updatedAt: project.updatedAt
   };
 }
 
@@ -72,7 +76,9 @@ export class ProjectUseCases {
               audience: context.audience,
               tone: context.tone,
               colorPrimary: context.colorPrimary,
-              colorSecondary: context.colorSecondary
+              colorSecondary: context.colorSecondary,
+              createdAt: context.createdAt,
+              updatedAt: context.updatedAt
             }
           : null
       });
