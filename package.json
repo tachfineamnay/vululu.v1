@@ -1,36 +1,39 @@
 {
-  "name": "vululu-ai-v0",
+  "name": "vululu-ai-v1-00",
   "private": true,
   "packageManager": "pnpm@10.6.1",
   "scripts": {
     "dev": "concurrently -k -n api,web -c blue,green \"pnpm --filter @vululu/api dev\" \"pnpm --filter @vululu/web dev\"",
     "dev:api": "pnpm --filter @vululu/api dev",
     "dev:web": "pnpm --filter @vululu/web dev",
-    "db:init": "pwsh -NoProfile -File scripts/dev-db.ps1 init",
-    "db:start": "pwsh -NoProfile -File scripts/dev-db.ps1 start",
-    "db:stop": "pwsh -NoProfile -File scripts/dev-db.ps1 stop",
-    "db:generate": "cross-env DATABASE_URL=postgresql://vululu@127.0.0.1:55432/vululu_v0?schema=public prisma generate --schema packages/db/prisma/schema.prisma",
-    "db:migrate": "cross-env DATABASE_URL=postgresql://vululu@127.0.0.1:55432/vululu_v0?schema=public prisma migrate dev --name init --schema packages/db/prisma/schema.prisma",
-    "db:seed": "cross-env DATABASE_URL=postgresql://vululu@127.0.0.1:55432/vululu_v0?schema=public tsx packages/db/prisma/seed.ts",
+    "db:generate": "cross-env DATABASE_URL=postgresql://vululu@127.0.0.1:55432/vululu_v1_00?schema=public prisma generate --schema packages/db/prisma/schema.prisma",
+    "db:migrate": "cross-env DATABASE_URL=postgresql://vululu@127.0.0.1:55432/vululu_v1_00?schema=public prisma migrate dev --schema packages/db/prisma/schema.prisma",
+    "db:seed": "cross-env DATABASE_URL=postgresql://vululu@127.0.0.1:55432/vululu_v1_00?schema=public tsx packages/db/prisma/seed.ts",
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
-    "test:e2e": "pwsh -NoProfile -File scripts/dev-db.ps1 start && pnpm db:migrate && pnpm db:seed && playwright test",
+    "test:e2e": "playwright test",
     "build": "pnpm --filter @vululu/api build && pnpm --filter @vululu/web build",
-    "verify": "pwsh -NoProfile -File scripts/verify-v0.ps1"
+    "verify": "pwsh -NoProfile -File scripts/verify-v0.ps1",
+    "db:status": "pwsh -NoProfile -File scripts/v1-db.ps1 status",
+    "lint": "eslint ."
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@playwright/test": "1.64.1",
     "@types/node": "^24.0.0",
+    "@vululu/contracts": "workspace:*",
+    "@vululu/db": "workspace:*",
+    "bcryptjs": "3.0.3",
     "concurrently": "^9.2.0",
     "cross-env": "^10.1.0",
     "dotenv": "^17.0.0",
+    "eslint": "^10.13.0",
+    "globals": "^17.13.0",
     "prisma": "6.19.3",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",
-    "vitest": "^3.2.0",
-    "@vululu/db": "workspace:*",
-    "@vululu/contracts": "workspace:*",
-    "bcryptjs": "3.0.3"
+    "typescript-eslint": "^8.72.0",
+    "vitest": "^3.2.0"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

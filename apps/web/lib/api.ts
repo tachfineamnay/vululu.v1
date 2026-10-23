@@ -133,8 +133,29 @@ export type ProjectBundle = {
   job: ProductionJob | null;
 };
 
+function readCookie(name: string): string {
+  if (typeof document === 'undefined') {
+    return '';
+  }
+  const prefix = name + '=';
+  for (const part of document.cookie.split(';')) {
+    const value = part.trim();
+    if (value.startsWith(prefix)) {
+      return decodeURIComponent(value.slice(prefix.length));
+    }
+  }
+  return '';
+}
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = (init && init.method ? init.method : 'GET').toUpperCase();
   const headers: Record<string, string> = init && init.body ? { 'Content-Type': 'application/json' } : {};
+  if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+    const csrf = readCookie('vululu_csrf');
+    if (csrf) {
+      headers['x-csrf-token'] = csrf;
+    }
+  }
   const response = await fetch(path, {
     ...init,
     headers: { ...headers, ...(init && init.headers ? (init.headers as Record<string, string>) : {}) },

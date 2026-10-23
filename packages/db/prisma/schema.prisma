@@ -16,6 +16,8 @@ model User {
   createdAt    DateTime       @default(now())
   contexts     BrandContext[]
   projects     Project[]
+  sessions     Session[]
+  invitations  Invitation[] @relation("InvitationCreator")
 }
 
 model BrandContext {
@@ -32,6 +34,7 @@ model BrandContext {
   updatedAt      DateTime @updatedAt
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   projects       Project[]
+  revisions      ContextRevision[]
 
   @@index([userId])
 }
@@ -56,6 +59,7 @@ model Project {
   characters  Character[]
   artifacts   Artifact[]
   jobs        ProductionJob[]
+  jobRuns     JobRun[]
 
   @@index([userId])
   @@index([contextId])
@@ -145,6 +149,7 @@ model Character {
   description  String
   createdAt    DateTime @default(now())
   project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versions     CharacterVersion[]
 
   @@unique([projectId, characterKey])
 }
@@ -211,4 +216,118 @@ model ProductionJob {
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  userId     String
+  tokenHash  String   @unique
+  csrfHash   String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+  revokedAt  DateTime?
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Invitation {
+  id        String   @id @default(cuid())
+  email     String
+  role      String   @default("user")
+  tokenHash String   @unique
+  createdBy String
+  expiresAt DateTime
+  usedAt    DateTime?
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+  creator   User     @relation("InvitationCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+
+  @@index([email])
+  @@index([expiresAt])
+}
+
+model ContextRevision {
+  id        String       @id @default(cuid())
+  contextId String
+  version   Int
+  checksum  String
+  data      Json
+  createdAt DateTime     @default(now())
+  context   BrandContext @relation(fields: [contextId], references: [id], onDelete: Cascade)
+
+  @@unique([contextId, version])
+  @@index([contextId])
+}
+
+model CharacterVersion {
+  id          String    @id @default(cuid())
+  characterId String
+  version     Int
+  name        String
+  description String
+  checksum    String
+  createdAt   DateTime  @default(now())
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@unique([characterId, version])
+  @@index([characterId])
+}
+
+model JobRun {
+  id        String    @id @default(cuid())
+  projectId String
+  type      String
+  status    String    @default("queued")
+  snapshot  Json?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  steps     StepRun[]
+
+  @@index([projectId])
+}
+
+model StepRun {
+  id         String    @id @default(cuid())
+  jobRunId   String
+  name       String
+  status     String    @default("pending")
+  attempts   Int       @default(0)
+  error      String?
+  startedAt  DateTime?
+  finishedAt DateTime?
+  createdAt  DateTime  @default(now())
+  jobRun     JobRun    @relation(fields: [jobRunId], references: [id], onDelete: Cascade)
+
+  @@index([jobRunId])
+}
+
+model AuditEvent {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  targetType String
+  targetId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([actorId])
+}
+
+model CostEvent {
+  id          String   @id @default(cuid())
+  projectId   String?
+  jobRunId    String?
+  provider    String
+  model       String?
+  units       Int      @default(0)
+  amountCents Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  @@index([projectId])
+  @@index([createdAt])
 }

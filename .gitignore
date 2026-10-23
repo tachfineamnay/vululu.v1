@@ -70,6 +70,7 @@ Thumbs.db
 desktop.ini
 
 # V0 local runtime
+.v1/
 .v0/
 test-results/
 playwright-report/

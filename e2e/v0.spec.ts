@@ -134,9 +134,13 @@ test('verticale V0 complete', async ({ page }) => {
   expect(invalidatedMaster.approval.invalidatedAt).toBeTruthy();
 
   const transferAttempt = await page.evaluate(async (targetId: string) => {
+    const csrf = document.cookie
+      .split('; ')
+      .find((part) => part.startsWith('vululu_csrf='));
+    const token = csrf ? decodeURIComponent(csrf.slice('vululu_csrf='.length)) : '';
     const response = await fetch('/api/projects/' + targetId + '/transfer', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-csrf-token': token },
       body: '{}'
     });
     return { status: response.status, body: await response.json() };

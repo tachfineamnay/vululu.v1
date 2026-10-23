@@ -5,17 +5,20 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function main() {
-  const email = process.env.V0_DEMO_EMAIL || 'demo@vululu.local';
-  const password = process.env.V0_DEMO_PASSWORD || 'vululu-demo';
+  const email = process.env.V1_BOOTSTRAP_EMAIL;
+  const password = process.env.V1_BOOTSTRAP_PASSWORD;
+  if (!email || !password) {
+    throw new Error('V1_BOOTSTRAP_EMAIL et V1_BOOTSTRAP_PASSWORD sont obligatoires.');
+  }
   const passwordHash = await bcrypt.hash(password, 10);
 
   await prisma.user.upsert({
     where: { email },
-    update: { passwordHash, name: 'Demo Vululu' },
-    create: { email, passwordHash, name: 'Demo Vululu', role: 'user' }
+    update: { passwordHash, name: 'Bootstrap Super Admin', role: 'super_admin' },
+    create: { email, passwordHash, name: 'Bootstrap Super Admin', role: 'super_admin' }
   });
 
-  console.log('Seeded demo user: ' + email);
+  console.log('Seeded bootstrap super_admin: ' + email);
 }
 
 main()

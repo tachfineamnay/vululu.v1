@@ -1,13 +1,13 @@
 import './env';
-import crypto from 'node:crypto';
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
-import secureSession from '@fastify/secure-session';
 import { z } from 'zod';
-import { env } from './env';
+import { ApplicationError } from '@vululu/application';
+import { DomainError } from '@vululu/domain';
 import { HttpError } from './errors';
 import { registerAuth } from './auth';
 import { authRoutes } from './routes/auth';
+import { adminRoutes } from './routes/admin';
 import { contextRoutes } from './routes/contexts';
 import { projectRoutes } from './routes/projects';
 import { productionRoutes } from './routes/production';
@@ -16,17 +16,6 @@ export async function buildServer() {
   const app = Fastify({ logger: false, bodyLimit: 8 * 1024 * 1024 });
 
   await app.register(cookie);
-  const sessionKey = crypto.createHash('sha256').update(env.sessionSecret).digest();
-  await app.register(secureSession, {
-    key: sessionKey,
-    cookie: {
-      path: '/',
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.APP_ENV === 'production'
-    },
-    expiry: 86400
-  });
 
   app.addContentTypeParser('application/json', { parseAs: 'string' }, (request, body, done) => {
     const text = body.toString();
@@ -50,6 +39,12 @@ export async function buildServer() {
     if (error instanceof HttpError) {
       return reply.code(error.statusCode).send({ error: error.code, message: error.message });
     }
+    if (error instanceof ApplicationError) {
+      return reply.code(error.statusCode).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof DomainError) {
+      return reply.code(400).send({ error: 'domain_validation', message: error.message });
+    }
     if (error instanceof z.ZodError) {
       return reply.code(400).send({
         error: 'validation_error',
@@ -70,12 +65,13 @@ export async function buildServer() {
   });
 
   await app.register(authRoutes);
+  await app.register(adminRoutes);
   await app.register(contextRoutes);
   await app.register(projectRoutes);
   await app.register(productionRoutes);
 
   app.get('/api/health', async () => {
-    return { status: 'ok', service: 'vululu-api', version: 'v0' };
+    return { status: 'ok', service: 'vululu-api', version: 'v1' };
   });
 
   return app;

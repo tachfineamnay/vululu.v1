@@ -1,7 +1,7 @@
 import { execSync } from 'node:child_process';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-const testDbUrl = 'postgresql://vululu@127.0.0.1:55432/vululu_v0_test?schema=public';
+const testDbUrl = 'postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public';
 process.env.V0_TEST_DB = '1';
 process.env.DATABASE_URL_TEST = testDbUrl;
 process.env.DATABASE_URL = testDbUrl;
@@ -12,7 +12,9 @@ let bcrypt: any;
 let email = '';
 let password = 'vululu-test-password';
 let cookie = '';
+let csrfToken = '';
 let secondCookie = '';
+let secondCsrfToken = '';
 let contextId = '';
 let projectId = '';
 
@@ -23,9 +25,27 @@ async function login(emailValue: string, passwordValue: string) {
     payload: { email: emailValue, password: passwordValue }
   });
   const raw = response.headers['set-cookie'];
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  const cookiePair = value ? value.split(';')[0] : '';
-  return { status: response.statusCode, cookie: cookiePair };
+  const headers = raw ? (Array.isArray(raw) ? raw : [raw]) : [];
+  const sessionCookie = headers
+    .map((value: string) => value.split(';')[0])
+    .find((value: string) => value.startsWith('session=')) || '';
+  const csrfCookie = headers
+    .map((value: string) => value.split(';')[0])
+    .find((value: string) => value.startsWith('vululu_csrf=')) || '';
+  const body = response.statusCode === 200 ? response.json() : {};
+  return {
+    status: response.statusCode,
+    cookie: sessionCookie + (csrfCookie ? '; ' + csrfCookie : ''),
+    csrfToken: typeof body.csrfToken === 'string' ? body.csrfToken : ''
+  };
+}
+
+function authHeaders(
+  sessionCookie: string = cookie,
+  token: string = csrfToken,
+  extra: Record<string, string> = {}
+): Record<string, string> {
+  return { cookie: sessionCookie, 'x-csrf-token': token, ...extra };
 }
 
 describe('API V0', () => {
@@ -73,11 +93,12 @@ describe('API V0', () => {
     expect(result.status).toBe(200);
     expect(result.cookie).toContain('session=');
     cookie = result.cookie;
+    csrfToken = result.csrfToken;
 
     const contextResponse = await app.inject({
       method: 'POST',
       url: '/api/contexts',
-      headers: { cookie },
+      headers: authHeaders(),
       payload: {
         name: 'Contexte API',
         website: 'https://example.com',
@@ -97,7 +118,7 @@ describe('API V0', () => {
     const projectResponse = await app.inject({
       method: 'POST',
       url: '/api/projects',
-      headers: { cookie },
+      headers: authHeaders(),
       payload: {
         contextId,
         title: 'Projet API',
@@ -112,7 +133,7 @@ describe('API V0', () => {
     const briefResponse = await app.inject({
       method: 'PATCH',
       url: '/api/projects/' + projectId + '/brief',
-      headers: { cookie },
+      headers: authHeaders(),
       payload: {
         objective: 'Tester la verticale API',
         audience: 'Createurs',
@@ -128,7 +149,7 @@ describe('API V0', () => {
     const briefV2Response = await app.inject({
       method: 'PATCH',
       url: '/api/projects/' + projectId + '/brief',
-      headers: { cookie },
+      headers: authHeaders(),
       payload: {
         objective: 'Tester la verticale API v2',
         audience: 'Createurs avances',
@@ -144,7 +165,7 @@ describe('API V0', () => {
     const storyboardResponse = await app.inject({
       method: 'POST',
       url: '/api/projects/' + projectId + '/storyboard',
-      headers: { cookie },
+      headers: authHeaders(),
       payload: {}
     });
     expect(storyboardResponse.statusCode).toBe(200);
@@ -171,7 +192,7 @@ describe('API V0', () => {
     const projectResponse = await app.inject({
       method: 'POST',
       url: '/api/projects',
-      headers: { cookie },
+      headers: authHeaders(),
       payload: {
         contextId,
         title: 'Projet durees',
@@ -187,7 +208,7 @@ describe('API V0', () => {
     const briefResponse = await app.inject({
       method: 'PATCH',
       url: '/api/projects/' + durationProjectId + '/brief',
-      headers: { cookie },
+      headers: authHeaders(),
       payload: {
         objective: 'Tester les durees',
         audience: 'Createurs',
@@ -202,7 +223,7 @@ describe('API V0', () => {
     const storyboardResponse = await app.inject({
       method: 'POST',
       url: '/api/projects/' + durationProjectId + '/storyboard',
-      headers: { cookie },
+      headers: authHeaders(),
       payload: {}
     });
     expect(storyboardResponse.statusCode).toBe(200);
@@ -213,7 +234,7 @@ describe('API V0', () => {
     const updateResponse = await app.inject({
       method: 'PATCH',
       url: '/api/projects/' + durationProjectId + '/scenes/SCENE-003',
-      headers: { cookie },
+      headers: authHeaders(),
       payload: { durationSeconds: 2 }
     });
     expect(updateResponse.statusCode).toBe(200);
@@ -234,7 +255,7 @@ describe('API V0', () => {
     const approvalResponse = await app.inject({
       method: 'POST',
       url: '/api/projects/' + projectId + '/approve',
-      headers: { cookie },
+      headers: authHeaders(),
       payload: { artifactVersionId: 'missing', checksum: '0123456789abcdef' }
     });
     expect(approvalResponse.statusCode).toBe(400);
@@ -242,7 +263,7 @@ describe('API V0', () => {
     const transferResponse = await app.inject({
       method: 'POST',
       url: '/api/projects/' + projectId + '/transfer',
-      headers: { cookie },
+      headers: authHeaders(),
       payload: {}
     });
     expect(transferResponse.statusCode).toBe(400);
@@ -254,7 +275,7 @@ describe('API V0', () => {
     const logoutResponse = await app.inject({
       method: 'POST',
       url: '/api/auth/logout',
-      headers: { cookie: result.cookie }
+      headers: authHeaders(result.cookie, result.csrfToken)
     });
     expect(logoutResponse.statusCode).toBe(200);
     const rawCleared = logoutResponse.headers['set-cookie'];
@@ -274,7 +295,7 @@ describe('API V0', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/api/auth/logout',
-      headers: { cookie: result.cookie, 'content-type': 'application/json' }
+      headers: authHeaders(result.cookie, result.csrfToken, { 'content-type': 'application/json' })
     });
     expect(response.statusCode).toBe(200);
   });
@@ -283,7 +304,7 @@ describe('API V0', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/api/projects',
-      headers: { cookie, 'content-type': 'application/json' },
+      headers: authHeaders(cookie, csrfToken, { 'content-type': 'application/json' }),
       payload: '{not-json'
     });
     expect(response.statusCode).toBe(400);
@@ -299,6 +320,7 @@ describe('API V0', () => {
     const secondLogin = await login(secondEmail, password);
     expect(secondLogin.status).toBe(200);
     secondCookie = secondLogin.cookie;
+    secondCsrfToken = secondLogin.csrfToken;
 
     const forbiddenResponse = await app.inject({
       method: 'GET',

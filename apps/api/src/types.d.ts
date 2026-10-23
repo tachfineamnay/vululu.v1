@@ -10,10 +10,4 @@ declare module 'fastify' {
   }
 }
 
-declare module '@fastify/secure-session' {
-  interface SessionData {
-    userId: string;
-  }
-}
-
 export {};

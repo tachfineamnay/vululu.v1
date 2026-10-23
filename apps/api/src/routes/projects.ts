@@ -5,25 +5,24 @@ import {
   projectInputSchema,
   sceneDurationInputSchema
 } from '@vululu/contracts';
+import { actorOf, projects } from '../application/container';
 import {
   addMessage,
-  createProject,
   generateStoryboard,
   getProjectBundle,
-  listProjects,
   updateBrief,
   updateSceneDuration
 } from '../services/projects';
 
 export async function projectRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/projects', { preHandler: [app.authenticate] }, async (request) => {
-    const items = await listProjects(request.currentUser!.id);
+    const items = await projects.list(actorOf(request.currentUser));
     return { items };
   });
 
   app.post('/api/projects', { preHandler: [app.authenticate] }, async (request, reply) => {
     const input = projectInputSchema.parse(request.body);
-    const project = await createProject(request.currentUser!.id, input);
+    const project = await projects.create(actorOf(request.currentUser), input);
     return reply.code(201).send({ project });
   });
 
