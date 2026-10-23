@@ -118,12 +118,26 @@ $required = @(
     'docs/execution/V1_01_A_RISKS_VERDICT.md',
     'docs/adr/0006-application-layer-et-snapshots-versionnes.md',
     'docs/adr/0007-consolidation-applicative-et-suppression-legacy.md',
+    'docs/adr/0008-agentic-capabilities-registre-et-routeur.md',
     'docs/execution/V1_01_A1_ARCHITECTURE.md',
     'docs/execution/V1_01_A1_TRANSACTIONS_CONCURRENCY.md',
     'docs/execution/V1_01_A1_ARTIFACT_COHERENCE.md',
     'docs/execution/V1_01_A1_TEST_EVIDENCE.md',
     'docs/execution/V1_01_A1_RISKS_VERDICT.md',
-    'scripts/audit-artifacts.ps1'
+    'scripts/audit-artifacts.ps1',
+    'packages/domain/src/agents.ts',
+    'packages/domain/src/capabilities.ts',
+    'packages/application/src/use-cases/agents.ts',
+    'packages/application/src/use-cases/provider-catalog.ts',
+    'packages/application/src/use-cases/routing.ts',
+    'apps/api/src/infrastructure/prisma/agentRepository.ts',
+    'apps/api/src/infrastructure/prisma/providerCatalogRepository.ts',
+    'apps/api/src/routes/adminAgents.ts',
+    'packages/db/prisma/migrations/20261023183000_v1_01_b_agentic_capabilities/migration.sql',
+    'tests/domain/agentic.test.ts',
+    'tests/v1/v1-01-b-agentic.test.ts',
+    'docs/execution/V1_01_B_AGENTIC_CAPABILITIES.md',
+    'docs/execution/V1_01_B_TEST_EVIDENCE.md'
 )
 foreach ($relative in $required) {
     if (-not (Test-Path -LiteralPath (Join-Path $rootPath $relative))) {
