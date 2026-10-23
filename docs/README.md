@@ -49,7 +49,7 @@ Le corpus reçu ne contient pas les documents suivants, pourtant cités par les 
 | Référence | Cité par | Traitement |
 |---|---|---|
 | docs/04_DECISIONS_ADR.md | PROMPT_DEEPSEEK_HARNESS.md | Remplacé opérationnellement par docs/adr/ ; écart documenté dans le rapport |
-| docs/10_ACCEPTANCE_TESTS.md | 02_CAHIER_DES_CHARGES_V1.md section E | À produire en P0-0 (livrable D6) |
+| docs/10_ACCEPTANCE_TESTS.md | 02_CAHIER_DES_CHARGES_V1.md section E | Produit en Mission 01 ; catalogue SPECIFIED et NOT_RUN, non exécuté |
 | Contrats API / agents / modèles | Prompt maître, CDC section G | Inventaire et conventions à produire en P0-0/P0-A |
 | Spécification MCP autonome | Mission, architecture section MCP | Section architecture seulement ; spécification à produire en P0-E |
 
@@ -64,6 +64,7 @@ Aucun de ces documents n'a été inventé. Les lacunes sont tracées dans le [ra
 | backlog/ROADMAP_V1.md | Feuille de route priorisée et matrice de traçabilité |
 | backlog/P0_0_AUDIT_FONDATIONS.md | Proposition du premier lot technique |
 | v2/README.md | Garde-fou V2 et points d'extension |
+| reviews/ | Audit V0, preuves de tests, gaps V1 et baseline d'implémentation |
 
 ## 7. Vérification
 

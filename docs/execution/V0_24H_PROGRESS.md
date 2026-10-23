@@ -8,6 +8,7 @@
 - **Commit de correction V0.1** : 3a6d54f
 - **Statut** : V0.1 COMPLETE sur les 12 critères P0 et la correction critique des durées, avec composants MOCK explicites
 - **Recette indépendante** : Agent E (qa-verifier), PASS 9 contrôles, aucun FAIL produit ; réserve de sélection verify-v0 corrigée par le paramètre -ProjectId
+- **Audit V1-01** : corrections de92e24 et 5d2042a ; verdict V0 PASS fonctionnel, V1 NO-GO direct avec GO conditionnel V1-00 ; voir docs/reviews/V0_FINAL_AUDIT.md
 - **Avertissement** : cette accélération V0.1 ne vaut pas validation des gates de production V1.
 
 ## 1. Fonctionnalités réalisées
@@ -195,3 +196,12 @@ V0.1 COMPLETE pour le périmètre expérimental des 12 critères P0 et de la cor
 2. Décision de conserver, corriger ou promouvoir cette V0.1.
 3. Ne pas fusionner dans main ni pousser sans autorisation.
 4. Reprendre le plan de fondations V1 pour les gates restants.
+
+## 11. Audit V1-01 et corrections
+
+- Audit du 2026-10-23 : lecture du corpus, tests réels, FFprobe, checksums, IDOR, redémarrage, scan de secrets.
+- Verdict V0 : PASS fonctionnel après corrections ; la V0 reste un prototype, pas un socle V1.
+- Corrections : de92e24 (durcissement, BriefRevision, QA réelle, sessions, erreurs) et 5d2042a (invariants IDs scène/personnage).
+- Tests finaux : 11 tests Vitest PASS, E2E 1/1 PASS, verify-v0 24 contrôles PASS, build PASS, scan secrets PASS.
+- Livrables : docs/reviews/V0_FINAL_AUDIT.md, V0_TEST_EVIDENCE.md, V1_TECHNICAL_GAPS.md, V1_IMPLEMENTATION_BASELINE.md.
+- Décision V1 : NO-GO pour une extension directe du code V0 ; GO conditionnel uniquement pour le lot V1-00 de fondation.

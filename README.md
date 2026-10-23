@@ -4,8 +4,8 @@
 
 Vululu AI crée, orchestre et livre des contenus professionnels pour TikTok, Instagram et LinkedIn : contextes de marque structurés, briefs versionnés, agents spécialisés, production média multi-fournisseurs, contrôle qualité, validation humaine et transfert vers Postiz.
 
-> **Statut — Mission 00 (2026-10-21) : inauguration documentaire.**
-> Ce dépôt contient le corpus fondateur, les décisions d'architecture et la feuille de route V1. Aucune application exécutable n'est encore livrée et aucun développement métier n'a été réalisé.
+> **Statut — 2026-10-23 : corpus fondateur + prototype V0 audité.**
+> Le corpus V1.2 et les ADR restent la référence. Un prototype fullstack V0 existe sur la branche v0-fullstack-sprint, non mergée dans main. Il couvre le parcours contexte, brief, storyboard, PNG/MP4, correction ciblée, QA, approbation exacte et Postiz mock. Ce prototype est une référence fonctionnelle, pas le socle V1. L'audit est dans [docs/reviews/V0_FINAL_AUDIT.md](docs/reviews/V0_FINAL_AUDIT.md) ; la V1 ne doit démarrer que par le lot de fondation décrit dans [V1_IMPLEMENTATION_BASELINE.md](docs/reviews/V1_IMPLEMENTATION_BASELINE.md).
 
 ## Le problème
 
@@ -34,7 +34,9 @@ Mémoire sémantique persistante et Memory Bank, apprentissage des préférences
 | Étape | Contenu | Statut |
 |---|---|---|
 | Mission 00 | Inauguration documentaire, structure, ADR, roadmap | Livrée |
-| P0-0 | Audit technique, stack, environnement, POC Hatchet | Proposé, non démarré |
+| V0 prototype | Parcours local contexte → brief → storyboard → média → QA → approbation → Postiz mock | Livré sur v0-fullstack-sprint, non mergé |
+| V1-01 | Audit V0, corrections, gaps et baseline V1 | Livré dans docs/reviews |
+| P0-0 | Audit technique, stack, environnement, POC Hatchet | Non clôturé |
 | P0-A à P0-F | Verticale V1 complète | Non démarrés |
 
 ## Documentation fondatrice
@@ -87,12 +89,15 @@ Mémoire sémantique persistante et Memory Bank, apprentissage des préférences
 
 ## Démarrage
 
-Aucune application n'est exécutable à ce stade. Pour contribuer à la documentation ou préparer P0-0 :
+Le corpus reste la référence. Le prototype V0 se lance localement via [docs/execution/V0_RUNBOOK.md](docs/execution/V0_RUNBOOK.md), avec PostgreSQL et FFmpeg locaux. Il ne doit pas être déployé ni présenté comme une validation V1.
+
+Pour contribuer ou préparer la V1 :
 
 1. Lire [AGENTS.md](AGENTS.md) puis [docs/README.md](docs/README.md).
 2. Lire le corpus fondateur dans l'ordre indiqué.
-3. Vérifier l'intégrité documentaire avec le script de validation.
-4. Proposer toute décision nouvelle via un ADR, jamais par modification silencieuse d'une spécification.
+3. Lire l'audit et la baseline V1 dans [docs/reviews](docs/reviews).
+4. Vérifier l'intégrité documentaire et l'absence de secrets.
+5. Proposer toute décision nouvelle via un ADR, jamais par modification silencieuse d'une spécification.
 
 Outillage constaté sur le poste de référence : Git 2.48, Node 24, pnpm 10, Python 3.11, Docker 29. Le choix de stack reste une décision ouverte, à trancher en P0-0.
 

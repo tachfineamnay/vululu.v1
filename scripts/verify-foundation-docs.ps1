@@ -81,7 +81,11 @@ $required = @(
     'tests/media.test.ts',
     'scripts/verify-v0.ps1',
     'docs/execution/V0_24H_PROGRESS.md',
-    'docs/execution/V0_RUNBOOK.md'
+    'docs/execution/V0_RUNBOOK.md',
+    'docs/reviews/V0_FINAL_AUDIT.md',
+    'docs/reviews/V0_TEST_EVIDENCE.md',
+    'docs/reviews/V1_TECHNICAL_GAPS.md',
+    'docs/reviews/V1_IMPLEMENTATION_BASELINE.md'
 )
 foreach ($relative in $required) {
     if (-not (Test-Path -LiteralPath (Join-Path $rootPath $relative))) {
