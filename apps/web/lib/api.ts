@@ -23,6 +23,7 @@ export type ProjectSummary = {
   platform: string;
   format: string;
   objective: string;
+  sceneDurationSeconds: number;
   context?: BrandContext;
   updatedAt: string;
 };
@@ -41,6 +42,7 @@ export type Scene = {
   position: number;
   title: string;
   description: string;
+  durationSeconds: number;
   characterKey: string | null;
   versions: SceneVersion[];
 };
@@ -55,6 +57,7 @@ export type Message = {
 export type Approval = {
   id: string;
   checksum: string;
+  invalidatedAt?: string | null;
   createdAt: string;
   transfer?: Transfer | null;
 };
@@ -94,6 +97,7 @@ export type ProjectBundle = {
     platform: string;
     format: string;
     objective: string;
+    sceneDurationSeconds: number;
     contextId: string;
     createdAt: string;
     updatedAt: string;

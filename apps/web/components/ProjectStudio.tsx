@@ -143,6 +143,12 @@ export default function ProjectStudio({ id }: { id: string }) {
     }));
   }
 
+  async function updateDuration(sceneKey: string, durationSeconds: number) {
+    await runAction('duration', () => patchJson('/api/projects/' + id + '/scenes/' + sceneKey, {
+      durationSeconds
+    }));
+  }
+
   async function approveMaster() {
     if (!bundle || !bundle.master) {
       return;
@@ -187,7 +193,10 @@ export default function ProjectStudio({ id }: { id: string }) {
   const canProduce = bundle.scenes.length === 5 && !busy;
   const job = bundle.job;
   const checks = qaChecks(master);
-  const transferRecord = master && master.approval ? master.approval.transfer : null;
+  const approval = master ? master.approval : null;
+  const approvalValid = Boolean(approval && !approval.invalidatedAt);
+  const transferRecord = approval && !approval.invalidatedAt ? approval.transfer : null;
+  const totalDurationSeconds = bundle.scenes.reduce((sum, scene) => sum + scene.durationSeconds, 0);
 
   return (
     <div className="shell">
@@ -300,6 +309,19 @@ export default function ProjectStudio({ id }: { id: string }) {
                       <span className="scene-key">{scene.sceneKey}</span>
                       <strong>{scene.title}</strong>
                       <p className="muted small">{scene.description}</p>
+                      <label className="label duration-label">Duree
+                        <select
+                          className="input duration-select"
+                          data-testid={'duration-' + scene.sceneKey}
+                          value={scene.durationSeconds}
+                          onChange={(event) => updateDuration(scene.sceneKey, Number(event.target.value))}
+                          disabled={busy !== '' || bundle.project.status === 'producing'}
+                        >
+                          <option value={2}>2 s</option>
+                          <option value={5}>5 s</option>
+                          <option value={10}>10 s</option>
+                        </select>
+                      </label>
                       {latest ? <span className="pill">v{latest.version} / {shortChecksum(latest.checksum)}</span> : null}
                     </div>
                   </article>
@@ -311,6 +333,7 @@ export default function ProjectStudio({ id }: { id: string }) {
             <button className="btn btn-primary" data-testid="produce" onClick={produce} disabled={!canProduce || busy === 'produce'}>
               Produire les 5 scenes
             </button>
+            <span className="pill" data-testid="duration-summary">{bundle.scenes.length} scenes / {totalDurationSeconds} s</span>
             {job ? (
               <span className="muted small" data-testid="job-status">
                 {job.status} / {job.step} / {job.progress}%
@@ -381,14 +404,19 @@ export default function ProjectStudio({ id }: { id: string }) {
               ))}
             </div>
             <div className="actions">
-              {master.approval ? (
-                <span className="pill" data-testid="approval-status">Master approuve / {shortChecksum(master.approval.checksum)}</span>
+              {approvalValid && approval ? (
+                <span className="pill" data-testid="approval-status">Master approuve / {shortChecksum(approval.checksum)}</span>
               ) : (
-                <button className="btn btn-primary" data-testid="approve" onClick={approveMaster} disabled={busy === 'approve'}>
-                  Valider le master v{master.version}
-                </button>
+                <>
+                  {approval && approval.invalidatedAt ? (
+                    <span className="pill" data-testid="approval-invalidated">Approbation invalidee</span>
+                  ) : null}
+                  <button className="btn btn-primary" data-testid="approve" onClick={approveMaster} disabled={busy === 'approve'}>
+                    Valider le master v{master.version}
+                  </button>
+                </>
               )}
-              {master.approval && !transferRecord ? (
+              {approvalValid && !transferRecord ? (
                 <button className="btn btn-secondary" data-testid="transfer" onClick={transferMaster} disabled={busy === 'transfer'}>
                   Transferer vers Postiz (mock)
                 </button>
@@ -414,7 +442,11 @@ export default function ProjectStudio({ id }: { id: string }) {
                 <div className="list-row" key={version.id}>
                   <strong>Version {version.version}</strong>
                   <span className="muted small">{version.qaStatus || 'QA inconnue'} / {shortChecksum(version.checksum)}</span>
-                  {version.approval ? <span className="pill">Approuvee</span> : <span className="pill">Non approuvee</span>}
+                  {version.approval ? (
+                    version.approval.invalidatedAt
+                      ? <span className="pill">Approbation invalidee</span>
+                      : <span className="pill">Approuvee</span>
+                  ) : <span className="pill">Non approuvee</span>}
                 </div>
               ))}
             </div>

@@ -33,21 +33,39 @@ describe('Media V0', () => {
       outputs.push(output);
     }
 
-    const master = await assembleMaster({
+    const masterSpeed = await assembleMaster({
       projectId,
       artifactRoot: root,
       version: 1,
-      scenePaths: outputs.map((output) => output.absolutePath)
+      scenePaths: outputs.map((output) => output.absolutePath),
+      sceneDurationsSeconds: outputs.map(() => 2)
     });
 
-    expect(master.videoCodec).toBe('h264');
-    expect(master.audioCodec).toBe('aac');
-    expect(master.width).toBe(1080);
-    expect(master.height).toBe(1920);
-    expect(master.duration).toBeGreaterThanOrEqual(8);
+    expect(masterSpeed.videoCodec).toBe('h264');
+    expect(masterSpeed.audioCodec).toBe('aac');
+    expect(masterSpeed.width).toBe(1080);
+    expect(masterSpeed.height).toBe(1920);
+    expect(masterSpeed.expectedDurationSeconds).toBe(10);
+    expect(masterSpeed.duration).toBeGreaterThanOrEqual(9);
 
-    const qa = await runQa(outputs, master);
-    expect(qa.status).toBe('PASS');
-    expect(qa.checks.length).toBeGreaterThanOrEqual(9);
+    const qaSpeed = await runQa(outputs, masterSpeed);
+    expect(qaSpeed.status).toBe('PASS');
+    expect(qaSpeed.checks.length).toBeGreaterThanOrEqual(9);
+
+    const masterTarget = await assembleMaster({
+      projectId,
+      artifactRoot: root,
+      version: 2,
+      scenePaths: outputs.map((output) => output.absolutePath),
+      sceneDurationsSeconds: outputs.map(() => 10)
+    });
+
+    expect(masterTarget.expectedDurationSeconds).toBe(50);
+    expect(masterTarget.duration).toBeGreaterThanOrEqual(49);
+    expect(masterTarget.videoCodec).toBe('h264');
+    expect(masterTarget.audioCodec).toBe('aac');
+
+    const qaTarget = await runQa(outputs, masterTarget);
+    expect(qaTarget.status).toBe('PASS');
   });
 });

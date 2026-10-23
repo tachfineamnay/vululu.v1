@@ -101,7 +101,15 @@ if (Test-Path -LiteralPath $ffmpeg) {
     Check 'mp4 1080x1920' ($probe -match '1080x1920') 'parsed from ffmpeg'
     Check 'mp4 h264' ($probe -match 'h264') 'parsed from ffmpeg'
     Check 'mp4 aac' ($probe -match 'aac') 'parsed from ffmpeg'
-    Check 'mp4 10s' ($probe -match 'Duration: 00:00:10') 'parsed from ffmpeg'
+    $expectedDurationSeconds = ($bundle.scenes | Measure-Object -Property durationSeconds -Sum).Sum
+    Check 'scene durations configured' ($expectedDurationSeconds -gt 0) ('total attendu=' + $expectedDurationSeconds + 's')
+    $durationMatch = [regex]::Match($probe, 'Duration: ([0-9]+):([0-9]+):([0-9]+)[.]([0-9]+)')
+    $actualDuration = 0
+    if ($durationMatch.Success) {
+        $actualDuration = [double]$durationMatch.Groups[1].Value * 3600 + [double]$durationMatch.Groups[2].Value * 60 + [double]$durationMatch.Groups[3].Value + [double]('0.' + $durationMatch.Groups[4].Value)
+    }
+    $durationOk = [math]::Abs($actualDuration - $expectedDurationSeconds) -le 0.75
+    Check 'mp4 duration' $durationOk ($actualDuration.ToString('0.00') + 's / attendu ' + $expectedDurationSeconds + 's')
 } else {
     Check 'ffmpeg available' $false 'ffmpeg path introuvable'
 }

@@ -55,6 +55,7 @@ test('verticale V0 complete', async ({ page }) => {
   await page.locator('[data-testid=project-title]').fill(projectTitle);
   await page.locator('[data-testid=project-platform]').selectOption('Instagram');
   await page.locator('[data-testid=project-format]').selectOption('Video');
+  await page.locator('[data-testid=project-scene-duration]').selectOption('2');
   await page.locator('[data-testid=project-objective]').fill('Faire connaitre la nouvelle offre et donner envie de decouvrir la marque.');
   await page.locator('[data-testid=project-submit]').click();
   await page.waitForURL((url) => url.pathname.startsWith('/projects/') && !url.pathname.endsWith('/new'), { timeout: 30000 });
@@ -73,6 +74,7 @@ test('verticale V0 complete', async ({ page }) => {
   await page.locator('[data-testid=storyboard-generate]').click();
   await expect(page.locator('[data-testid=scene-SCENE-001]')).toBeVisible();
   await expect(page.locator('[data-testid=scene-SCENE-005]')).toBeVisible();
+  await expect(page.locator('[data-testid=duration-summary]')).toHaveText('5 scenes / 10 s');
 
   await page.locator('[data-testid=produce]').click();
   await expect(page.locator('[data-testid=status-badge]')).toHaveText('Aperçu pret', { timeout: 240000 });
@@ -92,7 +94,11 @@ test('verticale V0 complete', async ({ page }) => {
     const video = element as HTMLVideoElement;
     return video.duration;
   });
-  expect(videoDuration).toBeGreaterThan(0);
+  expect(videoDuration).toBeGreaterThanOrEqual(9);
+  expect(videoDuration).toBeLessThanOrEqual(11);
+
+  await page.locator('[data-testid=approve]').click();
+  await expect(page.locator('[data-testid=approval-status]')).toBeVisible();
 
   await page.locator('[data-testid=correct-input]').fill('Rends le produit plus visible et garde le personnage.');
   await page.locator('[data-testid=correct-submit]').click();
@@ -113,6 +119,22 @@ test('verticale V0 complete', async ({ page }) => {
   expect(checksumsAfter['SCENE-002']).toBe(checksumsBefore['SCENE-002']);
   expect(checksumsAfter['SCENE-004']).toBe(checksumsBefore['SCENE-004']);
   expect(checksumsAfter['SCENE-005']).toBe(checksumsBefore['SCENE-005']);
+
+  expect(after.master.approval).toBeNull();
+  const invalidatedMaster = after.masterVersions.find((version: any) => version.version === 1);
+  expect(invalidatedMaster.approval).toBeTruthy();
+  expect(invalidatedMaster.approval.invalidatedAt).toBeTruthy();
+
+  const transferAttempt = await page.evaluate(async (targetId: string) => {
+    const response = await fetch('/api/projects/' + targetId + '/transfer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}'
+    });
+    return { status: response.status, body: await response.json() };
+  }, projectId);
+  expect(transferAttempt.status).toBe(400);
+  expect(transferAttempt.body.message).toContain('approuve');
 
   await page.locator('[data-testid=approve]').click();
   await expect(page.locator('[data-testid=approval-status]')).toBeVisible();

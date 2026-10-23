@@ -33,6 +33,7 @@ export type MasterInput = {
   artifactRoot: string;
   version: number;
   scenePaths: string[];
+  sceneDurationsSeconds: number[];
 };
 
 export type MasterOutput = {
@@ -40,6 +41,7 @@ export type MasterOutput = {
   absolutePath: string;
   checksum: string;
   duration: number;
+  expectedDurationSeconds: number;
   videoCodec: string;
   audioCodec: string;
   width: number;
@@ -238,6 +240,13 @@ async function probe(file: string): Promise<{ duration: number; videoCodec: stri
 }
 
 export async function assembleMaster(input: MasterInput): Promise<MasterOutput> {
+  if (input.scenePaths.length === 0) {
+    throw new Error('Au moins une scene est requise pour le master.');
+  }
+  if (input.scenePaths.length !== input.sceneDurationsSeconds.length) {
+    throw new Error('Chaque scene doit avoir une duree.');
+  }
+  const expectedDurationSeconds = input.sceneDurationsSeconds.reduce((sum, value) => sum + value, 0);
   const masterDir = path.join(input.artifactRoot, input.projectId, 'master');
   const frameDir = path.join(masterDir, 'v' + input.version + '-frames');
   await fsp.mkdir(frameDir, { recursive: true });
@@ -245,11 +254,20 @@ export async function assembleMaster(input: MasterInput): Promise<MasterOutput> 
     const target = path.join(frameDir, 'frame-' + (index + 1) + '.png');
     await fsp.copyFile(input.scenePaths[index], target);
   }
+  const concatLines: string[] = [];
+  for (let index = 0; index < input.scenePaths.length; index += 1) {
+    const frame = path.join(frameDir, 'frame-' + (index + 1) + '.png');
+    concatLines.push("file '" + toPosix(frame) + "'");
+    concatLines.push('duration ' + input.sceneDurationsSeconds[index]);
+  }
+  const concatPath = path.join(frameDir, 'concat.txt');
+  await fsp.writeFile(concatPath, concatLines.join(String.fromCharCode(10)) + String.fromCharCode(10), 'utf8');
   const file = path.join(masterDir, 'v' + input.version + '.mp4');
   await run(findFfmpeg(), [
     '-y',
-    '-framerate', '1/2',
-    '-i', path.join(frameDir, 'frame-%d.png'),
+    '-f', 'concat',
+    '-safe', '0',
+    '-i', concatPath,
     '-f', 'lavfi',
     '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
     '-c:v', 'libx264',
@@ -266,6 +284,7 @@ export async function assembleMaster(input: MasterInput): Promise<MasterOutput> 
     absolutePath: file,
     checksum: sha256File(file),
     duration: meta.duration,
+    expectedDurationSeconds,
     videoCodec: meta.videoCodec,
     audioCodec: meta.audioCodec,
     width: meta.width,
@@ -290,8 +309,8 @@ export async function runQa(scenes: SceneRenderOutput[], master: MasterOutput): 
   });
   checks.push({
     name: 'master duration',
-    status: master.duration >= 8 && master.duration <= 20 ? 'PASS' : 'FAIL',
-    detail: master.duration.toFixed(2) + 's'
+    status: Math.abs(master.duration - master.expectedDurationSeconds) <= 0.75 ? 'PASS' : 'FAIL',
+    detail: master.duration.toFixed(2) + 's / attendu ' + master.expectedDurationSeconds + 's'
   });
   checks.push({
     name: 'master video codec',

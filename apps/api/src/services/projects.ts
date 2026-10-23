@@ -38,7 +38,8 @@ export async function createProject(userId: string, input: ProjectInput) {
       title: input.title,
       platform: input.platform,
       format: input.format,
-      objective: input.objective
+      objective: input.objective,
+      sceneDurationSeconds: input.sceneDurationSeconds
     }
   });
 }
@@ -110,6 +111,7 @@ export async function getProjectBundle(userId: string, projectId: string) {
       platform: project.platform,
       format: project.format,
       objective: project.objective,
+      sceneDurationSeconds: project.sceneDurationSeconds,
       contextId: project.contextId,
       createdAt: project.createdAt,
       updatedAt: project.updatedAt
@@ -182,6 +184,7 @@ export async function generateStoryboard(userId: string, projectId: string) {
         position: index + 1,
         title: template.title,
         description: template.description,
+        durationSeconds: project.sceneDurationSeconds,
         characterKey: 'CHAR-001'
       },
       create: {
@@ -190,6 +193,7 @@ export async function generateStoryboard(userId: string, projectId: string) {
         position: index + 1,
         title: template.title,
         description: template.description,
+        durationSeconds: project.sceneDurationSeconds,
         characterKey: 'CHAR-001'
       }
     });
@@ -198,6 +202,25 @@ export async function generateStoryboard(userId: string, projectId: string) {
   await prisma.project.update({ where: { id: projectId }, data: { status: 'storyboard_ready' } });
 
   return getProjectBundle(userId, projectId);
+}
+
+export async function updateSceneDuration(
+  userId: string,
+  projectId: string,
+  sceneKey: string,
+  durationSeconds: number
+) {
+  await assertProject(userId, projectId);
+  const scene = await prisma.scene.findUnique({
+    where: { projectId_sceneKey: { projectId, sceneKey } }
+  });
+  if (!scene) {
+    throw new HttpError(404, 'scene_not_found', 'Scene introuvable: ' + sceneKey);
+  }
+  return prisma.scene.update({
+    where: { id: scene.id },
+    data: { durationSeconds }
+  });
 }
 
 function buildVululuReply(bundle: Awaited<ReturnType<typeof getProjectBundle>>): string {

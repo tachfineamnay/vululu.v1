@@ -18,12 +18,15 @@ export const contextInputSchema = z.object({
   colorSecondary: z.string().optional().default('#00D2FF')
 });
 
+export const sceneDurationSchema = z.number().int().min(1).max(15);
+
 export const projectInputSchema = z.object({
   contextId: z.string().min(1),
   title: z.string().min(2),
   platform: platformSchema,
   format: formatSchema,
-  objective: z.string().min(2)
+  objective: z.string().min(2),
+  sceneDurationSeconds: sceneDurationSchema.default(2)
 });
 
 export const briefInputSchema = z.object({
@@ -41,6 +44,10 @@ export const messageInputSchema = z.object({
 
 export const correctionInputSchema = z.object({
   instruction: z.string().min(3).max(500)
+});
+
+export const sceneDurationInputSchema = z.object({
+  durationSeconds: sceneDurationSchema
 });
 
 export const approvalInputSchema = z.object({

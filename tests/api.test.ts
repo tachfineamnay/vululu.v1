@@ -143,6 +143,71 @@ describe('API V0', () => {
     const bundle = bundleResponse.json();
     expect(bundle.scenes.length).toBe(5);
     expect(bundle.master).toBeNull();
+    expect(bundle.project.sceneDurationSeconds).toBe(2);
+    expect(bundle.scenes.every((scene: any) => scene.durationSeconds === 2)).toBe(true);
+  });
+
+  it('supports configurable scene durations', async () => {
+    const projectResponse = await app.inject({
+      method: 'POST',
+      url: '/api/projects',
+      headers: { cookie },
+      payload: {
+        contextId,
+        title: 'Projet durees',
+        platform: 'Instagram',
+        format: 'Video',
+        objective: 'Tester les durees',
+        sceneDurationSeconds: 10
+      }
+    });
+    expect(projectResponse.statusCode).toBe(201);
+    const durationProjectId = projectResponse.json().project.id;
+
+    const briefResponse = await app.inject({
+      method: 'PATCH',
+      url: '/api/projects/' + durationProjectId + '/brief',
+      headers: { cookie },
+      payload: {
+        objective: 'Tester les durees',
+        audience: 'Createurs',
+        tone: 'Direct',
+        cta: 'Decouvrir',
+        platform: 'Instagram',
+        format: 'Video'
+      }
+    });
+    expect(briefResponse.statusCode).toBe(200);
+
+    const storyboardResponse = await app.inject({
+      method: 'POST',
+      url: '/api/projects/' + durationProjectId + '/storyboard',
+      headers: { cookie },
+      payload: {}
+    });
+    expect(storyboardResponse.statusCode).toBe(200);
+    const storyboard = storyboardResponse.json();
+    expect(storyboard.project.sceneDurationSeconds).toBe(10);
+    expect(storyboard.scenes.every((scene: any) => scene.durationSeconds === 10)).toBe(true);
+
+    const updateResponse = await app.inject({
+      method: 'PATCH',
+      url: '/api/projects/' + durationProjectId + '/scenes/SCENE-003',
+      headers: { cookie },
+      payload: { durationSeconds: 2 }
+    });
+    expect(updateResponse.statusCode).toBe(200);
+    expect(updateResponse.json().scene.durationSeconds).toBe(2);
+
+    const bundleResponse = await app.inject({
+      method: 'GET',
+      url: '/api/projects/' + durationProjectId,
+      headers: { cookie }
+    });
+    const bundle = bundleResponse.json();
+    const scene3 = bundle.scenes.find((scene: any) => scene.sceneKey === 'SCENE-003');
+    expect(scene3.durationSeconds).toBe(2);
+    expect(bundle.scenes.filter((scene: any) => scene.sceneKey !== 'SCENE-003').every((scene: any) => scene.durationSeconds === 10)).toBe(true);
   });
 
   it('rejects approval and transfer without a master', async () => {

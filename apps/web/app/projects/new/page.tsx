@@ -13,6 +13,7 @@ export default function NewProjectPage() {
   const [platform, setPlatform] = useState('Instagram');
   const [format, setFormat] = useState('Video');
   const [objective, setObjective] = useState('Faire connaitre la nouvelle offre et donner envie de decouvrir la marque.');
+  const [sceneDurationSeconds, setSceneDurationSeconds] = useState(2);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -41,7 +42,8 @@ export default function NewProjectPage() {
         title,
         platform,
         format,
-        objective
+        objective,
+        sceneDurationSeconds
       });
       router.push('/projects/' + result.project.id);
     } catch (err) {
@@ -98,6 +100,12 @@ export default function NewProjectPage() {
             </div>
             <label className="label">Objectif
               <textarea className="input textarea" data-testid="project-objective" value={objective} onChange={(event) => setObjective(event.target.value)} required />
+            </label>
+            <label className="label">Rythme de production
+              <select className="input" data-testid="project-scene-duration" value={sceneDurationSeconds} onChange={(event) => setSceneDurationSeconds(Number(event.target.value))}>
+                <option value={2}>Smoke — 2 s par scene (10 s au total)</option>
+                <option value={10}>Cible — 10 s par scene (50 s au total)</option>
+              </select>
             </label>
             {error ? <p className="error" data-testid="project-error">{error}</p> : null}
             <button className="btn btn-primary" data-testid="project-submit" type="submit" disabled={busy}>

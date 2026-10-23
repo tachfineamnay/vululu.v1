@@ -43,6 +43,23 @@ async function nextMasterVersion(projectId: string): Promise<number> {
   return artifact.versions[0].version + 1;
 }
 
+async function invalidateProjectApprovals(projectId: string): Promise<void> {
+  const versions = await prisma.artifactVersion.findMany({
+    where: { artifact: { projectId } },
+    select: { id: true }
+  });
+  if (versions.length === 0) {
+    return;
+  }
+  await prisma.approval.updateMany({
+    where: {
+      artifactVersionId: { in: versions.map((version) => version.id) },
+      invalidatedAt: null
+    },
+    data: { invalidatedAt: new Date() }
+  });
+}
+
 async function assertNoRunningJob(projectId: string) {
   const running = await prisma.productionJob.findFirst({
     where: { projectId, status: { in: ['queued', 'running'] } }
@@ -133,7 +150,8 @@ async function runProduction(projectId: string, jobId: string): Promise<void> {
       projectId,
       artifactRoot: env.artifactRoot,
       version: masterVersion,
-      scenePaths: rendered.map((item) => item.output.absolutePath)
+      scenePaths: rendered.map((item) => item.output.absolutePath),
+      sceneDurationsSeconds: project.scenes.map((scene) => scene.durationSeconds)
     });
 
     await prisma.productionJob.update({
@@ -155,6 +173,7 @@ async function runProduction(projectId: string, jobId: string): Promise<void> {
         qaStatus: 'PENDING'
       }
     });
+    await invalidateProjectApprovals(projectId);
     const qa = await runQa(rendered.map((item) => item.output), master);
     await prisma.artifactVersion.update({
       where: { id: artifactVersion.id },
@@ -267,7 +286,8 @@ async function runCorrection(projectId: string, jobId: string, sceneKey: string,
       projectId,
       artifactRoot: env.artifactRoot,
       version: masterVersion,
-      scenePaths: refreshed.map((scene) => env.artifactRoot + '/' + scene.versions[0].imagePath)
+      scenePaths: refreshed.map((scene) => env.artifactRoot + '/' + scene.versions[0].imagePath),
+      sceneDurationsSeconds: refreshed.map((scene) => scene.durationSeconds)
     });
 
     await prisma.productionJob.update({
@@ -289,6 +309,7 @@ async function runCorrection(projectId: string, jobId: string, sceneKey: string,
         qaStatus: 'PENDING'
       }
     });
+    await invalidateProjectApprovals(projectId);
     const sceneFiles = refreshed.map((scene) => ({
       relativePath: scene.versions[0].imagePath,
       absolutePath: env.artifactRoot + '/' + scene.versions[0].imagePath,
@@ -333,7 +354,7 @@ export async function approveMaster(userId: string, projectId: string, artifactV
   }
   const approval = await prisma.approval.upsert({
     where: { artifactVersionId: master.id },
-    update: { approvedBy: userId, checksum },
+    update: { approvedBy: userId, checksum, invalidatedAt: null },
     create: { artifactVersionId: master.id, approvedBy: userId, checksum }
   });
   await prisma.project.update({ where: { id: projectId }, data: { status: 'approved' } });
@@ -348,6 +369,9 @@ export async function transferToPostiz(userId: string, projectId: string) {
   }
   if (!master.approval) {
     throw new HttpError(400, 'approval_required', 'Le master doit etre approuve avant transfert.');
+  }
+  if (master.approval.invalidatedAt) {
+    throw new HttpError(409, 'approval_invalidated', 'Cette approbation a ete invalidee par un nouveau master.');
   }
   if (master.approval.transfer) {
     return master.approval.transfer;

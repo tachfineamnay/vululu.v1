@@ -2,7 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import {
   briefInputSchema,
   messageInputSchema,
-  projectInputSchema
+  projectInputSchema,
+  sceneDurationInputSchema
 } from '@vululu/contracts';
 import {
   addMessage,
@@ -10,7 +11,8 @@ import {
   generateStoryboard,
   getProjectBundle,
   listProjects,
-  updateBrief
+  updateBrief,
+  updateSceneDuration
 } from '../services/projects';
 
 export async function projectRoutes(app: FastifyInstance): Promise<void> {
@@ -47,5 +49,17 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/projects/:id/storyboard', { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { id: string };
     return generateStoryboard(request.currentUser!.id, params.id);
+  });
+
+  app.patch('/api/projects/:id/scenes/:sceneKey', { preHandler: [app.authenticate] }, async (request) => {
+    const params = request.params as { id: string; sceneKey: string };
+    const input = sceneDurationInputSchema.parse(request.body);
+    const scene = await updateSceneDuration(
+      request.currentUser!.id,
+      params.id,
+      params.sceneKey,
+      input.durationSeconds
+    );
+    return { scene };
   });
 }

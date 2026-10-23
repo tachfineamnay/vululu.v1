@@ -544,6 +544,18 @@ select {
   letter-spacing: 0.08em;
 }
 
+.duration-label {
+  font-size: 10px;
+  gap: 3px;
+  margin-top: 2px;
+}
+
+.duration-select {
+  padding: 5px 8px;
+  font-size: 11px;
+  height: auto;
+}
+
 .pill {
   display: inline-flex;
   align-items: center;
