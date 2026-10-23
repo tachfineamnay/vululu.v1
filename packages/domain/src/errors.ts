@@ -21,7 +21,11 @@ export type DomainErrorCode =
   | 'approval_version_mismatch'
   | 'invitation_expired'
   | 'invitation_used'
-  | 'invitation_revoked';
+  | 'invitation_revoked'
+  | 'agent_config_not_found'
+  | 'agent_config_stale'
+  | 'no_route'
+  | 'budget_exceeded';
 
 export class DomainError extends Error {
   readonly code: DomainErrorCode;

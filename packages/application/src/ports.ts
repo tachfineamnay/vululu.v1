@@ -601,3 +601,138 @@ export interface ArtifactAccessUseCasesPort {
   getSceneImage(actor: Actor, projectId: string, sceneKey: string): Promise<ArtifactFile>;
   getMaster(actor: Actor, projectId: string, version?: number): Promise<ArtifactFile>;
 }
+// ---------------------------------------------------------------------------
+// V1-01-B : Agentic Capabilities (registre configs, providers/modeles,
+// routage/fallback, couts). Aucun SDK fournisseur ici.
+// ---------------------------------------------------------------------------
+
+export type AgentRoleRecord = 'director' | 'specialist' | 'validator';
+
+export type AgentCapabilityRequirementRecord = {
+  capabilityKey: string;
+  maxCostCents?: number;
+  minQuality?: number;
+  maxLatencyMs?: number;
+  allowedLicenses?: Array<'internal' | 'commercial' | 'unknown'>;
+};
+
+export type AgentDefinitionRecord = {
+  id: string;
+  key: string;
+  name: string;
+  role: AgentRoleRecord;
+  capabilityRequirements: AgentCapabilityRequirementRecord[];
+  activeConfigVersionId: string | null;
+  createdAt: Date;
+};
+
+export type AgentConfigVersionRecord = {
+  id: string;
+  agentId: string;
+  version: number;
+  soul: string;
+  instructions: string;
+  guardrails: string[];
+  checksum: string;
+  createdAt: Date;
+};
+
+export type ProviderRecord = {
+  id: string;
+  key: string;
+  name: string;
+  active: boolean;
+  createdAt: Date;
+};
+
+export type ModelRecord = {
+  id: string;
+  providerId: string;
+  providerKey: string;
+  modelKey: string;
+  capabilityKeys: string[];
+  quality: number;
+  latencyMs: number;
+  costCentsPerUnit: number;
+  license: 'internal' | 'commercial' | 'unknown';
+  active: boolean;
+  qualified: boolean;
+  createdAt: Date;
+};
+
+export type RouteDecisionRecord = {
+  id: string;
+  capabilityKey: string;
+  candidateModelIds: string[];
+  selectedModelId: string;
+  fallbackModelId: string | null;
+  criteria: Record<string, unknown>;
+  reason: string;
+  createdAt: Date;
+};
+
+export type CapabilityInvocation = {
+  providerKey: string;
+  modelKey: string;
+  capabilityKey: string;
+  input: Record<string, unknown>;
+};
+
+export type CapabilityResult = {
+  output: Record<string, unknown>;
+  providerKey: string;
+  modelKey: string;
+  costCents: number;
+  latencyMs: number;
+  mock: true;
+};
+
+export interface AgentRepository {
+  createDefinition(input: Omit<AgentDefinitionRecord, 'activeConfigVersionId'>): Promise<AgentDefinitionRecord>;
+  findDefinition(agentId: string): Promise<AgentDefinitionRecord | null>;
+  findDefinitionByKey(key: string): Promise<AgentDefinitionRecord | null>;
+  listDefinitions(): Promise<AgentDefinitionRecord[]>;
+  listConfigs(agentId: string): Promise<AgentConfigVersionRecord[]>;
+  saveConfigVersion(input: Omit<AgentConfigVersionRecord, 'checksum'> & { checksum: string }): Promise<AgentConfigVersionRecord>;
+  setActiveConfig(agentId: string, configVersionId: string): Promise<AgentDefinitionRecord>;
+}
+
+export interface ProviderCatalogRepository {
+  upsertProvider(input: { key: string; name: string; active: boolean }): Promise<ProviderRecord>;
+  listProviders(): Promise<ProviderRecord[]>;
+  setProviderActive(providerKey: string, active: boolean): Promise<ProviderRecord>;
+  upsertModel(input: {
+    providerKey: string;
+    modelKey: string;
+    capabilityKeys: string[];
+    quality: number;
+    latencyMs: number;
+    costCentsPerUnit: number;
+    license: 'internal' | 'commercial' | 'unknown';
+    active: boolean;
+    qualified: boolean;
+  }): Promise<ModelRecord>;
+  listModels(capabilityKey?: string): Promise<ModelRecord[]>;
+  setModelActive(modelId: string, active: boolean): Promise<ModelRecord>;
+  setModelQualified(modelId: string, qualified: boolean): Promise<ModelRecord>;
+}
+
+export interface RoutingRepository {
+  saveDecision(input: Omit<RouteDecisionRecord, 'id' | 'createdAt'>): Promise<RouteDecisionRecord>;
+  listDecisions(limit?: number): Promise<RouteDecisionRecord[]>;
+}
+
+export interface CostRepository {
+  record(input: {
+    projectId: string | null;
+    jobRunId: string | null;
+    provider: string;
+    model: string | null;
+    units: number;
+    amountCents: number;
+  }): Promise<void>;
+}
+
+export interface CapabilityProviderPort {
+  invoke(input: CapabilityInvocation): Promise<CapabilityResult>;
+}

@@ -8,6 +8,7 @@ import { HttpError } from './errors';
 import { registerAuth } from './auth';
 import { authRoutes } from './routes/auth';
 import { adminRoutes } from './routes/admin';
+import { adminAgentRoutes } from './routes/adminAgents';
 import { contextRoutes } from './routes/contexts';
 import { projectRoutes } from './routes/projects';
 import { productionRoutes } from './routes/production';
@@ -66,6 +67,7 @@ export async function buildServer() {
 
   await app.register(authRoutes);
   await app.register(adminRoutes);
+  await app.register(adminAgentRoutes);
   await app.register(contextRoutes);
   await app.register(projectRoutes);
   await app.register(productionRoutes);

@@ -7,4 +7,6 @@ export * from './use-cases/storyboards';
 export * from './use-cases/messages';
 export * from './use-cases/scenes';
 export * from './use-cases/bundle';
-export * from './use-cases/production';export * from './use-cases/artifacts';
+export * from './use-cases/production';export * from './use-cases/artifacts';export * from './use-cases/agents';
+export * from './use-cases/provider-catalog';
+export * from './use-cases/routing';

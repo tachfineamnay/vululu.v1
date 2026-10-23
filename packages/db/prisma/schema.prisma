@@ -339,3 +339,72 @@ model CostEvent {
   @@index([projectId])
   @@index([createdAt])
 }
+model AgentDefinition {
+  id                     String               @id @default(cuid())
+  key                    String               @unique
+  name                   String
+  role                   String
+  capabilityRequirements Json
+  activeConfigVersionId  String?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+  configs                AgentConfigVersion[]
+}
+
+model AgentConfigVersion {
+  id           String          @id @default(cuid())
+  agentId      String
+  version      Int
+  soul         String
+  instructions String
+  guardrails   Json
+  checksum     String
+  createdAt    DateTime        @default(now())
+  agent        AgentDefinition @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, version])
+  @@index([agentId])
+}
+
+model Provider {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  models    Model[]
+}
+
+model Model {
+  id               String   @id @default(cuid())
+  providerId       String
+  modelKey         String
+  capabilityKeys   String[]
+  quality          Int
+  latencyMs        Int
+  costCentsPerUnit Int
+  license          String
+  active           Boolean  @default(true)
+  qualified        Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  provider         Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, modelKey])
+  @@index([providerId])
+}
+
+model RoutingDecision {
+  id               String   @id @default(cuid())
+  capabilityKey    String
+  candidateModelIds String[]
+  selectedModelId  String
+  fallbackModelId  String?
+  criteria         Json
+  reason           String
+  createdAt        DateTime @default(now())
+
+  @@index([capabilityKey])
+  @@index([createdAt])
+}

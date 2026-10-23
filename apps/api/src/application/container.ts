@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import {
+  AgentConfigUseCases,
   ArtifactAccessUseCases,
   BriefUseCases,
   ContextUseCases,
@@ -7,6 +8,8 @@ import {
   ProductionUseCases,
   ProjectBundleUseCases,
   ProjectUseCases,
+  ProviderCatalogUseCases,
+  RoutingUseCases,
   SceneUseCases,
   StoryboardUseCases,
   type Actor
@@ -16,6 +19,8 @@ import {
   LocalStoragePort,
   MediaRendererAdapter,
   PostizMockAdapter,
+  MockCapabilityProvider,
+  PrismaAgentRepository,
   PrismaArtifactAccess,
   PrismaAuditAdapter,
   PrismaBriefStore,
@@ -25,7 +30,10 @@ import {
   PrismaProductionRepository,
   PrismaProductionRunRepository,
   PrismaProjectBundleQuery,
+  PrismaCostRepository,
   PrismaProjectRepository,
+  PrismaProviderCatalogRepository,
+  PrismaRoutingRepository,
   PrismaSceneRepository,
   PrismaStoryboardStore
 } from '../infrastructure';
@@ -89,3 +97,20 @@ export function actorOf(user: { id: string; role: string } | undefined): Actor {
     role: user.role === 'super_admin' ? 'super_admin' : 'user'
   };
 }
+const agentRepository = new PrismaAgentRepository();
+const providerCatalogRepository = new PrismaProviderCatalogRepository();
+const routingRepository = new PrismaRoutingRepository();
+const costRepository = new PrismaCostRepository();
+const mockCapabilityProvider = new MockCapabilityProvider();
+
+export const agentConfigs = new AgentConfigUseCases(agentRepository, clock, ids, audit);
+export const providerCatalog = new ProviderCatalogUseCases(providerCatalogRepository, audit);
+export const routing = new RoutingUseCases(
+  providerCatalogRepository,
+  routingRepository,
+  mockCapabilityProvider,
+  costRepository,
+  clock,
+  audit
+);
+export const agentRepositoryPort = agentRepository;
