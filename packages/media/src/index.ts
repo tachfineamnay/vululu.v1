@@ -3,7 +3,6 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
-import os from 'node:os';
 import sharp from 'sharp';
 
 export type SceneRenderInput = {
@@ -64,18 +63,7 @@ function findFfmpeg(): string {
   if (configured && fs.existsSync(configured)) {
     return configured;
   }
-  const browserRoot = path.join(os.homedir(), 'AppData', 'Local', 'ms-playwright');
-  if (fs.existsSync(browserRoot)) {
-    for (const entry of fs.readdirSync(browserRoot)) {
-      if (entry.startsWith('ffmpeg-')) {
-        const candidate = path.join(browserRoot, entry, 'ffmpeg-win64.exe');
-        if (fs.existsSync(candidate)) {
-          return candidate;
-        }
-      }
-    }
-  }
-  return 'ffmpeg';
+  throw new Error('FFMPEG_PATH requis: fournir un binaire FFmpeg complet (libx264, AAC, PNG).');
 }
 
 function sha256File(file: string): string {
@@ -295,11 +283,24 @@ export async function assembleMaster(input: MasterInput): Promise<MasterOutput> 
 export async function runQa(scenes: SceneRenderOutput[], master: MasterOutput): Promise<QaReport> {
   const checks: QaCheck[] = [];
   for (const scene of scenes) {
-    const ok = scene.width === 1080 && scene.height === 1920;
+    let width = scene.width;
+    let height = scene.height;
+    let checksum = '';
+    let readError = '';
+    try {
+      const metadata = await sharp(scene.absolutePath).metadata();
+      width = metadata.width || 0;
+      height = metadata.height || 0;
+      checksum = sha256File(scene.absolutePath);
+    } catch (error) {
+      readError = error instanceof Error ? error.message : 'lecture impossible';
+    }
+    const dimensionsOk = width === 1080 && height === 1920;
+    const checksumOk = readError === '' && scene.checksum !== '' && checksum === scene.checksum;
     checks.push({
       name: 'png ' + scene.relativePath,
-      status: ok ? 'PASS' : 'FAIL',
-      detail: scene.width + 'x' + scene.height
+      status: dimensionsOk && checksumOk ? 'PASS' : 'FAIL',
+      detail: width + 'x' + height + ' / checksum ' + (checksumOk ? 'OK' : 'MISMATCH') + (readError ? ' / ' + readError : '')
     });
   }
   checks.push({
@@ -321,6 +322,17 @@ export async function runQa(scenes: SceneRenderOutput[], master: MasterOutput): 
     name: 'master audio codec',
     status: master.audioCodec === 'aac' ? 'PASS' : 'FAIL',
     detail: master.audioCodec
+  });
+  let masterChecksum = '';
+  try {
+    masterChecksum = sha256File(master.absolutePath);
+  } catch {
+    masterChecksum = '';
+  }
+  checks.push({
+    name: 'master checksum',
+    status: masterChecksum !== '' && masterChecksum === master.checksum ? 'PASS' : 'FAIL',
+    detail: masterChecksum === '' ? 'fichier illisible' : masterChecksum === master.checksum ? 'OK' : 'MISMATCH'
   });
   return {
     status: checks.every((check) => check.status === 'PASS') ? 'PASS' : 'FAIL',

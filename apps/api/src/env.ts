@@ -18,15 +18,29 @@ if (!selected) {
   throw new Error('DATABASE_URL manquant pour l API.');
 }
 
-const isLocal = selected.includes('127.0.0.1') || selected.includes('localhost');
-if (!isLocal) {
-  const host = selected.split('@').pop();
+function isLocalDatabaseUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    const host = parsed.hostname.toLowerCase();
+    return host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '[::1]';
+  } catch {
+    return false;
+  }
+}
+
+if (!isLocalDatabaseUrl(selected)) {
+  let host = 'invalide';
+  try {
+    host = new URL(selected).hostname;
+  } catch {
+    // Keep the generic host value.
+  }
   throw new Error('V0 refuse une base non locale: ' + host);
 }
 
-const sessionSecret = process.env.SESSION_SECRET || 'dev-only-vululu-session-secret-change-me';
+const sessionSecret = process.env.SESSION_SECRET || '';
 if (sessionSecret.length < 32) {
-  throw new Error('SESSION_SECRET trop court pour V0.');
+  throw new Error('SESSION_SECRET manquant ou trop court pour V0.');
 }
 
 export const env = {

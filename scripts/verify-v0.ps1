@@ -95,11 +95,19 @@ foreach ($scene in $bundle.scenes) {
     $file = Join-Path $artifactRoot $latest.imagePath
     $exists = Test-Path -LiteralPath $file
     $size = if ($exists) { (Get-Item -LiteralPath $file).Length } else { 0 }
-    Check ('png ' + $scene.sceneKey) ($exists -and $size -gt 10000) ('bytes=' + $size + ' version=' + $latest.version)
+    $hash = if ($exists) { (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant() } else { '' }
+    $checksumOk = $hash -eq $latest.checksum
+    Check ('png ' + $scene.sceneKey) ($exists -and $size -gt 10000 -and $checksumOk) ('bytes=' + $size + ' version=' + $latest.version + ' checksum=' + $checksumOk)
 }
 
 $masterFile = Join-Path $artifactRoot $bundle.master.masterPath
-Check 'master file exists' (Test-Path -LiteralPath $masterFile) $bundle.master.masterPath
+foreach ($masterVersion in $bundle.masterVersions) {
+    $versionFile = Join-Path $artifactRoot $masterVersion.masterPath
+    $versionExists = Test-Path -LiteralPath $versionFile
+    $versionHash = if ($versionExists) { (Get-FileHash -LiteralPath $versionFile -Algorithm SHA256).Hash.ToLowerInvariant() } else { '' }
+    $versionChecksumOk = $versionHash -eq $masterVersion.checksum
+    Check ('master v' + $masterVersion.version) ($versionExists -and $versionChecksumOk) ('checksum=' + $versionChecksumOk)
+}
 $ffmpegLine = $envLines | Where-Object { $_ -like 'FFMPEG_PATH=*' } | Select-Object -First 1
 $ffmpeg = if ($ffmpegLine) { $ffmpegLine.Substring('FFMPEG_PATH='.Length) } else { 'ffmpeg' }
 if (Test-Path -LiteralPath $ffmpeg) {

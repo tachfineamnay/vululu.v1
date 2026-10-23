@@ -51,12 +51,18 @@ export default function ProjectStudio({ id }: { id: string }) {
   const [briefCta, setBriefCta] = useState('');
   const briefLoaded = useRef(false);
   const bundleRef = useRef<ProjectBundle | null>(null);
+  const lastMasterVersionRef = useRef<number | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
     try {
       const data = await api<ProjectBundle>('/api/projects/' + id);
       bundleRef.current = data;
+      const nextMasterVersion = data.master ? data.master.version : null;
+      if (lastMasterVersionRef.current !== null && nextMasterVersion !== null && lastMasterVersionRef.current !== nextMasterVersion) {
+        setSelectedVersion(null);
+      }
+      lastMasterVersionRef.current = nextMasterVersion;
       setBundle(data);
       setError('');
       if (!briefLoaded.current && data.brief) {
@@ -256,7 +262,7 @@ export default function ProjectStudio({ id }: { id: string }) {
           <section className="card">
             <div className="section-head">
               <h2>Brief</h2>
-              <span className="muted small">{bundle.brief ? 'Version ' + bundle.brief.version : 'A preparer'}</span>
+              <span className="muted small">{bundle.brief ? 'Version ' + bundle.brief.version + ' / ' + bundle.brief.revisions.length + ' revision(s)' : 'A preparer'}</span>
             </div>
             <form className="stack" onSubmit={saveBrief}>
               <label className="label">Objectif
@@ -350,7 +356,7 @@ export default function ProjectStudio({ id }: { id: string }) {
           <section className="card studio-card">
             <div className="section-head">
               <h2>Studio et preview</h2>
-              <span className="pill" data-testid="master-version">Master v{master.version}</span>
+              <span className="pill" data-testid="master-version">Master v{activeVersion}</span>
             </div>
             <div className="studio-preview">
               <video

@@ -50,7 +50,12 @@ describe('Media V0', () => {
 
     const qaSpeed = await runQa(outputs, masterSpeed);
     expect(qaSpeed.status).toBe('PASS');
-    expect(qaSpeed.checks.length).toBeGreaterThanOrEqual(9);
+    expect(qaSpeed.checks.length).toBeGreaterThanOrEqual(10);
+
+    const tampered = outputs.map((output) => ({ ...output }));
+    tampered[0].checksum = '0'.repeat(64);
+    const qaTampered = await runQa(tampered, masterSpeed);
+    expect(qaTampered.status).toBe('FAIL');
 
     const masterTarget = await assembleMaster({
       projectId,

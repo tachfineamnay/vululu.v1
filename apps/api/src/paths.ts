@@ -9,7 +9,3 @@ export function artifactPath(relativePath: string): string {
   }
   return resolved;
 }
-
-export function artifactRelative(absolutePath: string): string {
-  return path.relative(env.artifactRoot, absolutePath).split(path.sep).join('/');
-}

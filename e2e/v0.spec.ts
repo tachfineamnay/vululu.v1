@@ -151,10 +151,16 @@ test('verticale V0 complete', async ({ page }) => {
   expect(pngChecks.length).toBe(5);
   for (const check of pngChecks) {
     expect(check.status).toBe('PASS');
-    expect(check.detail).toBe('1080x1920');
+    expect(check.detail).toContain('1080x1920');
+    expect(check.detail).toContain('checksum OK');
   }
 
   await page.reload();
   await expect(page.locator('[data-testid=master-video]')).toBeVisible();
   await expect(page.locator('[data-testid=transfer-status]')).toContainText('acknowledged');
+
+  await page.getByRole('button', { name: 'Sortir' }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await page.goto('/projects/' + projectId);
+  await expect(page).toHaveURL(/\/login$/);
 });

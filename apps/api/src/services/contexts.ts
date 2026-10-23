@@ -1,29 +1,33 @@
 import { prisma } from '@vululu/db';
 import type { z } from 'zod';
 import { contextInputSchema } from '@vululu/contracts';
-import { HttpError } from '../errors';
 
 type ContextInput = z.infer<typeof contextInputSchema>;
+
+const contextSelect = {
+  id: true,
+  name: true,
+  website: true,
+  description: true,
+  audience: true,
+  tone: true,
+  colorPrimary: true,
+  colorSecondary: true,
+  createdAt: true,
+  updatedAt: true
+} as const;
 
 export async function listContexts(userId: string) {
   return prisma.brandContext.findMany({
     where: { userId },
+    select: contextSelect,
     orderBy: { updatedAt: 'desc' }
   });
 }
 
-export async function getContext(userId: string, contextId: string) {
-  const context = await prisma.brandContext.findFirst({
-    where: { id: contextId, userId }
-  });
-  if (!context) {
-    throw new HttpError(404, 'context_not_found', 'Contexte introuvable.');
-  }
-  return context;
-}
-
 export async function createContext(userId: string, input: ContextInput) {
   return prisma.brandContext.create({
+    select: contextSelect,
     data: {
       userId,
       name: input.name,

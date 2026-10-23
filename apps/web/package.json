@@ -9,7 +9,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@vululu/contracts": "workspace:*",
     "next": "16.4.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

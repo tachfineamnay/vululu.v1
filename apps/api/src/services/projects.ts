@@ -1,4 +1,6 @@
+import crypto from 'node:crypto';
 import { prisma } from '@vululu/db';
+import type { BrandContext, Project } from '@prisma/client';
 import type { z } from 'zod';
 import { briefInputSchema, projectInputSchema } from '@vululu/contracts';
 import { HttpError } from '../errors';
@@ -16,12 +18,46 @@ export async function assertProject(userId: string, projectId: string) {
   return project;
 }
 
+function publicProject(project: Project) {
+  return {
+    id: project.id,
+    title: project.title,
+    status: project.status,
+    platform: project.platform,
+    format: project.format,
+    objective: project.objective,
+    sceneDurationSeconds: project.sceneDurationSeconds,
+    contextId: project.contextId,
+    createdAt: project.createdAt,
+    updatedAt: project.updatedAt
+  };
+}
+
+function publicContext(context: BrandContext) {
+  return {
+    id: context.id,
+    name: context.name,
+    website: context.website,
+    description: context.description,
+    audience: context.audience,
+    tone: context.tone,
+    colorPrimary: context.colorPrimary,
+    colorSecondary: context.colorSecondary,
+    createdAt: context.createdAt,
+    updatedAt: context.updatedAt
+  };
+}
+
 export async function listProjects(userId: string) {
-  return prisma.project.findMany({
+  const projects = await prisma.project.findMany({
     where: { userId },
     include: { context: true },
     orderBy: { updatedAt: 'desc' }
   });
+  return projects.map((project) => ({
+    ...publicProject(project),
+    context: publicContext(project.context)
+  }));
 }
 
 export async function createProject(userId: string, input: ProjectInput) {
@@ -31,7 +67,7 @@ export async function createProject(userId: string, input: ProjectInput) {
   if (!context) {
     throw new HttpError(404, 'context_not_found', 'Contexte introuvable.');
   }
-  return prisma.project.create({
+  const project = await prisma.project.create({
     data: {
       userId,
       contextId: input.contextId,
@@ -42,11 +78,25 @@ export async function createProject(userId: string, input: ProjectInput) {
       sceneDurationSeconds: input.sceneDurationSeconds
     }
   });
+  return publicProject(project);
+}
+
+function briefChecksum(data: BriefInput): string {
+  return crypto
+    .createHash('sha256')
+    .update(JSON.stringify({
+      objective: data.objective,
+      audience: data.audience,
+      tone: data.tone,
+      cta: data.cta,
+      platform: data.platform,
+      format: data.format
+    }))
+    .digest('hex');
 }
 
 export async function updateBrief(userId: string, projectId: string, input: BriefInput) {
   await assertProject(userId, projectId);
-  const existing = await prisma.brief.findUnique({ where: { projectId } });
   const data = {
     objective: input.objective,
     audience: input.audience,
@@ -55,16 +105,33 @@ export async function updateBrief(userId: string, projectId: string, input: Brie
     platform: input.platform,
     format: input.format
   };
-  const brief = existing
-    ? await prisma.brief.update({
+  const checksum = briefChecksum(input);
+
+  await prisma.$transaction(async (tx) => {
+    const existing = await tx.brief.findUnique({ where: { projectId } });
+    if (existing) {
+      const updated = await tx.brief.update({
         where: { projectId },
         data: { ...data, version: existing.version + 1 }
-      })
-    : await prisma.brief.create({
+      });
+      await tx.briefRevision.create({
+        data: { briefId: updated.id, version: updated.version, ...data, checksum }
+      });
+    } else {
+      const created = await tx.brief.create({
         data: { projectId, ...data, version: 1 }
       });
+      await tx.briefRevision.create({
+        data: { briefId: created.id, version: 1, ...data, checksum }
+      });
+    }
+  });
+
   await prisma.project.update({ where: { id: projectId }, data: { status: 'brief_ready' } });
-  return brief;
+  return prisma.brief.findUnique({
+    where: { projectId },
+    include: { revisions: { orderBy: { version: 'asc' } } }
+  });
 }
 
 export async function getProjectBundle(userId: string, projectId: string) {
@@ -72,7 +139,9 @@ export async function getProjectBundle(userId: string, projectId: string) {
     where: { id: projectId, userId },
     include: {
       context: true,
-      brief: true,
+      brief: {
+        include: { revisions: { orderBy: { version: 'asc' } } }
+      },
       messages: { orderBy: { createdAt: 'asc' } },
       scenes: {
         orderBy: { position: 'asc' },
@@ -116,7 +185,7 @@ export async function getProjectBundle(userId: string, projectId: string) {
       createdAt: project.createdAt,
       updatedAt: project.updatedAt
     },
-    context: project.context,
+    context: publicContext(project.context),
     brief: project.brief,
     messages: project.messages,
     scenes: project.scenes,

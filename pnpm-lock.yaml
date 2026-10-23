@@ -90,9 +90,6 @@ importers:
 
   apps/web:
     dependencies:
-      '@vululu/contracts':
-        specifier: workspace:*
-        version: link:../../packages/contracts
       next:
         specifier: 16.4.2
         version: 16.4.2(@playwright/test@1.64.1)(@types/node@24.19.2)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)

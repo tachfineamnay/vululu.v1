@@ -314,8 +314,8 @@ async function runCorrection(projectId: string, jobId: string, sceneKey: string,
       relativePath: scene.versions[0].imagePath,
       absolutePath: env.artifactRoot + '/' + scene.versions[0].imagePath,
       checksum: scene.versions[0].checksum,
-      width: 1080,
-      height: 1920
+      width: 0,
+      height: 0
     }));
     const qa = await runQa(sceneFiles, master);
     await prisma.artifactVersion.update({

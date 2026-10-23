@@ -125,6 +125,22 @@ describe('API V0', () => {
     expect(briefResponse.statusCode).toBe(200);
     expect(briefResponse.json().brief.version).toBe(1);
 
+    const briefV2Response = await app.inject({
+      method: 'PATCH',
+      url: '/api/projects/' + projectId + '/brief',
+      headers: { cookie },
+      payload: {
+        objective: 'Tester la verticale API v2',
+        audience: 'Createurs avances',
+        tone: 'Direct',
+        cta: 'Decouvrir v2',
+        platform: 'Instagram',
+        format: 'Video'
+      }
+    });
+    expect(briefV2Response.statusCode).toBe(200);
+    expect(briefV2Response.json().brief.version).toBe(2);
+
     const storyboardResponse = await app.inject({
       method: 'POST',
       url: '/api/projects/' + projectId + '/storyboard',
@@ -145,6 +161,10 @@ describe('API V0', () => {
     expect(bundle.master).toBeNull();
     expect(bundle.project.sceneDurationSeconds).toBe(2);
     expect(bundle.scenes.every((scene: any) => scene.durationSeconds === 2)).toBe(true);
+    expect(bundle.brief.revisions.length).toBe(2);
+    expect(bundle.brief.revisions[0].objective).toBe('Tester la verticale API');
+    expect(bundle.brief.revisions[1].objective).toBe('Tester la verticale API v2');
+    expect(bundle.brief.revisions[0].checksum).not.toBe(bundle.brief.revisions[1].checksum);
   });
 
   it('supports configurable scene durations', async () => {
@@ -226,6 +246,48 @@ describe('API V0', () => {
       payload: {}
     });
     expect(transferResponse.statusCode).toBe(400);
+  });
+
+  it('clears the session on logout', async () => {
+    const result = await login(email, password);
+    expect(result.status).toBe(200);
+    const logoutResponse = await app.inject({
+      method: 'POST',
+      url: '/api/auth/logout',
+      headers: { cookie: result.cookie }
+    });
+    expect(logoutResponse.statusCode).toBe(200);
+    const rawCleared = logoutResponse.headers['set-cookie'];
+    const clearedValue = Array.isArray(rawCleared) ? rawCleared[0] : rawCleared;
+    const clearedCookie = clearedValue ? clearedValue.split(';')[0] : '';
+    expect(clearedCookie).toBe('session=');
+    const meResponse = await app.inject({
+      method: 'GET',
+      url: '/api/auth/me',
+      headers: { cookie: clearedCookie }
+    });
+    expect(meResponse.statusCode).toBe(401);
+  });
+
+  it('accepts an empty JSON body for logout', async () => {
+    const result = await login(email, password);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/auth/logout',
+      headers: { cookie: result.cookie, 'content-type': 'application/json' }
+    });
+    expect(response.statusCode).toBe(200);
+  });
+
+  it('returns 400 for malformed JSON', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/projects',
+      headers: { cookie, 'content-type': 'application/json' },
+      payload: '{not-json'
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toBeTruthy();
   });
 
   it('isolates resources between users', async () => {

@@ -74,6 +74,25 @@ model Brief {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  revisions BriefRevision[]
+}
+
+model BriefRevision {
+  id        String   @id @default(cuid())
+  briefId   String
+  version   Int
+  objective String
+  audience  String
+  tone      String
+  cta       String
+  platform  String
+  format    String
+  checksum  String
+  createdAt DateTime @default(now())
+  brief     Brief    @relation(fields: [briefId], references: [id], onDelete: Cascade)
+
+  @@unique([briefId, version])
+  @@index([briefId])
 }
 
 model Message {

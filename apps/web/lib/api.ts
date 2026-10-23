@@ -112,6 +112,18 @@ export type ProjectBundle = {
     platform: string;
     format: string;
     version: number;
+    revisions: Array<{
+      id: string;
+      version: number;
+      objective: string;
+      audience: string;
+      tone: string;
+      cta: string;
+      platform: string;
+      format: string;
+      checksum: string;
+      createdAt: string;
+    }>;
   } | null;
   messages: Message[];
   scenes: Scene[];
@@ -122,7 +134,7 @@ export type ProjectBundle = {
 };
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const headers: Record<string, string> = init && init.body ? { 'Content-Type': 'application/json' } : {};
   const response = await fetch(path, {
     ...init,
     headers: { ...headers, ...(init && init.headers ? (init.headers as Record<string, string>) : {}) },
