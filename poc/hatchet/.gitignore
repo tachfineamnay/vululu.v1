@@ -1,0 +1,9 @@
+node_modules/
+*.log
+*.pid
+worker.out.log
+worker.err.log
+conc-*.out.log
+conc-*.err.log
+.env
+.evidence/

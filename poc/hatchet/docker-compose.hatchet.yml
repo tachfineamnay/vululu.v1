@@ -1,0 +1,51 @@
+version: "3.8"
+name: vululu-hatchet-poc
+# Configuration Docker locale du POC C. NON EXECUTEE sur l environnement Windows
+# de cette session : Docker Desktop etait indisponible (disque de donnees WSL
+# sans systeme de fichiers). Le POC a ete execute via le sidecar embedded
+# officiel Hatchet v0.110.5 sous WSL2, avec le meme engine.
+#
+# Le mot de passe doit etre fourni par l environnement local, jamais commité :
+#   $env:HATCHET_POC_PG_PASSWORD = "..."
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hatchet
+      POSTGRES_PASSWORD: ${HATCHET_POC_PG_PASSWORD:?set HATCHET_POC_PG_PASSWORD}
+      POSTGRES_DB: hatchet
+    ports:
+      - "5435:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hatchet -d hatchet"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - hatchet_poc_postgres:/var/lib/postgresql/data
+  hatchet:
+    image: ghcr.io/hatchet-dev/hatchet/hatchet-lite-dev:v0.110.5
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8888:8888"
+      - "7077:7077"
+    environment:
+      DATABASE_URL: "postgresql://hatchet:${HATCHET_POC_PG_PASSWORD}@postgres:5432/hatchet?sslmode=disable"
+      SERVER_AUTH_COOKIE_DOMAIN: localhost
+      SERVER_AUTH_COOKIE_INSECURE: "t"
+      SERVER_GRPC_BIND_ADDRESS: "0.0.0.0"
+      SERVER_GRPC_INSECURE: "t"
+      SERVER_GRPC_BROADCAST_ADDRESS: localhost:7077
+      SERVER_GRPC_PORT: "7077"
+      SERVER_URL: http://localhost:8888
+      SERVER_AUTH_SET_EMAIL_VERIFIED: "t"
+      SERVER_INTERNAL_CLIENT_INTERNAL_GRPC_BROADCAST_ADDRESS: localhost:7077
+    volumes:
+      - hatchet_poc_config:/config
+volumes:
+  hatchet_poc_postgres:
+  hatchet_poc_config:

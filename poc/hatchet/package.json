@@ -1,0 +1,19 @@
+{
+  "name": "vululu-hatchet-poc",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "worker": "tsx src/worker.ts",
+    "demo": "tsx src/demo.ts"
+  },
+  "dependencies": {
+    "@hatchet-dev/typescript-sdk": "1.43.0",
+    "zod": "3.25.76",
+    "pg": "8.16.3"
+  },
+  "devDependencies": {
+    "tsx": "4.20.0",
+    "typescript": "5.9.2",
+    "@types/pg": "8.15.6"
+  }
+}
