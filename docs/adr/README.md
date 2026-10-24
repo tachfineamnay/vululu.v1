@@ -31,6 +31,7 @@ Chaque décision suit [template.md](template.md) :
 | [0007](0007-consolidation-applicative-et-suppression-legacy.md) | Consolidation applicative et suppression du workflow legacy | Acceptée | 2026-10-23 |
 | [0008](0008-agentic-capabilities-registre-et-routeur.md) | Agentic Capabilities : registre versionné et routeur/fallback | Acceptée | 2026-10-23 |
 | [0009](0009-poc-hatchet-durabilite-prouvee.md) | POC Hatchet : durabilité prouvée, packaging Docker conditionnel | Acceptée sous condition | 2026-10-24 |
+| [0010](0010-orchestration-durable-outbox-hatchet.md) | Orchestration durable par Outbox et Hatchet Embedded | Acceptée sous condition | 2026-10-24 |
 
 ## Décisions encore ouvertes
 
