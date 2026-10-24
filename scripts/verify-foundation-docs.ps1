@@ -144,6 +144,7 @@ $required = @(
     'docs/execution/V1_01_C_APPROVAL_TIMEOUT_BUDGET.md',
     'docs/execution/V1_01_C_OPERATIONS.md',
     'docs/execution/V1_01_C_FINAL_VERDICT.md',
+    'docs/adr/0009-poc-hatchet-durabilite-prouvee.md',
     'poc/hatchet/src/pipeline.ts',
     'poc/hatchet/src/worker.ts',
     'poc/hatchet/src/ledger.ts',
