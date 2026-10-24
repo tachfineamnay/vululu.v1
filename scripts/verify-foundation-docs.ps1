@@ -137,7 +137,18 @@ $required = @(
     'tests/domain/agentic.test.ts',
     'tests/v1/v1-01-b-agentic.test.ts',
     'docs/execution/V1_01_B_AGENTIC_CAPABILITIES.md',
-    'docs/execution/V1_01_B_TEST_EVIDENCE.md'
+    'docs/execution/V1_01_B_TEST_EVIDENCE.md',
+    'docs/execution/V1_01_C_POC_ARCHITECTURE.md',
+    'docs/execution/V1_01_C_CRASH_RECOVERY_EVIDENCE.md',
+    'docs/execution/V1_01_C_IDEMPOTENCY.md',
+    'docs/execution/V1_01_C_APPROVAL_TIMEOUT_BUDGET.md',
+    'docs/execution/V1_01_C_OPERATIONS.md',
+    'docs/execution/V1_01_C_FINAL_VERDICT.md',
+    'poc/hatchet/src/pipeline.ts',
+    'poc/hatchet/src/worker.ts',
+    'poc/hatchet/src/ledger.ts',
+    'poc/hatchet/docker-compose.hatchet.yml',
+    'poc/hatchet/scripts/harness.ps1'
 )
 foreach ($relative in $required) {
     if (-not (Test-Path -LiteralPath (Join-Path $rootPath $relative))) {

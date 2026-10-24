@@ -1,4 +1,3 @@
-version: "3.8"
 name: vululu-hatchet-poc
 # Configuration Docker locale du POC C. NON EXECUTEE sur l environnement Windows
 # de cette session : Docker Desktop etait indisponible (disque de donnees WSL
