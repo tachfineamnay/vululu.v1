@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- POC Hatchet isole, types SDK volontairement souples */
 import { seedSchema, pool, getApproval } from './ledger';
 import { hatchet, pipeline, timeoutWorkflow } from './pipeline';
 

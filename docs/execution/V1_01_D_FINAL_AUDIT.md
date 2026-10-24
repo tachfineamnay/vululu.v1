@@ -4,7 +4,7 @@
 - **Branche** : v1-01-d-durable-orchestration
 - **Base C** : 87eb18d
 - **Commit code D** : 1110240
-- **Commit docs D** : a completer par le commit final
+- **Commit docs D** : 2e27f6c (finalisation locale incluse apres ce document)
 - **Verdict** : GO CONDITIONNEL
 - **Portee** : architecture locale ; pas de production, pas de deploiement
 

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- POC script CommonJS */
 const net = require('node:net');
 
 const host = process.argv[2];

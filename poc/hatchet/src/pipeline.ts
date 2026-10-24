@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- POC Hatchet isole, types SDK volontairement souples */
 import { HatchetClient, NonRetryableError } from '@hatchet-dev/typescript-sdk/v1';
 import { routeCapability } from '../../../packages/domain/src/index';
 import {
