@@ -93,6 +93,7 @@ export class PrismaProductionRunRepository implements ProductionRunRepository {
     targetSceneKey: string | null;
     instruction: string | null;
     steps: string[];
+    outbox?: { kind: string; payload: Record<string, unknown> };
   }): Promise<{ job: ProductionJobRecord; jobRun: JobRunRecord }> {
     try {
       return await this.db.$transaction(
@@ -117,7 +118,10 @@ export class PrismaProductionRunRepository implements ProductionRunRepository {
             }
           });
           const running = await tx.jobRun.findFirst({
-            where: { projectId: input.projectId, status: { in: ['queued', 'running'] } },
+            where: {
+              projectId: input.projectId,
+              status: { in: ['queued', 'running', 'waiting_approval', 'recovery_pending'] }
+            },
             select: { id: true }
           });
           if (running) {
@@ -254,6 +258,17 @@ export class PrismaProductionRunRepository implements ProductionRunRepository {
               progress: 0
             }
           });
+          if (input.outbox) {
+            await tx.orchestrationOutbox.create({
+              data: {
+                idempotencyKey: 'start:' + jobRun.id,
+                jobRunId: jobRun.id,
+                kind: input.outbox.kind,
+                payload: input.outbox.payload as Prisma.InputJsonValue,
+                status: 'pending'
+              }
+            });
+          }
           return { job: mapJob(job), jobRun: mapJobRun(jobRun) };
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
@@ -284,5 +299,13 @@ export class PrismaProductionRunRepository implements ProductionRunRepository {
         attempts: status === 'running' ? { increment: 1 } : undefined
       }
     });
+  }
+
+  async findActiveByProject(projectId: string): Promise<JobRunRecord | null> {
+    const row = await this.db.jobRun.findFirst({
+      where: { projectId, status: { in: ['queued', 'running', 'waiting_approval', 'recovery_pending'] } },
+      orderBy: { createdAt: 'desc' }
+    });
+    return row ? mapJobRun(row) : null;
   }
 }

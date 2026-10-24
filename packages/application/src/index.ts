@@ -10,3 +10,4 @@ export * from './use-cases/bundle';
 export * from './use-cases/production';export * from './use-cases/artifacts';export * from './use-cases/agents';
 export * from './use-cases/provider-catalog';
 export * from './use-cases/routing';
+export * from './use-cases/durableProduction';

@@ -512,9 +512,11 @@ export interface ProductionRunRepository {
     targetSceneKey: string | null;
     instruction: string | null;
     steps: string[];
+    outbox?: ProductionOutboxRequest;
   }): Promise<{ job: ProductionJobRecord; jobRun: JobRunRecord }>;
   updateJob(jobId: string, input: { status?: string; step?: string; progress?: number; error?: string | null }): Promise<void>;
   updateStep(jobRunId: string, name: string, status: string, error?: string): Promise<void>;
+  findActiveByProject?(projectId: string): Promise<JobRunRecord | null>;
 }
 
 export type ExecutionScene = SceneRecord & {
@@ -736,3 +738,197 @@ export interface CostRepository {
 export interface CapabilityProviderPort {
   invoke(input: CapabilityInvocation): Promise<CapabilityResult>;
 }
+// ---------------------------------------------------------------------------
+// V1-01-D : orchestration durable, outbox, etats metier, routage fige.
+// ---------------------------------------------------------------------------
+
+export type ProductionOutboxRequest = {
+  kind: string;
+  payload: Record<string, unknown>;
+};
+
+export const DURABLE_PRODUCTION_STEPS = [
+  'validate-snapshot',
+  'resolve-capabilities',
+  'render-scenes',
+  'assemble-master',
+  'qa',
+  'finalize',
+  'approval',
+  'transfer'
+] as const;
+
+export type DurableRunRecord = {
+  id: string;
+  projectId: string;
+  type: 'produce' | 'correction' | string;
+  status: string;
+  snapshot: ReproducibilitySnapshot | null;
+  snapshotChecksum: string | null;
+  outputs: Record<string, unknown> | null;
+  workflowRunId: string | null;
+  jobId: string | null;
+};
+
+export type RenderedScene = {
+  sceneId: string;
+  sceneKey: string;
+  position: number;
+  version: number;
+  imagePath: string;
+  absolutePath: string;
+  prompt: string;
+  checksum: string;
+  width: number;
+  height: number;
+  instruction?: string | null;
+};
+
+export type RenderedMaster = {
+  version: number;
+  relativePath: string;
+  absolutePath: string;
+  checksum: string;
+  duration: number;
+  expectedDurationSeconds: number;
+  videoCodec: string;
+  audioCodec: string;
+  width: number;
+  height: number;
+};
+
+export type DurableRunRoutingSnapshot = {
+  agentDefinitionId: string | null;
+  agentConfigVersionId: string | null;
+  agentConfigChecksum: string | null;
+  capabilityKey: string;
+  providerId: string | null;
+  modelId: string | null;
+  providerKey: string;
+  modelKey: string;
+  fallbackModelId: string | null;
+  policy: Record<string, unknown>;
+  decisionId: string | null;
+  estimatedCents: number;
+  actualCents: number;
+  usedFallback: boolean;
+};
+
+export interface DurableRoutingPort {
+  resolve(input: {
+    jobRunId: string;
+    projectId: string;
+    capabilityKey: string;
+    budgetCents: number;
+    input: Record<string, unknown>;
+    idempotencyKey: string;
+  }): Promise<DurableRunRoutingSnapshot>;
+}
+
+export interface DurableProductionStore {
+  loadRun(jobRunId: string): Promise<DurableRunRecord>;
+  loadExecutionProject(projectId: string): Promise<ExecutionProject>;
+  transitionJob(
+    jobRunId: string,
+    toState: string,
+    source: string,
+    metadata?: Record<string, unknown>
+  ): Promise<void>;
+  transitionStep(
+    jobRunId: string,
+    name: string,
+    toState: string,
+    source: string,
+    metadata?: Record<string, unknown>
+  ): Promise<void>;
+  updateJob(jobId: string, input: { status?: string; step?: string; progress?: number; error?: string | null }): Promise<void>;
+  saveStepOutput(jobRunId: string, name: string, output: Record<string, unknown>): Promise<void>;
+  getStepOutput<T = Record<string, unknown>>(jobRunId: string, name: string): Promise<T | null>;
+  nextMasterVersion(projectId: string): Promise<number>;
+  finalizeArtifacts(input: ProductionFinalization): Promise<{
+    artifactVersionId: string;
+    masterVersion: number;
+    checksum: string;
+  }>;
+  completeRun(input: {
+    jobRunId: string;
+    projectId: string;
+    outputs: Record<string, unknown>;
+  }): Promise<void>;
+  failRun(input: {
+    jobRunId: string;
+    jobId: string;
+    projectId: string;
+    error: string;
+    state?: 'failed' | 'timed_out' | 'cancelled';
+  }): Promise<void>;
+  recordRoutingSnapshot(jobRunId: string, snapshot: DurableRunRoutingSnapshot): Promise<void>;
+  recordCost(input: {
+    idempotencyKey: string;
+    jobRunId: string;
+    projectId: string;
+    provider: string;
+    model: string | null;
+    units: number;
+    amountCents: number;
+  }): Promise<void>;
+  getRunEvidence(jobRunId: string): Promise<RunEvidence>;
+}
+
+export interface DurableOrchestratorPort {
+  submitStart(input: {
+    outboxId: string;
+    jobRunId: string;
+    projectId: string;
+    type: string;
+  }): Promise<{ workflowRunId: string }>;
+  signalApproval(input: {
+    jobRunId: string;
+    projectId: string;
+    artifactVersionId: string;
+    checksum: string;
+    approvedBy: string;
+  }): Promise<void>;
+  getRunStatus(workflowRunId: string): Promise<string>;
+  getRunEvidence(workflowRunId: string): Promise<Record<string, unknown>>;
+  cancelRun(workflowRunId: string): Promise<void>;
+  retryFailedStep(workflowRunId: string, stepName: string): Promise<void>;
+  resumeRun(workflowRunId: string): Promise<void>;
+}
+
+export interface ApprovalSignalPort {
+  signal(input: {
+    jobRunId: string;
+    projectId: string;
+    artifactVersionId: string;
+    checksum: string;
+    approvedBy: string;
+  }): Promise<void>;
+}
+
+export type OutboxMessage = {
+  id: string;
+  idempotencyKey: string;
+  jobRunId: string | null;
+  kind: string;
+  payload: Record<string, unknown>;
+  status: string;
+  attempts: number;
+  workflowRunId: string | null;
+};
+
+export type RunEvidence = {
+  jobRunId: string;
+  projectId: string;
+  status: string;
+  workflowRunId: string | null;
+  transitions: Array<{
+    fromState: string | null;
+    toState: string;
+    source: string;
+    scope: string;
+    createdAt: string;
+  }>;
+  routing: DurableRunRoutingSnapshot | null;
+  stepOutputs: Record<string, Record<string, unknown> | null>;
+};

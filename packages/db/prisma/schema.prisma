@@ -288,6 +288,9 @@ model JobRun {
   snapshotChecksum String?
   outputs          Json?
   outputsChecksum  String?
+  workflowRunId    String?
+  orchestrator     String?
+  lastTransitionAt DateTime?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   project          Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -304,6 +307,7 @@ model StepRun {
   status     String    @default("pending")
   attempts   Int       @default(0)
   error      String?
+  output     Json?
   startedAt  DateTime?
   finishedAt DateTime?
   createdAt  DateTime  @default(now())
@@ -334,6 +338,7 @@ model CostEvent {
   model       String?
   units       Int      @default(0)
   amountCents Int      @default(0)
+  idempotencyKey String? @unique
   createdAt   DateTime @default(now())
 
   @@index([projectId])
@@ -408,3 +413,72 @@ model RoutingDecision {
   @@index([capabilityKey])
   @@index([createdAt])
 }
+// ---------------------------------------------------------------------------
+// V1-01-D : orchestration durable, outbox, etat metier, routage fige.
+// ---------------------------------------------------------------------------
+
+model OrchestrationOutbox {
+  id             String    @id @default(cuid())
+  idempotencyKey String    @unique
+  jobRunId       String?
+  kind           String
+  payload        Json
+  status         String    @default("pending")
+  attempts        Int      @default(0)
+  nextAttemptAt  DateTime  @default(now())
+  lastError      String?
+  workflowRunId  String?
+  dispatchedAt   DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@index([jobRunId])
+}
+
+model RunStateEvent {
+  id         String   @id @default(cuid())
+  jobRunId   String
+  stepRunId  String?
+  scope      String
+  fromState  String?
+  toState    String
+  source     String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([jobRunId, createdAt])
+  @@index([jobRunId, scope])
+}
+
+model RunRoutingSnapshot {
+  id                    String   @id @default(cuid())
+  jobRunId              String   @unique
+  agentDefinitionId     String?
+  agentConfigVersionId  String?
+  agentConfigChecksum   String?
+  capabilityKey         String
+  providerId            String?
+  modelId               String?
+  providerKey           String
+  modelKey              String
+  fallbackModelId       String?
+  policy                Json
+  decisionId            String?
+  estimatedCents        Int      @default(0)
+  actualCents           Int      @default(0)
+  createdAt             DateTime @default(now())
+}
+
+model RunArtifact {
+  id                String   @id @default(cuid())
+  jobRunId          String   @unique
+  artifactVersionId String
+  masterVersion     Int
+  checksum          String
+  scenes            Json
+  createdAt         DateTime @default(now())
+
+  @@index([artifactVersionId])
+}
+

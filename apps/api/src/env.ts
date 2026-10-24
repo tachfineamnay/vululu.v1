@@ -49,5 +49,6 @@ export const env = {
   databaseUrl: selected,
   sessionSecret,
   artifactRoot: path.resolve(repoRoot, process.env.ARTIFACT_DIR || 'data/artifacts'),
-  demoEmail: process.env.V0_DEMO_EMAIL || 'demo@vululu.local'
+  demoEmail: process.env.V0_DEMO_EMAIL || 'demo@vululu.local',
+  orchestratorMode: process.env.ORCHESTRATOR_MODE === 'hatchet' ? 'hatchet' as const : 'local' as const
 };

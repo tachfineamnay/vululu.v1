@@ -35,7 +35,12 @@ import {
   PrismaProviderCatalogRepository,
   PrismaRoutingRepository,
   PrismaSceneRepository,
-  PrismaStoryboardStore
+  PrismaStoryboardStore,
+  PrismaDurableProductionStore,
+  DurableProductionExecutor,
+  HatchetOrchestratorAdapter,
+  OutboxApprovalSignal,
+  OutboxDispatcher
 } from '../infrastructure';
 
 const clock = { now: () => new Date() };
@@ -51,14 +56,23 @@ const sceneRepository = new PrismaSceneRepository();
 const productionRepository = new PrismaProductionRepository();
 const runRepository = new PrismaProductionRunRepository();
 const executionStore = new PrismaProductionExecutionStore();
+const durableStore = new PrismaDurableProductionStore();
 const audit = new PrismaAuditAdapter();
 const storage = new LocalStoragePort();
-const executor = new LocalProductionExecutor(
-  executionStore,
-  new MediaRendererAdapter(),
-  storage,
-  storage.artifactRoot
-);
+const durableMode = process.env.ORCHESTRATOR_MODE === 'hatchet';
+const orchestrator = durableMode ? new HatchetOrchestratorAdapter() : null;
+const outboxDispatcher = orchestrator ? new OutboxDispatcher(orchestrator) : null;
+const approvalSignal = outboxDispatcher ? new OutboxApprovalSignal(outboxDispatcher) : undefined;
+const executor = durableMode
+  ? new DurableProductionExecutor(outboxDispatcher!)
+  : new LocalProductionExecutor(
+      executionStore,
+      new MediaRendererAdapter(),
+      storage,
+      storage.artifactRoot
+    );
+
+export { outboxDispatcher, durableMode, durableStore };
 
 export const contexts = new ContextUseCases(contextRepository, clock, ids);
 export const projects = new ProjectUseCases(projectRepository, contextRepository, clock, ids);
@@ -85,7 +99,11 @@ export const production = new ProductionUseCases(
   new PostizMockAdapter(),
   audit,
   clock,
-  ids
+  ids,
+  {
+    durable: durableMode,
+    ...(approvalSignal ? { approvalSignal } : {})
+  }
 );
 
 export function actorOf(user: { id: string; role: string } | undefined): Actor {
@@ -114,3 +132,6 @@ export const routing = new RoutingUseCases(
   audit
 );
 export const agentRepositoryPort = agentRepository;
+export function createDurablePipeline() {
+  return { dispatcher: outboxDispatcher, mode: durableMode };
+}

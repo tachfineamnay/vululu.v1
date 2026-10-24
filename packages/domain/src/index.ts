@@ -28,3 +28,4 @@ export * from './production';
 export * from './transfer';
 export * from './capabilities';
 export * from './agents';
+export * from './productionState';

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { approvalInputSchema, correctionInputSchema } from '@vululu/contracts';
-import { actorOf, artifacts, bundles, production } from '../application/container';
+import { actorOf, artifacts, bundles, durableStore, production } from '../application/container';
 
 function sendVideo(request: FastifyRequest, reply: FastifyReply, file: string, size: number) {
   const range = request.headers.range;
@@ -80,6 +80,16 @@ export async function productionRoutes(app: FastifyInstance): Promise<void> {
     const params = request.params as { id: string };
     const result = await production.transfer(actorOf(request.currentUser), params.id);
     return reply.code(202).send(result);
+  });
+
+  app.get('/api/projects/:id/runs/:jobRunId/evidence', { preHandler: [app.authenticate] }, async (request) => {
+    const params = request.params as { id: string; jobRunId: string };
+    const bundle = await bundles.get(actorOf(request.currentUser), params.id);
+    const evidence = await durableStore.getRunEvidence(params.jobRunId);
+    if (evidence.projectId !== bundle.project.id) {
+      throw new Error('job_run_not_found');
+    }
+    return evidence;
   });
 
   app.get('/api/projects/:id/qa', { preHandler: [app.authenticate] }, async (request) => {

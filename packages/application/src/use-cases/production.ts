@@ -19,8 +19,11 @@ import type {
   ProductionExecutorPort,
   MasterRepository,
   ProductionRunRepository,
-  ProjectRepository
+  ProjectRepository,
+  ApprovalSignalPort,
+  ProductionOutboxRequest
 } from '../ports';
+import { DURABLE_PRODUCTION_STEPS } from '../ports';
 
 function toDomainArtifact(record: ArtifactVersionRecord, createdAt: string): DomainArtifactVersion {
   const qaStatus = assertQaStatus(record.qaStatus ?? 'PENDING');
@@ -65,7 +68,11 @@ export class ProductionUseCases {
     private readonly postiz: PostizPort,
     private readonly audit: AuditPort,
     private readonly clock: Clock,
-    private readonly ids: IdGenerator
+    private readonly ids: IdGenerator,
+    private readonly options: {
+      durable?: boolean;
+      approvalSignal?: ApprovalSignalPort;
+    } = {}
   ) {}
 
   private async assertOwnedProject(actor: Actor, projectId: string) {
@@ -78,13 +85,20 @@ export class ProductionUseCases {
 
   async startProduction(actor: Actor, projectId: string) {
     await this.assertOwnedProject(actor, projectId);
+    const durable = this.options.durable === true;
+    const outbox: ProductionOutboxRequest | undefined = durable
+      ? { kind: 'start_run', payload: { projectId, type: 'produce' } }
+      : undefined;
     const { job, jobRun } = await this.runs.startRun({
       userId: actor.id,
       projectId,
       type: 'produce',
       targetSceneKey: null,
       instruction: null,
-      steps: ['snapshot', 'render-scenes', 'assemble-master', 'qa']
+      steps: durable
+        ? [...DURABLE_PRODUCTION_STEPS]
+        : ['snapshot', 'render-scenes', 'assemble-master', 'qa'],
+      ...(outbox ? { outbox } : {})
     });
     try {
       await this.executor.start({
@@ -112,13 +126,20 @@ export class ProductionUseCases {
 
   async startCorrection(actor: Actor, projectId: string, sceneKey: string, instruction: string) {
     await this.assertOwnedProject(actor, projectId);
+    const durable = this.options.durable === true;
+    const outbox: ProductionOutboxRequest | undefined = durable
+      ? { kind: 'start_run', payload: { projectId, type: 'correction', targetSceneKey: sceneKey, instruction } }
+      : undefined;
     const { job, jobRun } = await this.runs.startRun({
       userId: actor.id,
       projectId,
       type: 'correction',
       targetSceneKey: sceneKey,
       instruction,
-      steps: ['snapshot', 'correct-scene', 'assemble-master', 'qa']
+      steps: durable
+        ? [...DURABLE_PRODUCTION_STEPS]
+        : ['snapshot', 'correct-scene', 'assemble-master', 'qa'],
+      ...(outbox ? { outbox } : {})
     });
     try {
       await this.executor.start({
@@ -184,6 +205,28 @@ export class ProductionUseCases {
       targetId: artifactVersionId,
       metadata: { projectId, checksum }
     });
+    if (this.options.approvalSignal) {
+      const active = await this.runs.findActiveByProject?.(projectId);
+      if (active) {
+        try {
+          await this.options.approvalSignal.signal({
+            jobRunId: active.id,
+            projectId,
+            artifactVersionId: master.id,
+            checksum: state.approval.checksum,
+            approvedBy: actor.id
+          });
+        } catch (error) {
+          await this.audit.record({
+            actorId: actor.id,
+            action: 'orchestration.approval_signal_failed',
+            targetType: 'job_run',
+            targetId: active.id,
+            metadata: { message: error instanceof Error ? error.message : 'signal_failed' }
+          });
+        }
+      }
+    }
     return { approval };
   }
 
