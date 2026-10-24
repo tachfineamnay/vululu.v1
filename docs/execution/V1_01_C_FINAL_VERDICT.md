@@ -63,6 +63,15 @@
 - Aucun test de charge, de sécurité réseau WSL ou de redémarrage de l'engine.
 - La configuration Docker compose contient des variables d'environnement, aucun secret commité.
 
+## 5.1 Non-régression V1 et outillage
+
+- `pnpm test` sur la base V1 de test : 150 tests PASS.
+- `tsc --noEmit` du POC : PASS.
+- Scripts PowerShell du POC : parse PASS.
+- `docker compose config` du fichier pinned : PASS (exécution des conteneurs NOT_RUN).
+- `pnpm typecheck` du monorepo : PASS.
+- Scan secrets : PASS.
+
 ## 6. Conclusion
 
 Les garanties essentielles demandées sont démontrées sur un vrai moteur Hatchet : crash brutal et reprise, conservation des étapes, idempotence des effets, retries, approbation persistante, timeout, indisponibilité worker, concurrence et budget. Le seul écart est le packaging Docker local, non exécutable sur cet hôte sans risque pour les données Docker existantes.
