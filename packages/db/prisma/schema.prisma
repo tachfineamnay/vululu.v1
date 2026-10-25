@@ -128,17 +128,25 @@ model Scene {
 }
 
 model SceneVersion {
-  id        String   @id @default(cuid())
-  sceneId   String
-  version   Int
-  imagePath String
-  prompt    String
-  checksum  String
-  createdAt DateTime @default(now())
-  scene     Scene    @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  id                String   @id @default(cuid())
+  sceneId           String
+  version           Int
+  imagePath         String
+  prompt            String
+  checksum          String
+  storageKey        String?
+  storageProvider   String?
+  mimeType          String?
+  sizeBytes         BigInt?
+  sha256            String?
+  finalizationState String   @default("legacy")
+  manifest          Json?
+  createdAt         DateTime @default(now())
+  scene             Scene    @relation(fields: [sceneId], references: [id], onDelete: Cascade)
 
   @@unique([sceneId, version])
   @@index([sceneId])
+  @@index([storageProvider, storageKey])
 }
 
 model Character {
@@ -166,19 +174,27 @@ model Artifact {
 }
 
 model ArtifactVersion {
-  id         String    @id @default(cuid())
-  artifactId String
-  version    Int
-  masterPath String
-  checksum   String
-  qaStatus   String?
-  qaReport   Json?
-  createdAt  DateTime  @default(now())
-  artifact   Artifact  @relation(fields: [artifactId], references: [id], onDelete: Cascade)
-  approval   Approval?
+  id                String    @id @default(cuid())
+  artifactId        String
+  version           Int
+  masterPath        String
+  checksum          String
+  qaStatus          String?
+  qaReport          Json?
+  storageKey        String?
+  storageProvider   String?
+  mimeType          String?
+  sizeBytes         BigInt?
+  sha256            String?
+  finalizationState String    @default("legacy")
+  manifest          Json?
+  createdAt         DateTime  @default(now())
+  artifact          Artifact  @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  approval          Approval?
 
   @@unique([artifactId, version])
   @@index([artifactId])
+  @@index([storageProvider, storageKey])
 }
 
 model Approval {
@@ -477,8 +493,34 @@ model RunArtifact {
   masterVersion     Int
   checksum          String
   scenes            Json
+  manifest          Json?
+  storageProvider   String?
   createdAt         DateTime @default(now())
 
   @@index([artifactVersionId])
 }
 
+model ArtifactObject {
+  id                String   @id @default(cuid())
+  provider          String
+  key               String
+  contentType       String
+  sizeBytes         BigInt
+  sha256            String
+  etag              String?
+  state             String   @default("pending")
+  jobRunId          String?
+  sceneId           String?
+  sceneVersionId    String?
+  artifactVersionId String?
+  manifest          Json?
+  metadata          Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  finalizedAt       DateTime?
+
+  @@unique([provider, key])
+  @@index([state])
+  @@index([jobRunId])
+  @@index([sha256])
+}

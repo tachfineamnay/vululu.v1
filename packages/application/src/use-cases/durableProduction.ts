@@ -14,6 +14,8 @@ import type {
   DurableRoutingPort,
   MasterRepository,
   MediaRendererPort,
+  ArtifactPublisherPort,
+  ArtifactStorageMetadata,
   PostizPort,
   ProductionFinalization,
   QaReport,
@@ -90,7 +92,8 @@ export class DurableProductionUseCases {
     private readonly clock: Clock,
     private readonly artifactRoot: string,
     private readonly sceneDelayMs: number = 0,
-    private readonly budgetCents: number = 100
+    private readonly budgetCents: number = 100,
+    private readonly publisher?: ArtifactPublisherPort
   ) {}
 
   private async finishStep(
@@ -327,6 +330,93 @@ export class DurableProductionUseCases {
       throw new ApplicationError('media_incomplete', 'Media incomplet pour finalisation.', 409);
     }
     await this.store.transitionStep(jobRunId, 'finalize', 'running', 'worker');
+    const routing = await this.store.getStepOutput<{
+      routing: DurableRunRoutingSnapshot;
+    }>(jobRunId, 'resolve-capabilities');
+    const sceneStorage = new Map<string, ArtifactStorageMetadata>();
+    const manifestScenes: Record<string, unknown>[] = [];
+    for (const scene of rendered.scenes) {
+      const manifestScene = {
+        sceneId: scene.sceneId,
+        sceneKey: scene.sceneKey,
+        version: scene.version,
+        checksum: scene.checksum,
+        imagePath: scene.imagePath,
+        storageKey: null as string | null
+      };
+      if (this.publisher) {
+        const storage = await this.publisher.publish({
+          kind: 'scene',
+          jobRunId,
+          projectId: run.projectId,
+          sceneId: scene.sceneId,
+          sceneKey: scene.sceneKey,
+          version: scene.version,
+          filePath: scene.absolutePath,
+          contentType: 'image/png',
+          checksum: scene.checksum,
+          manifest: {
+            jobRunId,
+            sceneId: scene.sceneId,
+            sceneKey: scene.sceneKey,
+            version: scene.version,
+            checksum: scene.checksum
+          }
+        });
+        sceneStorage.set(scene.sceneKey, storage);
+        manifestScene.storageKey = storage.key;
+      }
+      manifestScenes.push(manifestScene);
+    }
+    let masterStorage: ArtifactStorageMetadata | undefined;
+    if (this.publisher) {
+      masterStorage = await this.publisher.publish({
+        kind: 'master',
+        jobRunId,
+        projectId: run.projectId,
+        version: master.master.version,
+        filePath: master.master.absolutePath,
+        contentType: 'video/mp4',
+        checksum: master.master.checksum,
+        manifest: {
+          jobRunId,
+          masterVersion: master.master.version,
+          checksum: master.master.checksum
+        }
+      });
+    }
+    const createdAt = this.clock.now().toISOString();
+    const manifest = {
+      schemaVersion: 1,
+      createdAt,
+      jobRunId,
+      projectId: run.projectId,
+      snapshotChecksum: run.snapshotChecksum,
+      agent: routing?.routing
+        ? {
+            agentDefinitionId: routing.routing.agentDefinitionId,
+            agentConfigVersionId: routing.routing.agentConfigVersionId,
+            agentConfigChecksum: routing.routing.agentConfigChecksum,
+            capabilityKey: routing.routing.capabilityKey,
+            providerKey: routing.routing.providerKey,
+            modelKey: routing.routing.modelKey,
+            fallbackModelId: routing.routing.fallbackModelId,
+            usedFallback: routing.routing.usedFallback
+          }
+        : null,
+      renderer: { name: 'deterministic-media', version: 'v1-01-e' },
+      scenes: manifestScenes,
+      master: {
+        version: master.master.version,
+        checksum: master.master.checksum,
+        storageKey: masterStorage?.key ?? null,
+        duration: master.master.duration,
+        videoCodec: master.master.videoCodec,
+        audioCodec: master.master.audioCodec
+      },
+      qa: { status: qa.qa.status, checks: qa.qa.checks },
+      license: { known: false, note: 'Aucune licence fournisseur reelle connue.' }
+    };
     const scenes = rendered.scenes.map((scene) => ({
       sceneId: scene.sceneId,
       sceneKey: scene.sceneKey,
@@ -334,20 +424,25 @@ export class DurableProductionUseCases {
       version: scene.version,
       imagePath: scene.imagePath,
       prompt: scene.prompt,
-      checksum: scene.checksum
+      checksum: scene.checksum,
+      ...(sceneStorage.get(scene.sceneKey)
+        ? { storage: sceneStorage.get(scene.sceneKey) as ArtifactStorageMetadata }
+        : {})
     }));
     const outputs = {
-      completedAt: this.clock.now().toISOString(),
+      completedAt: createdAt,
       scenes: rendered.scenes.map((scene) => ({
         sceneKey: scene.sceneKey,
         version: scene.version,
         checksum: scene.checksum,
-        imagePath: scene.imagePath
+        imagePath: scene.imagePath,
+        storageKey: sceneStorage.get(scene.sceneKey)?.key ?? null
       })),
       master: {
         version: master.master.version,
         checksum: master.master.checksum,
         masterPath: master.master.relativePath,
+        storageKey: masterStorage?.key ?? null,
         duration: master.master.duration,
         videoCodec: master.master.videoCodec,
         audioCodec: master.master.audioCodec
@@ -362,10 +457,11 @@ export class DurableProductionUseCases {
       jobId: run.jobId ?? '',
       projectId: run.projectId,
       masterVersion: master.master.version,
-      master: master.master,
+      master: { ...master.master, ...(masterStorage ? { storage: masterStorage } : {}) },
       qa: qa.qa,
       scenes,
-      outputs
+      outputs,
+      manifest
     };
     const finalized = await this.store.finalizeArtifacts(finalization);
     const output = {
@@ -386,6 +482,28 @@ export class DurableProductionUseCases {
       metadata: { jobRunId, checksum: finalized.checksum }
     });
     return output;
+  }
+
+  /** Repare le cas ou l approbation est arrivee avant le wait Hatchet. */
+  async findGrantedApproval(jobRunId: string): Promise<{
+    jobRunId: string;
+    artifactVersionId: string;
+    checksum: string;
+    approvedBy: string;
+  } | null> {
+    const run = await this.store.loadRun(jobRunId);
+    const master = await this.master.latestMaster(run.projectId);
+    if (!master || master.qaStatus !== 'PASS') return null;
+    const approval = await this.master.findApproval(master.id);
+    if (!approval || approval.invalidatedAt !== null || approval.checksum !== master.checksum) {
+      return null;
+    }
+    return {
+      jobRunId,
+      artifactVersionId: master.id,
+      checksum: master.checksum,
+      approvedBy: approval.approvedBy
+    };
   }
 
   async confirmApproval(input: {

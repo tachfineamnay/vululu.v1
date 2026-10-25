@@ -35,3 +35,8 @@ export { HatchetOrchestratorAdapter } from './durable/hatchetOrchestratorAdapter
 export { OutboxDispatcher } from './durable/outboxDispatcher';
 export { DurableProductionExecutor } from './durable/durableProductionExecutor';
 export { OutboxApprovalSignal } from './durable/outboxApprovalSignal';
+export { LocalFilesystemArtifactStorage } from './storage/localArtifactStorage';
+export { S3CompatibleArtifactStorage, ArtifactStorageError } from './storage/s3ArtifactStorage';
+export { createArtifactStorage, artifactStorageBackend } from './storage/storageFactory';
+export { PrismaArtifactPublisher } from './durable/prismaArtifactPublisher';export { ArtifactInventoryService } from './artifacts/artifactInventory';
+export { ArtifactMigrationService } from './artifacts/artifactMigration';

@@ -549,6 +549,7 @@ export type ProductionFinalization = {
     audioCodec: string;
     width: number;
     height: number;
+    storage?: ArtifactStorageMetadata;
   };
   qa: QaReport;
   scenes: Array<{
@@ -559,8 +560,10 @@ export type ProductionFinalization = {
     imagePath: string;
     prompt: string;
     checksum: string;
+    storage?: ArtifactStorageMetadata;
   }>;
   outputs: Record<string, unknown>;
+  manifest?: Record<string, unknown>;
 };
 
 export interface ProductionExecutionStore {
@@ -589,9 +592,14 @@ export interface ProductionExecutorPort {
   }): Promise<void>;
 }
 export type ArtifactFile = {
-  absolutePath: string;
+  /** Chemin local uniquement pour le backend filesystem historique. */
+  absolutePath?: string;
+  storageKey?: string;
+  storageProvider?: string;
+  sha256?: string;
   contentType: 'image/png' | 'video/mp4';
   size: number;
+  openRead?: (range?: { start: number; end: number }) => Promise<import('node:stream').Readable>;
 };
 
 export interface ArtifactAccessPort {
@@ -932,3 +940,78 @@ export type RunEvidence = {
   routing: DurableRunRoutingSnapshot | null;
   stepOutputs: Record<string, Record<string, unknown> | null>;
 };
+// ---------------------------------------------------------------------------
+// V1-01-E : stockage d artefacts interchangeable.
+// ---------------------------------------------------------------------------
+
+export type ArtifactStorageMetadata = {
+  provider: string;
+  key: string;
+  contentType: string;
+  sizeBytes: number;
+  sha256: string;
+  etag?: string | null;
+};
+
+export type StoredObjectInfo = ArtifactStorageMetadata & {
+  lastModified?: string;
+};
+
+export type ArtifactReadRange = {
+  start: number;
+  /** Inclusif. Si absent, lecture jusqu a la fin. */
+  end?: number;
+};
+
+export type ArtifactReadStream = {
+  stream: import('node:stream').Readable;
+  size: number;
+  contentType: string;
+  sha256?: string;
+  range?: ArtifactReadRange;
+};
+
+/**
+ * Port de stockage d octets. Les cles sont opaques et ne sont pas des chemins
+ * metier. Aucun use case ne depend d un fournisseur ou d un bucket.
+ */
+export interface ArtifactStoragePort {
+  readonly provider: string;
+  putObject(input: {
+    key: string;
+    body: Buffer | import('node:stream').Readable;
+    contentType: string;
+    sha256: string;
+    sizeBytes?: number;
+  }): Promise<ArtifactStorageMetadata>;
+  putFile(input: {
+    key: string;
+    filePath: string;
+    contentType: string;
+    sha256: string;
+    sizeBytes: number;
+  }): Promise<ArtifactStorageMetadata>;
+  head(key: string): Promise<StoredObjectInfo | null>;
+  get(key: string, range?: ArtifactReadRange): Promise<ArtifactReadStream>;
+  verify(key: string, expectedSha256: string): Promise<boolean>;
+  getSignedReadUrl(key: string, expiresSeconds: number): Promise<string | null>;
+  list(prefix?: string): Promise<StoredObjectInfo[]>;
+}
+
+export type ArtifactPublishRequest = {
+  kind: 'scene' | 'master';
+  jobRunId: string;
+  projectId: string;
+  sceneId?: string;
+  sceneKey?: string;
+  version: number;
+  filePath: string;
+  contentType: string;
+  checksum: string;
+  manifest?: Record<string, unknown>;
+};
+
+export interface ArtifactPublisherPort {
+  publish(input: ArtifactPublishRequest): Promise<ArtifactStorageMetadata>;
+  verifyPublished(input: ArtifactStorageMetadata): Promise<boolean>;
+}

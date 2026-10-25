@@ -8,7 +8,9 @@ import {
   PostizMockAdapter,
   PrismaAuditAdapter,
   PrismaDurableProductionStore,
-  PrismaProductionRepository
+  PrismaProductionRepository,
+  PrismaArtifactPublisher,
+  createArtifactStorage
 } from '../infrastructure';
 
 export type ProductionWorkflowInput = {
@@ -25,6 +27,8 @@ const master = new PrismaProductionRepository();
 const audit = new PrismaAuditAdapter();
 const clock = { now: () => new Date() };
 const routing = new DurableRoutingService();
+const artifactStorage = createArtifactStorage();
+const publisher = new PrismaArtifactPublisher(artifactStorage);
 const useCases = new DurableProductionUseCases(
   store,
   media,
@@ -36,7 +40,8 @@ const useCases = new DurableProductionUseCases(
   clock,
   storage.artifactRoot,
   Number(process.env.DURABLE_SCENE_DELAY_MS ?? 0),
-  Number(process.env.DURABLE_BUDGET_CENTS ?? 100)
+  Number(process.env.DURABLE_BUDGET_CENTS ?? 100),
+  publisher
 );
 
 const hatchet: any = HatchetClient.init({
@@ -112,6 +117,10 @@ const approval = productionWorkflow.durableTask({
   executionTimeout: '30m',
   retries: 0,
   fn: async (input: ProductionWorkflowInput, ctx: any) => {
+    const granted = await useCases.findGrantedApproval(input.jobRunId);
+    if (granted) {
+      return useCases.confirmApproval(granted);
+    }
     const event = await ctx.waitForEvent(
       'production-approval:' + input.jobRunId,
       undefined,

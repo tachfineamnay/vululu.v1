@@ -214,17 +214,38 @@ export class PrismaDurableProductionStore implements DurableProductionStore {
           for (const scene of input.scenes) {
             const sceneRow = await tx.scene.findUnique({ where: { id: scene.sceneId }, select: { id: true } });
             if (!sceneRow) throw new ApplicationError('scene_not_found', 'Scene introuvable: ' + scene.sceneKey, 404);
-            const version = await tx.sceneVersion.findUnique({
+            let version = await tx.sceneVersion.findUnique({
               where: { sceneId_version: { sceneId: scene.sceneId, version: scene.version } }
             });
             if (!version) {
-              await tx.sceneVersion.create({
+              version = await tx.sceneVersion.create({
                 data: {
                   sceneId: scene.sceneId,
                   version: scene.version,
                   imagePath: scene.imagePath,
                   prompt: scene.prompt,
-                  checksum: scene.checksum
+                  checksum: scene.checksum,
+                  ...(scene.storage
+                    ? {
+                        storageKey: scene.storage.key,
+                        storageProvider: scene.storage.provider,
+                        mimeType: scene.storage.contentType,
+                        sizeBytes: BigInt(scene.storage.sizeBytes),
+                        sha256: scene.storage.sha256,
+                        finalizationState: 'ready',
+                        manifest: json(input.manifest ?? {})
+                      }
+                    : {})
+                }
+              });
+            }
+            if (scene.storage) {
+              await tx.artifactObject.updateMany({
+                where: { provider: scene.storage.provider, key: scene.storage.key },
+                data: {
+                  state: 'ready',
+                  sceneVersionId: version.id,
+                  finalizedAt: new Date()
                 }
               });
             }
@@ -241,9 +262,30 @@ export class PrismaDurableProductionStore implements DurableProductionStore {
               masterPath: input.master.relativePath,
               checksum: input.master.checksum,
               qaStatus: input.qa.status,
-              qaReport: json(input.qa)
+              qaReport: json(input.qa),
+              ...(input.master.storage
+                ? {
+                    storageKey: input.master.storage.key,
+                    storageProvider: input.master.storage.provider,
+                    mimeType: input.master.storage.contentType,
+                    sizeBytes: BigInt(input.master.storage.sizeBytes),
+                    sha256: input.master.storage.sha256,
+                    finalizationState: 'ready',
+                    manifest: json(input.manifest ?? {})
+                  }
+                : {})
             }
           });
+          if (input.master.storage) {
+            await tx.artifactObject.updateMany({
+              where: { provider: input.master.storage.provider, key: input.master.storage.key },
+              data: {
+                state: 'ready',
+                artifactVersionId: artifactVersion.id,
+                finalizedAt: new Date()
+              }
+            });
+          }
           await tx.approval.updateMany({
             where: { artifactVersion: { is: { artifact: { is: { projectId: input.projectId } } } }, invalidatedAt: null },
             data: { invalidatedAt: new Date() }
@@ -254,7 +296,9 @@ export class PrismaDurableProductionStore implements DurableProductionStore {
               artifactVersionId: artifactVersion.id,
               masterVersion: input.masterVersion,
               checksum: input.master.checksum,
-              scenes: json(input.scenes)
+              scenes: json(input.scenes),
+              manifest: json(input.manifest ?? {}),
+              storageProvider: input.master.storage?.provider ?? null
             }
           });
           await tx.productionJob.update({

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { approvalInputSchema, correctionInputSchema } from '@vululu/contracts';
+import type { ArtifactFile } from '@vululu/application';
 import { actorOf, artifacts, bundles, durableStore, production } from '../application/container';
 
 function sendVideo(request: FastifyRequest, reply: FastifyReply, file: string, size: number) {
@@ -23,6 +24,38 @@ function sendVideo(request: FastifyRequest, reply: FastifyReply, file: string, s
   reply.header('Accept-Ranges', 'bytes');
   reply.type('video/mp4');
   return reply.send(fs.createReadStream(file));
+}
+
+async function sendArtifact(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  file: ArtifactFile
+) {
+  if (file.absolutePath) {
+    return sendVideo(request, reply, file.absolutePath, file.size);
+  }
+  if (!file.openRead) {
+    return reply.code(404).send({ error: 'artifact_not_found' });
+  }
+  const rangeHeader = request.headers.range;
+  let range: { start: number; end: number } | undefined;
+  if (rangeHeader) {
+    const value = rangeHeader.replace('bytes=', '');
+    const parts = value.split('-');
+    const start = Number(parts[0] || '0');
+    const end = parts[1] ? Number(parts[1]) : file.size - 1;
+    if (start >= 0 && end < file.size && start <= end) {
+      range = { start, end };
+      reply.code(206);
+      reply.header('Content-Range', 'bytes ' + start + '-' + end + '/' + file.size);
+      reply.header('Content-Length', String(end - start + 1));
+    }
+  } else {
+    reply.header('Content-Length', String(file.size));
+  }
+  reply.header('Accept-Ranges', 'bytes');
+  reply.type(file.contentType);
+  return reply.send(await file.openRead(range));
 }
 
 export async function productionRoutes(app: FastifyInstance): Promise<void> {
@@ -53,6 +86,11 @@ export async function productionRoutes(app: FastifyInstance): Promise<void> {
     const params = request.params as { id: string; sceneKey: string };
     const file = await artifacts.getSceneImage(actorOf(request.currentUser), params.id, params.sceneKey);
     reply.header('Cache-Control', 'no-store');
+    if (file.openRead) {
+      reply.type(file.contentType);
+      return reply.send(await file.openRead());
+    }
+    if (!file.absolutePath) return reply.code(404).send({ error: 'artifact_not_found' });
     reply.type(file.contentType);
     return reply.send(fs.createReadStream(file.absolutePath));
   });
@@ -62,7 +100,7 @@ export async function productionRoutes(app: FastifyInstance): Promise<void> {
     const query = request.query as { version?: string };
     const requested = query.version ? Number(query.version) : undefined;
     const file = await artifacts.getMaster(actorOf(request.currentUser), params.id, requested);
-    return sendVideo(request, reply, file.absolutePath, file.size);
+    return sendArtifact(request, reply, file);
   });
 
   app.post('/api/projects/:id/approve', { preHandler: [app.authenticate] }, async (request) => {
