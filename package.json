@@ -2,6 +2,9 @@
   "name": "vululu-ai-v1-00",
   "private": true,
   "packageManager": "pnpm@10.6.1",
+  "engines": {
+    "node": ">=24.0.0"
+  },
   "scripts": {
     "dev": "concurrently -k -n api,web -c blue,green \"pnpm --filter @vululu/api dev\" \"pnpm --filter @vululu/web dev\"",
     "dev:api": "pnpm --filter @vululu/api dev",

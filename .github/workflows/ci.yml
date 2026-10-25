@@ -1,25 +1,37 @@
 # =============================================================================
-# Vululu AI — CI V1-00 (GitHub Actions)
+# Vululu AI — CI V1 (GitHub Actions)
 #
-# Objectif : gate de qualite reproductible pour le monorepo pnpm.
-# Ce workflow ne pousse rien, ne publie rien et ne deploie rien :
+# Objectif : gate de qualite reproductible pour le monorepo pnpm sur un runner
+# ubuntu-latest. Ce workflow ne pousse rien, ne publie rien et ne deploie rien :
 #   - permissions minimales (contents: read) ;
-#   - aucune action d'ecriture distante, de tag, de release ou de deploy ;
-#   - PostgreSQL et FFmpeg restent des services de test ephemeres.
+#   - aucun secret de production, aucune dependance a un service payant ;
+#   - PostgreSQL et les artefacts media restent ephemeres au runner.
 #
-# Couverture :
-#   lint            ESLint 10 flat config (eslint.config.mjs)
-#   typecheck       tsc --noEmit sur tous les packages (Prisma genere d'abord)
-#   domain-tests    tests du Domain Core pur, sans base de donnees
-#   database-tests  PostgreSQL 17 en service + tests API/V1 (migrations inclues)
-#   media-tests     FFmpeg installe + tests media (PNG/MP4/QA)
-#   build           build API (tsc) + build web (next build)
-#   secrets         scripts/check-secrets.ps1 sous PowerShell (ubuntu-latest)
-#   e2e             Playwright, UNIQUEMENT sur workflow_dispatch ; NOT_RUN a ce jour
+# Declencheurs : push, pull_request et workflow_dispatch. Les 4 jobs sont
+# OBLIGATOIRES et bloquants sur les trois declencheurs : aucun continue-on-error,
+# aucun job garde par un input workflow_dispatch.
 #
-# Statut E2E : le job e2e est documente, garde par workflow_dispatch et
-# continue-on-error. Il n'a jamais ete execute au moment de V1-00 et ne doit
-# pas etre considere comme vert. Voir les commentaires du job e2e.
+# Jobs :
+#   quality                 lint strict (LINT_STRICT=1), typecheck, build
+#                           (Node 24, pnpm 10.6.1, lockfile fige)
+#   unit-integration        PostgreSQL 17 ephemere + FFmpeg, migrations Prisma
+#                           deploy/status, tests domaine/API/V1/media sur la base
+#                           isolee vululu_v1_00_test (port hote 55432)
+#   e2e                     Playwright Chromium, base ephemere migree + seedee,
+#                           API 3101 + Web 3100 (webServer de playwright.config.ts)
+#   security-architecture   secrets arbre + historique Git, lockfile, frontieres
+#                           Domain/Application, migrations, docs fondatrices,
+#                           fichiers suivis interdits
+#
+# Statut de preuve : ce workflow n'a JAMAIS ete execute sur un runner GitHub a la
+# date de sa redaction (aucun push autorise pendant la certification). Il est
+# valide localement (YAML, scripts, chemins, commandes) et doit rester NOT_RUN
+# tant que le premier run distant n'a pas eu lieu. Voir
+# docs/review/V1_CI_WORKFLOW_REVIEW.md.
+#
+# Hors gate de base : orchestration Hatchet reelle et stockage S3 reel. Ils
+# exigent des services et des credentials indisponibles en CI standard ; ils
+# restent documentes NOT_RUN (voir la revue CI) et ne sont pas simules ici.
 # =============================================================================
 
 name: CI
@@ -28,14 +40,6 @@ on:
   push:
   pull_request:
   workflow_dispatch:
-    inputs:
-      e2e:
-        description: >-
-          Executer le job E2E Playwright. Etat V1-00 : NON execute, blocage
-          connu documente dans le job (playwright.config.ts).
-        required: false
-        type: boolean
-        default: false
 
 # Lecture seule : aucun job ne peut ecrire dans le depot distant.
 permissions:
@@ -47,84 +51,65 @@ concurrency:
 
 env:
   CI: 'true'
-  # Versions epinglees et repetees dans chaque job : le contexte env n'est pas
-  # garanti dans certains champs "with" des actions GitHub.
-  # Node 24 / pnpm 10.6.1 sont les versions de reference du depot.
+  NEXT_TELEMETRY_DISABLED: '1'
 
 jobs:
-  lint:
-    name: Lint (ESLint 10 flat config)
+  # ---------------------------------------------------------------------------
+  # Job 1 — Qualite statique et build. Aucune base de donnees requise : le client
+  # Prisma est genere sans connexion (DATABASE_URL factice de db:generate).
+  # ---------------------------------------------------------------------------
+  quality:
+    name: Quality — lint strict, typecheck, build
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public
+      DATABASE_URL_TEST: postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Installer pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: '10.6.1'
-      - name: Installer Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: pnpm
-      - name: Installer les dependances
-        run: pnpm install --frozen-lockfile
-      - name: ESLint strict (0 erreur / 0 warning)
-        run: LINT_STRICT=1 pnpm lint
-      - name: Verification documentaire
-        run: pwsh -NoProfile -File scripts/verify-foundation-docs.ps1
 
-  typecheck:
-    name: Typecheck (tsc --noEmit)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Installer pnpm
+      - name: Installer pnpm 10.6.1
         uses: pnpm/action-setup@v4
         with:
           version: '10.6.1'
-      - name: Installer Node.js
+
+      - name: Installer Node.js 24 (cache pnpm)
         uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: pnpm
-      - name: Installer les dependances
+
+      - name: Installer les dependances (lockfile fige)
         run: pnpm install --frozen-lockfile
+
       - name: Generer le client Prisma
         run: pnpm db:generate
+
+      # LINT_STRICT=1 repasse en erreur la dette V0 localisee (eslint.config.mjs).
+      # Shell par defaut du runner ubuntu-latest : bash.
+      - name: ESLint strict (0 erreur / 0 warning)
+        run: LINT_STRICT=1 pnpm lint
+
       - name: Typecheck du monorepo
         run: pnpm typecheck
 
-  domain-tests:
-    name: Tests domaine (sans base)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Installer pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: '10.6.1'
-      - name: Installer Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: pnpm
-      - name: Installer les dependances
-        run: pnpm install --frozen-lockfile
-      - name: Tests du Domain Core pur
-        run: pnpm exec vitest run tests/domain
+      - name: Build API (tsc) + Web (next build)
+        run: pnpm build
 
-  database-tests:
-    name: Tests API/V1 (PostgreSQL 17)
+  # ---------------------------------------------------------------------------
+  # Job 2 — Unitaire + integration. PostgreSQL 17 ephemere et FFmpeg installes :
+  # les tests codent la base isolee 127.0.0.1:55432/vululu_v1_00_test (jamais la
+  # base de demonstration). DATABASE_URL et DATABASE_URL_TEST sont identiques et
+  # pointent la base de test du service. SESSION_SECRET est genere par run.
+  # ---------------------------------------------------------------------------
+  unit-integration:
+    name: Unit & Integration — PostgreSQL 17 + FFmpeg
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     env:
-      # Base de test isolee uniquement : jamais la base de demonstration.
+      APP_ENV: local
+      FFMPEG_PATH: /usr/bin/ffmpeg
       DATABASE_URL: postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public
       DATABASE_URL_TEST: postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public
     services:
@@ -146,24 +131,36 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Installer pnpm
+
+      - name: Installer pnpm 10.6.1
         uses: pnpm/action-setup@v4
         with:
           version: '10.6.1'
-      - name: Installer Node.js
+
+      - name: Installer Node.js 24 (cache pnpm)
         uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: pnpm
-      - name: Installer les dependances
+
+      - name: Installer les dependances (lockfile fige)
         run: pnpm install --frozen-lockfile
+
+      # packages/media/src/index.ts exige FFMPEG_PATH et un binaire complet
+      # (libx264 + AAC) : l'installation apt fournit /usr/bin/ffmpeg.
+      - name: Installer FFmpeg (libx264 + AAC)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          /usr/bin/ffmpeg -hide_banner -version | head -n 1
+
       - name: Generer le client Prisma
         run: pnpm db:generate
+
+      # SESSION_SECRET ephemere : apps/api/src/env.ts exige >= 32 caracteres.
       - name: Secret de session ephemere (jamais versionne)
-        run: |
-          echo "SESSION_SECRET=ci-session-$(openssl rand -hex 24)" >> "$GITHUB_ENV"
-          echo "APP_ENV=local" >> "$GITHUB_ENV"
-          echo "LINT_STRICT=1" >> "$GITHUB_ENV"
+        run: echo "SESSION_SECRET=$(openssl rand -hex 24)" >> "$GITHUB_ENV"
+
       - name: Attendre PostgreSQL
         run: |
           for i in $(seq 1 30); do
@@ -175,96 +172,39 @@ jobs:
           done
           echo "PostgreSQL indisponible sur 127.0.0.1:55432" >&2
           exit 1
+
       - name: Appliquer les migrations sur la base de test
         run: pnpm exec prisma migrate deploy --schema packages/db/prisma/schema.prisma
-      - name: Tests API, securite, orchestration, stockage et hardening
-        run: pnpm exec vitest run tests/api.test.ts tests/v1
 
-  media-tests:
-    name: Tests media (FFmpeg)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      FFMPEG_PATH: /usr/bin/ffmpeg
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Installer pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: '10.6.1'
-      - name: Installer Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: pnpm
-      - name: Installer les dependances
-        run: pnpm install --frozen-lockfile
-      - name: Installer FFmpeg (libx264 + AAC)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg
-          ffmpeg -hide_banner -version | head -n 1
-      - name: Tests de rendu PNG/MP4 et controle qualite
-        run: pnpm exec vitest run tests/media.test.ts
+      - name: Verifier l'etat des migrations
+        run: pnpm exec prisma migrate status --schema packages/db/prisma/schema.prisma
 
-  build:
-    name: Build (API + Web)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Installer pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: '10.6.1'
-      - name: Installer Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: pnpm
-      - name: Installer les dependances
-        run: pnpm install --frozen-lockfile
-      - name: Generer le client Prisma
-        run: pnpm db:generate
-      - name: Build API + Web
-        run: pnpm build
-
-  secrets:
-    name: Scan de secrets (PowerShell)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Verifier PowerShell
-        run: pwsh -NoProfile -Command '$PSVersionTable.PSVersion.ToString()'
-      - name: Scanner les secrets versionnes
-        run: pwsh -NoProfile -File scripts/check-secrets.ps1
+      # Tous les tests non-E2E : domaine pur, API, V1 (securite, stockage,
+      # durabilite, hardening) et media (FFmpeg). La base est migree ci-dessus ;
+      # tests/api.test.ts rejoue migrate deploy de facon idempotente.
+      - name: Tests domaine, API, V1 et media
+        run: pnpm exec vitest run tests/domain tests/api.test.ts tests/v1 tests/media.test.ts
 
   # ---------------------------------------------------------------------------
-  # E2E Playwright — DOCUMENTE, NON EXECUTE a ce jour (V1-00).
-  #
-  # Garde-fous :
-  #   - uniquement workflow_dispatch (jamais sur push/PR) ;
-  #   - continue-on-error : ne peut pas produire un faux vert bloquant ;
-  #   - le message final indique explicitement NOT_RUN si le job est declenche.
-  #
-  # Etat local V1-00 : Playwright E2E PASS sur API 3101 / Web 3100, mais le
-  # workflow GitHub n'a jamais ete execute (aucun push autorise).
-  # Le scenario cree des donnees persistantes : la base de test/jetable est
-  # obligatoire (G-20). La verticale doit rester rejouee via les ports au fur
-  # et a mesure de la migration Application Layer.
+  # Job 3 — E2E Playwright. Base ephemere migree puis seedee, identifiants de
+  # DEMONSTRATION locaux (valeurs publiques du depot, pas des secrets reels).
+  # API sur 3101 : apps/api/src/env.ts lit API_PORT (V1_API_PORT n'est pas lu) et
+  # next.config.ts reecrit /api vers 127.0.0.1:3101. Web sur 3100.
+  # Playwright demarre API + Web via le webServer de playwright.config.ts.
+  # FFmpeg est obligatoire : l'E2E produit un MP4 reel (libx264/AAC).
+  # Aucun continue-on-error, aucun gate workflow_dispatch.
   # ---------------------------------------------------------------------------
   e2e:
-    name: E2E Playwright (workflow_dispatch — NOT_RUN a ce jour)
-    if: github.event_name == 'workflow_dispatch' && inputs.e2e == true
-    continue-on-error: true
+    name: E2E — Playwright Chromium (base ephemere)
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
       APP_ENV: local
+      NEXT_TELEMETRY_DISABLED: '1'
+      FFMPEG_PATH: /usr/bin/ffmpeg
+      # API_PORT est la variable lue par apps/api/src/env.ts (defaut 3001).
+      # V1_API_PORT est conservee par compatibilite de documentation mais n'est
+      # pas lue par le code : la valeur faisant foi est API_PORT.
       API_PORT: '3101'
       V1_API_PORT: '3101'
       V1_WEB_PORT: '3100'
@@ -289,53 +229,133 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - name: Statut explicite
-        run: |
-          echo "::notice::Job E2E declenche manuellement. Si ce workflow n'a pas ete lance, le statut reste NOT_RUN."
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Installer pnpm
+
+      - name: Installer pnpm 10.6.1
         uses: pnpm/action-setup@v4
         with:
           version: '10.6.1'
-      - name: Installer Node.js
+
+      - name: Installer Node.js 24 (cache pnpm)
         uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: pnpm
-      - name: Installer les dependances
+
+      - name: Installer les dependances (lockfile fige)
         run: pnpm install --frozen-lockfile
+
+      - name: Installer FFmpeg (rendu media E2E)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          /usr/bin/ffmpeg -hide_banner -version | head -n 1
+
       - name: Generer le client Prisma
         run: pnpm db:generate
+
       - name: Secret de session ephemere (jamais versionne)
+        run: echo "SESSION_SECRET=$(openssl rand -hex 24)" >> "$GITHUB_ENV"
+
+      - name: Attendre PostgreSQL
         run: |
-          echo "SESSION_SECRET=ci-session-$(openssl rand -hex 24)" >> "$GITHUB_ENV"
-      - name: Migrations et seed de la base jetable
-        run: |
-          pnpm exec prisma migrate deploy --schema packages/db/prisma/schema.prisma
-          pnpm exec tsx packages/db/prisma/seed.ts
-      - name: Installer Chromium Playwright
-        run: pnpm exec playwright install --with-deps chromium
-      - name: Lancer API (3101) et Web (3100)
-        run: |
-          pnpm --filter @vululu/api start > /tmp/vululu-api.log 2>&1 &
-          pnpm --filter @vululu/web dev > /tmp/vululu-web.log 2>&1 &
-          for i in $(seq 1 60); do
-            api=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3101/api/health || true)
-            web=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3100/login || true)
-            if [ "$api" = "200" ] && [ "$web" = "200" ]; then
-              echo "API et Web disponibles."
+          for i in $(seq 1 30); do
+            if node -e "const s=require('net').connect(55432,'127.0.0.1',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1));"; then
+              echo "PostgreSQL pret sur 127.0.0.1:55432"
               exit 0
             fi
             sleep 2
           done
-          echo "--- log API ---"; cat /tmp/vululu-api.log || true
-          echo "--- log Web ---"; cat /tmp/vululu-web.log || true
-          echo "Services indisponibles (3101/3100)." >&2
+          echo "PostgreSQL indisponible sur 127.0.0.1:55432" >&2
           exit 1
-      - name: 'E2E Playwright (blocage connu : voir commentaire du job)'
+
+      - name: Appliquer les migrations sur la base jetable
+        run: pnpm exec prisma migrate deploy --schema packages/db/prisma/schema.prisma
+
+      - name: Verifier l'etat des migrations
+        run: pnpm exec prisma migrate status --schema packages/db/prisma/schema.prisma
+
+      # Cree (upsert) le compte super_admin de demonstration utilise par le login
+      # E2E. V1_BOOTSTRAP_* = V0_DEMO_* : le scenario se connecte avec ces valeurs.
+      - name: Seed de la base jetable (compte de demonstration)
+        run: pnpm exec tsx packages/db/prisma/seed.ts
+
+      - name: Installer Chromium Playwright (+ dependances systeme)
+        run: pnpm exec playwright install --with-deps chromium
+
+      # playwright.config.ts demarre l'API (3101) et le Web (3100) et attend
+      # leurs URLs avant d'executer les tests. Aucun continue-on-error : un echec
+      # E2E fait echouer le workflow.
+      - name: E2E Playwright (verticale V0)
         run: pnpm exec playwright test e2e/v0.spec.ts --reporter=list
-      - name: Statut final explicite
-        if: always()
+
+      - name: Archiver les traces Playwright en cas d'echec
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Job 4 — Securite et architecture. Checkout complet (fetch-depth: 0) pour le
+  # scan de secrets historique. Les scripts pwsh sont portables Linux/Windows et
+  # sont aussi executables localement (voir docs/review/V1_CI_WORKFLOW_REVIEW.md).
+  # ---------------------------------------------------------------------------
+  security-architecture:
+    name: Security & Architecture — secrets, lockfile, frontieres, migrations, docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public
+    steps:
+      - name: Checkout (historique complet)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Installer pnpm 10.6.1
+        uses: pnpm/action-setup@v4
+        with:
+          version: '10.6.1'
+
+      - name: Installer Node.js 24 (cache pnpm)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - name: Installer les dependances (lockfile fige)
+        run: pnpm install --frozen-lockfile
+
+      # Arbre de travail ET historique atteignable depuis HEAD. Refuse un clone
+      # shallow (code 2) au lieu de produire un faux PASS.
+      - name: Scan de secrets (arbre de travail + historique Git)
+        run: pwsh -NoProfile -File scripts/check-secrets.ps1 -History
+
+      # Une installation figee ne doit pas modifier pnpm-lock.yaml.
+      - name: Validation du lockfile
         run: |
-          echo "::warning::E2E : job documente V1-00. Ne pas le declarer PASS sans execution reelle et correction des blocages connus."
+          git diff --exit-code -- pnpm-lock.yaml
+          test -z "$(git status --porcelain -- pnpm-lock.yaml)"
+          echo "LOCKFILE_OK: pnpm-lock.yaml inchange par l'installation figee."
+
+      - name: Frontieres Domain/Application (controle statique)
+        run: pwsh -NoProfile -File scripts/check-architecture-boundaries.ps1
+
+      - name: Test de purete du Domain Core
+        run: pnpm exec vitest run tests/domain/purity.test.ts
+
+      - name: Validation du schema Prisma
+        run: pnpm exec prisma validate --schema packages/db/prisma/schema.prisma
+
+      - name: Validation structurelle des migrations
+        run: pwsh -NoProfile -File scripts/check-migrations.ps1
+
+      - name: Verification documentaire et hygiene du socle
+        run: pwsh -NoProfile -File scripts/verify-foundation-docs.ps1
+
+      - name: Controle des fichiers suivis interdits
+        run: pwsh -NoProfile -File scripts/check-tracked-files.ps1
