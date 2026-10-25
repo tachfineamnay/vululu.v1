@@ -94,7 +94,16 @@ test('verticale V0 complete', async ({ page }) => {
   const characterIdBefore = before.characters[0].id;
   expect(before.brief.revisions.length).toBe(1);
 
-  const videoDuration = await page.locator('[data-testid=master-video]').evaluate((element) => {
+  // HTMLVideoElement.duration vaut NaN tant que les metadonnees ne sont pas
+  // chargees (readyState < HAVE_METADATA). Attendre explicitement ce chargement
+  // evite une course de test observee selon la temperature des caches navigateur.
+  const masterVideo = page.locator('[data-testid=master-video]');
+  await expect
+    .poll(async () => masterVideo.evaluate((element) => (element as HTMLVideoElement).readyState), {
+      timeout: 30000
+    })
+    .toBeGreaterThanOrEqual(1);
+  const videoDuration = await masterVideo.evaluate((element) => {
     const video = element as HTMLVideoElement;
     return video.duration;
   });
