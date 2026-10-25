@@ -4,6 +4,7 @@
 - **Branche** : v1-01-e-storage-media
 - **Base D** : 88921e7
 - **Commit code E** : 4595d03
+- **Commit docs E** : addbe70 (finalisation locale incluse apres ce document)
 - **Verdict** : GO CONDITIONNEL
 - **Portee** : architecture locale et adaptateurs ; pas de production
 

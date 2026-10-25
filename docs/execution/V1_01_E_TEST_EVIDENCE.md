@@ -14,8 +14,8 @@
 | pnpm lint | PASS, 0 erreur, 42 warnings existants |
 | prisma migrate deploy test | PASS |
 | prisma migrate deploy dev | PASS |
-| check-secrets | PASS a verifier au commit final |
-| verify-foundation-docs | a verifier apres docs |
+| check-secrets | PASS, 274 fichiers |
+| verify-foundation-docs | PASS |
 
 Les tests E locaux couvrent : contrat local, upload/checksum/head/stream/range, idempotence publisher, ArtifactObject, acces storage et isolation proprietaire, inventaire sans suppression, migration dry-run, pipeline finalise avec metadonnees storage/manifest/objets ready.
 
