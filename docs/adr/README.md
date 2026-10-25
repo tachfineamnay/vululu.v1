@@ -34,6 +34,7 @@ Chaque décision suit [template.md](template.md) :
 | [0010](0010-orchestration-durable-outbox-hatchet.md) | Orchestration durable par Outbox et Hatchet Embedded | Acceptée sous condition | 2026-10-24 |
 | [0011](0011-artefacts-immuables-stockage-interchangeable.md) | Artefacts immuables et stockage interchangeable | Acceptée sous condition | 2026-10-25 |
 | [0012](0012-durcissement-securite-observabilite.md) | Durcissement sécurité, observabilité et exploitation | Acceptée sous condition | 2026-10-25 |
+| [0013](0013-certification-locale-readiness-separees.md) | Certification locale et readiness de déploiement séparées | Acceptée sous condition | 2026-10-25 |
 
 ## Décisions encore ouvertes
 
