@@ -8,6 +8,9 @@ declare module 'fastify' {
       csrfHash: string;
       expiresAt: Date;
     };
+    traceId?: string;
+    requestId?: string;
+    startAt?: number;
   }
   interface FastifyInstance {
     requireRole: (role: string) => preHandlerHookHandler;

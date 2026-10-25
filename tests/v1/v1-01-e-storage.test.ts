@@ -182,6 +182,7 @@ describe('V1-01-E stockage local et publication', () => {
     const parts: Buffer[] = [];
     for await (const chunk of partial.stream) parts.push(Buffer.from(chunk));
     expect(Buffer.concat(parts).toString()).toBe('scene');
+    await expect(storage.get(key, { start: 0, end: 999999 })).rejects.toThrow(/range/);
     const second = await storage.putFile({
       key,
       filePath: source,

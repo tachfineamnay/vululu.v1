@@ -6,11 +6,18 @@ import { S3CompatibleArtifactStorage } from './s3ArtifactStorage';
 export type ArtifactStorageBackend = 'local' | 's3';
 
 export function artifactStorageBackend(): ArtifactStorageBackend {
-  return process.env.ARTIFACT_STORAGE_BACKEND === 's3' ? 's3' : 'local';
+  const backend = process.env.ARTIFACT_STORAGE_BACKEND || 'local';
+  if (backend !== 'local' && backend !== 's3') {
+    throw new Error('ARTIFACT_STORAGE_BACKEND invalide: ' + backend);
+  }
+  return backend;
 }
 
 export function createArtifactStorage(): ArtifactStoragePort {
   if (artifactStorageBackend() === 's3') {
+    if (process.env.S3_REQUIRE_TLS === '1' && !String(process.env.S3_ENDPOINT || '').startsWith('https://')) {
+      throw new Error('S3_REQUIRE_TLS=1 exige un endpoint https.');
+    }
     return new S3CompatibleArtifactStorage({
       endpoint: process.env.S3_ENDPOINT,
       region: process.env.S3_REGION || 'us-east-1',

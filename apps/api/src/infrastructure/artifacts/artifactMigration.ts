@@ -1,6 +1,6 @@
 import type { PrismaClient } from '@prisma/client';
 import { prisma } from '@vululu/db';
-import { ApplicationError, type ArtifactPublisherPort, type ArtifactStoragePort } from '@vululu/application';
+import type { ArtifactPublisherPort, ArtifactStoragePort } from '@vululu/application';
 import { LocalFilesystemArtifactStorage } from '../storage/localArtifactStorage';
 
 export type LegacyArtifactCandidate = {

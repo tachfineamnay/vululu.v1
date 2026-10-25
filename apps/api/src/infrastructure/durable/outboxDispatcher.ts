@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
 import { prisma } from '@vululu/db';
 import type { DurableOrchestratorPort } from '@vululu/application';
+import { logEvent } from '../../observability/logger';
 
 type OutboxRow = {
   id: string;
@@ -79,11 +80,24 @@ export class OutboxDispatcher {
     try {
       if (row.kind === 'start_run') {
         if (!row.jobRunId) throw new Error('outbox_job_run_absent');
+        const jobRun = await this.db.jobRun.findUnique({
+          where: { id: row.jobRunId },
+          select: { traceId: true, requestId: true }
+        });
         const result = await this.orchestrator.submitStart({
           outboxId: row.id,
           jobRunId: row.jobRunId,
           projectId: String(payload.projectId ?? ''),
-          type: String(payload.type ?? 'produce')
+          type: String(payload.type ?? 'produce'),
+          traceId: jobRun?.traceId ?? (payload.traceId as string | null | undefined) ?? null,
+          requestId: jobRun?.requestId ?? (payload.requestId as string | null | undefined) ?? null
+        });
+        logEvent('info', 'outbox.dispatched', {
+          outboxId: row.id,
+          jobRunId: row.jobRunId,
+          workflowRunId: result.workflowRunId,
+          traceId: jobRun?.traceId ?? null,
+          requestId: jobRun?.requestId ?? null
         });
         await this.db.$transaction([
           this.db.orchestrationOutbox.update({
@@ -135,6 +149,12 @@ export class OutboxDispatcher {
       throw new Error('outbox_kind_inconnu:' + row.kind);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'dispatch_failed';
+      logEvent('error', 'outbox.dispatch_failed', {
+        outboxId: row.id,
+        jobRunId: row.jobRunId,
+        attempts: row.attempts + 1,
+        error: message
+      });
       const attempts = row.attempts + 1;
       const terminal = attempts >= MAX_ATTEMPTS;
       await this.db.orchestrationOutbox.update({

@@ -1,4 +1,3 @@
-import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { SessionUser } from '@vululu/contracts';
 
 declare module 'fastify' {
@@ -6,7 +5,10 @@ declare module 'fastify' {
     currentUser?: SessionUser;
   }
   interface FastifyInstance {
-    authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    authenticate: (
+      request: import('fastify').FastifyRequest,
+      reply: import('fastify').FastifyReply
+    ) => Promise<void>;
   }
 }
 

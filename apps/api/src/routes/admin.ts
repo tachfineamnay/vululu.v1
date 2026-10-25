@@ -5,7 +5,7 @@ import { HttpError } from '../errors';
 import { recordAuditEvent } from '../security/audit';
 import { randomToken, sha256Hex } from '../security/crypto';
 import { invitationInputSchema } from '../security/schemas';
-import { INVITATION_TTL_MS } from '../security/session';
+import { INVITATION_TTL_MS, purgeSessions, revokeAllUserSessions } from '../security/session';
 
 const invitationSelect = {
   id: true,
@@ -86,6 +86,38 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       orderBy: { createdAt: 'desc' }
     });
     return { items: invitations.map(publicInvitation) };
+  });
+
+  app.post('/api/admin/users/:id/sessions/revoke', superAdminOnly, async (request) => {
+    const params = request.params as { id: string };
+    const user = await prisma.user.findUnique({ where: { id: params.id }, select: { id: true } });
+    if (!user) {
+      throw new HttpError(404, 'user_not_found', 'Utilisateur introuvable.');
+    }
+    const count = await revokeAllUserSessions(user.id, 'admin_revoke_all');
+    await recordAuditEvent({
+      actorId: request.currentUser!.id,
+      action: 'session.admin_revoked_all',
+      targetType: 'user',
+      targetId: user.id,
+      metadata: { revokedSessions: count }
+    });
+    return { ok: true, revokedSessions: count };
+  });
+
+  app.post('/api/admin/sessions/purge', superAdminOnly, async (request) => {
+    const body = (request.body ?? {}) as { retentionDays?: number; dryRun?: boolean };
+    const retentionDays = Math.min(365, Math.max(1, Number(body.retentionDays ?? 30)));
+    const dryRun = body.dryRun !== false;
+    const result = await purgeSessions({ retentionDays, dryRun });
+    await recordAuditEvent({
+      actorId: request.currentUser!.id,
+      action: 'session.purge',
+      targetType: 'session',
+      targetId: null,
+      metadata: { retentionDays, dryRun, candidates: result.candidates, deleted: result.deleted }
+    });
+    return result;
   });
 
   app.delete('/api/admin/invitations/:id', superAdminOnly, async (request) => {

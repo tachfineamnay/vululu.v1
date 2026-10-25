@@ -42,6 +42,18 @@ export function isProduction(): boolean {
   return process.env.APP_ENV === 'production';
 }
 
+function cookieSameSite(): 'lax' | 'strict' | 'none' {
+  const value = (process.env.SESSION_SAMESITE || 'lax').toLowerCase();
+  if (value === 'strict' || value === 'none') return value;
+  return 'lax';
+}
+
+function cookieSecure(): boolean {
+  if (process.env.SESSION_COOKIE_SECURE === '1') return true;
+  if (process.env.SESSION_COOKIE_SECURE === '0') return false;
+  return isProduction();
+}
+
 /**
  * Creates a persistent session. The random token and the CSRF token are returned
  * to the caller (to be written in cookies); only their SHA-256 digests are stored.
@@ -60,15 +72,55 @@ export async function createSession(userId: string): Promise<CreatedSession> {
 }
 
 /** Revokes the session matching a plaintext token. Returns the number of rows revoked. */
-export async function revokeSessionByToken(token: string | undefined | null): Promise<number> {
+export async function revokeSessionByToken(
+  token: string | undefined | null,
+  reason = 'logout'
+): Promise<number> {
   if (!token) {
     return 0;
   }
   const result = await prisma.session.updateMany({
     where: { tokenHash: sha256Hex(token), revokedAt: null },
-    data: { revokedAt: new Date() }
+    data: { revokedAt: new Date(), revokedReason: reason }
   });
   return result.count;
+}
+
+/** Revocation globale des sessions actives d un utilisateur. */
+export async function revokeAllUserSessions(
+  userId: string,
+  reason: string
+): Promise<number> {
+  const result = await prisma.session.updateMany({
+    where: { userId, revokedAt: null },
+    data: { revokedAt: new Date(), revokedReason: reason }
+  });
+  return result.count;
+}
+
+/**
+ * Purge de retention : ne supprime que les sessions deja expirees ou revoquees
+ * depuis plus de retentionDays. Dry-run par defaut ; jamais d execution massive
+ * sans appel explicite.
+ */
+export async function purgeSessions(input: {
+  retentionDays: number;
+  dryRun: boolean;
+}): Promise<{ candidates: number; deleted: number; cutoff: string }> {
+  const retentionMs = Math.max(1, input.retentionDays) * 24 * 60 * 60 * 1000;
+  const cutoff = new Date(Date.now() - retentionMs);
+  const where = {
+    OR: [
+      { expiresAt: { lt: cutoff } },
+      { revokedAt: { not: null, lt: cutoff } }
+    ]
+  };
+  const candidates = await prisma.session.count({ where });
+  if (input.dryRun) {
+    return { candidates, deleted: 0, cutoff: cutoff.toISOString() };
+  }
+  const result = await prisma.session.deleteMany({ where });
+  return { candidates, deleted: result.count, cutoff: cutoff.toISOString() };
 }
 
 /** Loads and validates the session referenced by the request cookie. */
@@ -113,11 +165,12 @@ export async function resolveRequestSession(request: FastifyRequest): Promise<Au
 
 /** Writes the HttpOnly session cookie and the readable double-submit CSRF cookie. */
 export function setAuthCookies(reply: FastifyReply, token: string, csrfToken: string): void {
-  const secure = isProduction();
+  const secure = cookieSecure();
+  const sameSite = cookieSameSite();
   reply.setCookie(SESSION_COOKIE, token, {
     path: '/',
     httpOnly: true,
-    sameSite: 'lax',
+    sameSite,
     secure,
     maxAge: SESSION_TTL_MS / 1000
   });
@@ -133,8 +186,9 @@ export function setAuthCookies(reply: FastifyReply, token: string, csrfToken: st
 /** Expires both auth cookies. */
 export function clearAuthCookies(reply: FastifyReply): void {
   const secure = isProduction();
-  reply.clearCookie(SESSION_COOKIE, { path: '/', httpOnly: true, sameSite: 'lax', secure });
-  reply.clearCookie(CSRF_COOKIE, { path: '/', httpOnly: false, sameSite: 'lax', secure });
+  const sameSite = cookieSameSite();
+  reply.clearCookie(SESSION_COOKIE, { path: '/', httpOnly: true, sameSite, secure });
+  reply.clearCookie(CSRF_COOKIE, { path: '/', httpOnly: false, sameSite, secure });
 }
 
 /**

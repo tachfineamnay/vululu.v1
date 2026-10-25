@@ -7,6 +7,14 @@ export const repoRoot = path.resolve(here, '../../..');
 
 dotenv.config({ path: path.join(repoRoot, '.env'), override: true });
 
+const appEnv = process.env.APP_ENV || (process.env.NODE_ENV === 'production' ? 'production' : 'local');
+if (!['local', 'development', 'test', 'production'].includes(appEnv)) {
+  throw new Error('APP_ENV invalide: ' + appEnv);
+}
+process.env.APP_ENV = appEnv;
+if (appEnv === 'production' && !(process.env.APP_ORIGIN || process.env.WEB_ORIGIN)) {
+  throw new Error('APP_ORIGIN ou WEB_ORIGIN obligatoire en production.');
+}
 const testMode = process.env.V0_TEST_DB === '1';
 const selected = testMode
   ? (process.env.DATABASE_URL_TEST || process.env.DATABASE_URL || '')
@@ -50,5 +58,21 @@ export const env = {
   sessionSecret,
   artifactRoot: path.resolve(repoRoot, process.env.ARTIFACT_DIR || 'data/artifacts'),
   demoEmail: process.env.V0_DEMO_EMAIL || 'demo@vululu.local',
-  orchestratorMode: process.env.ORCHESTRATOR_MODE === 'hatchet' ? 'hatchet' as const : 'local' as const
+  orchestratorMode: (() => {
+    const mode = process.env.ORCHESTRATOR_MODE || 'local';
+    if (mode !== 'local' && mode !== 'hatchet') {
+      throw new Error('ORCHESTRATOR_MODE invalide: ' + mode);
+    }
+    return mode;
+  })(),
+  artifactStorageBackend: (() => {
+    const backend = process.env.ARTIFACT_STORAGE_BACKEND || 'local';
+    if (backend !== 'local' && backend !== 's3') {
+      throw new Error('ARTIFACT_STORAGE_BACKEND invalide: ' + backend);
+    }
+    return backend;
+  })(),
+  appEnv,
+  trustProxy: process.env.TRUST_PROXY === 'true',
+  rateLimitEnabled: process.env.RATE_LIMIT_ENABLED !== '0'
 };

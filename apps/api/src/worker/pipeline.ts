@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- contexte SDK Hatchet confine au worker */
 import { HatchetClient, NonRetryableError } from '@hatchet-dev/typescript-sdk/v1';
 import { DurableProductionUseCases } from '@vululu/application';
+import { logEvent } from '../observability/logger';
 import {
   DurableRoutingService,
   LocalStoragePort,
@@ -18,6 +19,8 @@ export type ProductionWorkflowInput = {
   jobRunId: string;
   projectId: string;
   type: 'produce' | 'correction' | string;
+  traceId?: string | null;
+  requestId?: string | null;
 };
 
 const store = new PrismaDurableProductionStore();
@@ -68,7 +71,18 @@ const validateSnapshot = productionWorkflow.task({
   name: 'validate-snapshot',
   retries: 2,
   backoff: { factor: 2, maxSeconds: 10 },
-  fn: async (input: ProductionWorkflowInput) => useCases.validateSnapshot(input.jobRunId)
+  fn: async (input: ProductionWorkflowInput) => {
+    const startedAt = Date.now();
+    logEvent('info', 'worker.step.started', { step: 'validate-snapshot', jobRunId: input.jobRunId, traceId: input.traceId ?? null });
+    try {
+      const result = await useCases.validateSnapshot(input.jobRunId);
+      logEvent('info', 'worker.step.completed', { step: 'validate-snapshot', jobRunId: input.jobRunId, traceId: input.traceId ?? null, durationMs: Date.now() - startedAt });
+      return result;
+    } catch (error) {
+      logEvent('error', 'worker.step.failed', { step: 'validate-snapshot', jobRunId: input.jobRunId, traceId: input.traceId ?? null, durationMs: Date.now() - startedAt, error: error instanceof Error ? error.message : 'unknown' });
+      throw error;
+    }
+  }
 });
 
 const resolveCapabilities = productionWorkflow.task({
@@ -76,7 +90,18 @@ const resolveCapabilities = productionWorkflow.task({
   parents: [validateSnapshot],
   retries: 2,
   backoff: { factor: 2, maxSeconds: 10 },
-  fn: async (input: ProductionWorkflowInput) => useCases.resolveCapabilities(input.jobRunId)
+  fn: async (input: ProductionWorkflowInput) => {
+    const startedAt = Date.now();
+    logEvent('info', 'worker.step.started', { step: 'resolve-capabilities', jobRunId: input.jobRunId, traceId: input.traceId ?? null });
+    try {
+      const result = await useCases.resolveCapabilities(input.jobRunId);
+      logEvent('info', 'worker.step.completed', { step: 'resolve-capabilities', jobRunId: input.jobRunId, traceId: input.traceId ?? null, durationMs: Date.now() - startedAt });
+      return result;
+    } catch (error) {
+      logEvent('error', 'worker.step.failed', { step: 'resolve-capabilities', jobRunId: input.jobRunId, traceId: input.traceId ?? null, durationMs: Date.now() - startedAt, error: error instanceof Error ? error.message : 'unknown' });
+      throw error;
+    }
+  }
 });
 
 const renderScenes = productionWorkflow.task({
@@ -85,7 +110,18 @@ const renderScenes = productionWorkflow.task({
   retries: 2,
   backoff: { factor: 2, maxSeconds: 10 },
   executionTimeout: process.env.DURABLE_RENDER_TIMEOUT ?? '20m',
-  fn: async (input: ProductionWorkflowInput) => useCases.renderScenes(input.jobRunId)
+  fn: async (input: ProductionWorkflowInput) => {
+    const startedAt = Date.now();
+    logEvent('info', 'worker.step.started', { step: 'render-scenes', jobRunId: input.jobRunId, traceId: input.traceId ?? null });
+    try {
+      const result = await useCases.renderScenes(input.jobRunId);
+      logEvent('info', 'worker.step.completed', { step: 'render-scenes', jobRunId: input.jobRunId, traceId: input.traceId ?? null, durationMs: Date.now() - startedAt });
+      return result;
+    } catch (error) {
+      logEvent('error', 'worker.step.failed', { step: 'render-scenes', jobRunId: input.jobRunId, traceId: input.traceId ?? null, durationMs: Date.now() - startedAt, error: error instanceof Error ? error.message : 'unknown' });
+      throw error;
+    }
+  }
 });
 
 const assembleMaster = productionWorkflow.task({
@@ -94,21 +130,54 @@ const assembleMaster = productionWorkflow.task({
   retries: 2,
   backoff: { factor: 2, maxSeconds: 10 },
   executionTimeout: '10m',
-  fn: async (input: ProductionWorkflowInput) => useCases.assembleMaster(input.jobRunId)
+  fn: async (input: ProductionWorkflowInput) => {
+    const startedAt = Date.now();
+    logEvent('info', 'worker.step.started', { step: 'assemble-master', jobRunId: input.jobRunId, traceId: input.traceId ?? null });
+    try {
+      const result = await useCases.assembleMaster(input.jobRunId);
+      logEvent('info', 'worker.step.completed', { step: 'assemble-master', jobRunId: input.jobRunId, traceId: input.traceId ?? null, durationMs: Date.now() - startedAt });
+      return result;
+    } catch (error) {
+      logEvent('error', 'worker.step.failed', { step: 'assemble-master', jobRunId: input.jobRunId, traceId: input.traceId ?? null, durationMs: Date.now() - startedAt, error: error instanceof Error ? error.message : 'unknown' });
+      throw error;
+    }
+  }
 });
 
 const runQa = productionWorkflow.task({
   name: 'qa',
   parents: [assembleMaster],
   retries: 1,
-  fn: async (input: ProductionWorkflowInput) => useCases.runQa(input.jobRunId)
+  fn: async (input: ProductionWorkflowInput) => {
+    const startedAt = Date.now();
+    logEvent('info', 'worker.step.started', { step: 'qa', jobRunId: input.jobRunId, traceId: input.traceId ?? null });
+    try {
+      const result = await useCases.runQa(input.jobRunId);
+      logEvent('info', 'worker.step.completed', { step: 'qa', jobRunId: input.jobRunId, traceId: input.traceId ?? null, durationMs: Date.now() - startedAt });
+      return result;
+    } catch (error) {
+      logEvent('error', 'worker.step.failed', { step: 'qa', jobRunId: input.jobRunId, traceId: input.traceId ?? null, durationMs: Date.now() - startedAt, error: error instanceof Error ? error.message : 'unknown' });
+      throw error;
+    }
+  }
 });
 
 const finalize = productionWorkflow.task({
   name: 'finalize',
   parents: [runQa],
   retries: 1,
-  fn: async (input: ProductionWorkflowInput) => useCases.finalize(input.jobRunId)
+  fn: async (input: ProductionWorkflowInput) => {
+    const startedAt = Date.now();
+    logEvent('info', 'worker.step.started', { step: 'finalize', jobRunId: input.jobRunId, traceId: input.traceId ?? null });
+    try {
+      const result = await useCases.finalize(input.jobRunId);
+      logEvent('info', 'worker.step.completed', { step: 'finalize', jobRunId: input.jobRunId, traceId: input.traceId ?? null, durationMs: Date.now() - startedAt });
+      return result;
+    } catch (error) {
+      logEvent('error', 'worker.step.failed', { step: 'finalize', jobRunId: input.jobRunId, traceId: input.traceId ?? null, durationMs: Date.now() - startedAt, error: error instanceof Error ? error.message : 'unknown' });
+      throw error;
+    }
+  }
 });
 
 const approval = productionWorkflow.durableTask({
@@ -117,6 +186,7 @@ const approval = productionWorkflow.durableTask({
   executionTimeout: '30m',
   retries: 0,
   fn: async (input: ProductionWorkflowInput, ctx: any) => {
+    logEvent('info', 'worker.approval.waiting', { jobRunId: input.jobRunId, traceId: input.traceId ?? null });
     const granted = await useCases.findGrantedApproval(input.jobRunId);
     if (granted) {
       return useCases.confirmApproval(granted);
@@ -153,7 +223,18 @@ export const transferTask = productionWorkflow.task({
   parents: [approval],
   retries: 2,
   backoff: { factor: 2, maxSeconds: 10 },
-  fn: async (input: ProductionWorkflowInput) => useCases.transfer(input.jobRunId)
+  fn: async (input: ProductionWorkflowInput) => {
+    const startedAt = Date.now();
+    logEvent('info', 'worker.step.started', { step: 'transfer', jobRunId: input.jobRunId, traceId: input.traceId ?? null });
+    try {
+      const result = await useCases.transfer(input.jobRunId);
+      logEvent('info', 'worker.step.completed', { step: 'transfer', jobRunId: input.jobRunId, traceId: input.traceId ?? null, durationMs: Date.now() - startedAt });
+      return result;
+    } catch (error) {
+      logEvent('error', 'worker.step.failed', { step: 'transfer', jobRunId: input.jobRunId, traceId: input.traceId ?? null, durationMs: Date.now() - startedAt, error: error instanceof Error ? error.message : 'unknown' });
+      throw error;
+    }
+  }
 });
 
 productionWorkflow.onFailure({

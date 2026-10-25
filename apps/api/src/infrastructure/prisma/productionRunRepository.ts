@@ -58,6 +58,8 @@ function mapJobRun(row: {
   snapshotChecksum: string | null;
   outputs: unknown;
   outputsChecksum: string | null;
+  traceId?: string | null;
+  requestId?: string | null;
 }): JobRunRecord {
   return {
     id: row.id,
@@ -68,7 +70,9 @@ function mapJobRun(row: {
     snapshotVersion: row.snapshotVersion,
     snapshotChecksum: row.snapshotChecksum,
     outputs: (row.outputs as Record<string, unknown> | null) ?? null,
-    outputsChecksum: row.outputsChecksum
+    outputsChecksum: row.outputsChecksum,
+    traceId: row.traceId ?? null,
+    requestId: row.requestId ?? null
   };
 }
 
@@ -94,6 +98,8 @@ export class PrismaProductionRunRepository implements ProductionRunRepository {
     instruction: string | null;
     steps: string[];
     outbox?: { kind: string; payload: Record<string, unknown> };
+    traceId?: string | null;
+    requestId?: string | null;
   }): Promise<{ job: ProductionJobRecord; jobRun: JobRunRecord }> {
     try {
       return await this.db.$transaction(
@@ -242,7 +248,9 @@ export class PrismaProductionRunRepository implements ProductionRunRepository {
               status: 'queued',
               snapshot: snapshot as unknown as Prisma.InputJsonValue,
               snapshotVersion: 1,
-              snapshotChecksum: checksum
+              snapshotChecksum: checksum,
+              traceId: input.traceId ?? null,
+              requestId: input.requestId ?? null
             }
           });
           for (const name of input.steps) {
@@ -265,7 +273,9 @@ export class PrismaProductionRunRepository implements ProductionRunRepository {
                 jobRunId: jobRun.id,
                 kind: input.outbox.kind,
                 payload: input.outbox.payload as Prisma.InputJsonValue,
-                status: 'pending'
+                status: 'pending',
+                traceId: input.traceId ?? null,
+                requestId: input.requestId ?? null
               }
             });
           }

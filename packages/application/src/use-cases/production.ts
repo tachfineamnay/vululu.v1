@@ -83,11 +83,19 @@ export class ProductionUseCases {
     return project;
   }
 
-  async startProduction(actor: Actor, projectId: string) {
+  async startProduction(actor: Actor, projectId: string, correlation?: { traceId?: string; requestId?: string }) {
     await this.assertOwnedProject(actor, projectId);
     const durable = this.options.durable === true;
     const outbox: ProductionOutboxRequest | undefined = durable
-      ? { kind: 'start_run', payload: { projectId, type: 'produce' } }
+      ? {
+          kind: 'start_run',
+          payload: {
+            projectId,
+            type: 'produce',
+            traceId: correlation?.traceId ?? null,
+            requestId: correlation?.requestId ?? null
+          }
+        }
       : undefined;
     const { job, jobRun } = await this.runs.startRun({
       userId: actor.id,
@@ -98,7 +106,9 @@ export class ProductionUseCases {
       steps: durable
         ? [...DURABLE_PRODUCTION_STEPS]
         : ['snapshot', 'render-scenes', 'assemble-master', 'qa'],
-      ...(outbox ? { outbox } : {})
+      ...(outbox ? { outbox } : {}),
+      traceId: correlation?.traceId ?? null,
+      requestId: correlation?.requestId ?? null
     });
     try {
       await this.executor.start({
@@ -124,11 +134,21 @@ export class ProductionUseCases {
     return { job, jobRun };
   }
 
-  async startCorrection(actor: Actor, projectId: string, sceneKey: string, instruction: string) {
+  async startCorrection(actor: Actor, projectId: string, sceneKey: string, instruction: string, correlation?: { traceId?: string; requestId?: string }) {
     await this.assertOwnedProject(actor, projectId);
     const durable = this.options.durable === true;
     const outbox: ProductionOutboxRequest | undefined = durable
-      ? { kind: 'start_run', payload: { projectId, type: 'correction', targetSceneKey: sceneKey, instruction } }
+      ? {
+          kind: 'start_run',
+          payload: {
+            projectId,
+            type: 'correction',
+            targetSceneKey: sceneKey,
+            instruction,
+            traceId: correlation?.traceId ?? null,
+            requestId: correlation?.requestId ?? null
+          }
+        }
       : undefined;
     const { job, jobRun } = await this.runs.startRun({
       userId: actor.id,
@@ -139,7 +159,9 @@ export class ProductionUseCases {
       steps: durable
         ? [...DURABLE_PRODUCTION_STEPS]
         : ['snapshot', 'correct-scene', 'assemble-master', 'qa'],
-      ...(outbox ? { outbox } : {})
+      ...(outbox ? { outbox } : {}),
+      traceId: correlation?.traceId ?? null,
+      requestId: correlation?.requestId ?? null
     });
     try {
       await this.executor.start({

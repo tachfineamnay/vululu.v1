@@ -44,6 +44,8 @@ export class HatchetOrchestratorAdapter implements DurableOrchestratorPort {
     jobRunId: string;
     projectId: string;
     type: string;
+    traceId?: string | null;
+    requestId?: string | null;
   }): Promise<{ workflowRunId: string }> {
     const ref = await this.hatchet.runNoWait(
       'vululu-production-pipeline',
@@ -51,7 +53,9 @@ export class HatchetOrchestratorAdapter implements DurableOrchestratorPort {
         outboxId: input.outboxId,
         jobRunId: input.jobRunId,
         projectId: input.projectId,
-        type: input.type
+        type: input.type,
+        traceId: input.traceId ?? null,
+        requestId: input.requestId ?? null
       },
       { additionalMetadata: { jobRunId: input.jobRunId, projectId: input.projectId } }
     );

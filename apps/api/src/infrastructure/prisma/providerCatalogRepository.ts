@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '@prisma/client';
 import { prisma } from '@vululu/db';
 import { ApplicationError } from '@vululu/application';
 import type {

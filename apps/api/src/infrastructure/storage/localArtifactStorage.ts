@@ -23,10 +23,6 @@ function sha256File(filePath: string): Promise<string> {
   });
 }
 
-function sha256Buffer(value: Buffer): string {
-  return crypto.createHash('sha256').update(value).digest('hex');
-}
-
 /**
  * Adaptateur local du port ArtifactStoragePort.
  *

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { actorOf, agentConfigs, providerCatalog, routing } from '../application/container';
+import { rateLimitPreHandler, RATE_LIMITS } from '../infrastructure/security/rateLimiter';
 
 const capabilityRequirementSchema = z.object({
   capabilityKey: z.string().min(1),
@@ -151,7 +152,7 @@ export async function adminAgentRoutes(app: FastifyInstance): Promise<void> {
     return { model: await providerCatalog.qualifyModel(actorOf(request.currentUser), params.id, input.qualified) };
   });
 
-  app.post('/api/admin/routing/execute', superAdminOnly, async (request) => {
+  app.post('/api/admin/routing/execute', { preHandler: [app.authenticate, app.requireSuperAdmin, rateLimitPreHandler(RATE_LIMITS.routing, (request) => 'routing-execute:' + (request.currentUser?.id ?? 'anon'))] }, async (request) => {
     const input = routingExecuteSchema.parse(request.body);
     return routing.execute(
       actorOf(request.currentUser),
@@ -161,7 +162,7 @@ export async function adminAgentRoutes(app: FastifyInstance): Promise<void> {
     );
   });
 
-  app.post('/api/admin/routing/preview', superAdminOnly, async (request) => {
+  app.post('/api/admin/routing/preview', { preHandler: [app.authenticate, app.requireSuperAdmin, rateLimitPreHandler(RATE_LIMITS.routing, (request) => 'routing-preview:' + (request.currentUser?.id ?? 'anon'))] }, async (request) => {
     const input = routingPreviewSchema.parse(request.body);
     const decision = await routing.preview(
       actorOf(request.currentUser),

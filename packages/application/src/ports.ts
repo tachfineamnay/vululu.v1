@@ -118,6 +118,8 @@ export type JobRunRecord = {
   snapshotChecksum: string | null;
   outputs: Record<string, unknown> | null;
   outputsChecksum: string | null;
+  traceId?: string | null;
+  requestId?: string | null;
 };
 
 export type SceneRenderRequest = {
@@ -513,6 +515,8 @@ export interface ProductionRunRepository {
     instruction: string | null;
     steps: string[];
     outbox?: ProductionOutboxRequest;
+    traceId?: string | null;
+    requestId?: string | null;
   }): Promise<{ job: ProductionJobRecord; jobRun: JobRunRecord }>;
   updateJob(jobId: string, input: { status?: string; step?: string; progress?: number; error?: string | null }): Promise<void>;
   updateStep(jobRunId: string, name: string, status: string, error?: string): Promise<void>;
@@ -889,6 +893,8 @@ export interface DurableOrchestratorPort {
     jobRunId: string;
     projectId: string;
     type: string;
+    traceId?: string | null;
+    requestId?: string | null;
   }): Promise<{ workflowRunId: string }>;
   signalApproval(input: {
     jobRunId: string;

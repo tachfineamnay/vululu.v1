@@ -6,11 +6,13 @@ import { HttpError } from '../errors';
 import { recordAuditEvent } from '../security/audit';
 import { sha256Hex } from '../security/crypto';
 import { activationInputSchema } from '../security/schemas';
+import { rateLimitPreHandler, RATE_LIMITS } from '../infrastructure/security/rateLimiter';
 import {
   SESSION_COOKIE,
   clearAuthCookies,
   createSession,
   publicUser,
+  revokeAllUserSessions,
   revokeSessionByToken,
   setAuthCookies
 } from '../security/session';
@@ -35,7 +37,10 @@ async function rejectActivation(input: {
 }
 
 export async function authRoutes(app: FastifyInstance): Promise<void> {
-  app.post('/api/auth/login', async (request, reply) => {
+  app.post('/api/auth/login', { preHandler: [rateLimitPreHandler(RATE_LIMITS.login, (request) => {
+    const body = (request.body ?? {}) as Record<string, unknown>;
+    return 'login:' + request.ip + ':' + String(body.email ?? 'unknown').toLowerCase();
+  })] }, async (request, reply) => {
     const body = loginSchema.parse(request.body);
     const user = await prisma.user.findUnique({ where: { email: body.email } });
     if (!user) {
@@ -65,7 +70,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     }
 
     // Rotation: any session presented on the login request is revoked before a new one is issued.
-    await revokeSessionByToken(request.cookies?.[SESSION_COOKIE]);
+    await revokeSessionByToken(request.cookies?.[SESSION_COOKIE], 'login_rotation');
 
     const created = await createSession(user.id);
     setAuthCookies(reply, created.token, created.csrfToken);
@@ -81,7 +86,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/api/auth/logout', async (request, reply) => {
     const authSession = request.authSession;
-    const revokeCount = await revokeSessionByToken(request.cookies?.[SESSION_COOKIE]);
+    const revokeCount = await revokeSessionByToken(request.cookies?.[SESSION_COOKIE], 'logout');
     if (request.currentUser) {
       await recordAuditEvent({
         actorId: request.currentUser.id,
@@ -99,7 +104,20 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     return { user: request.currentUser };
   });
 
-  app.post('/api/auth/activate', async (request, reply) => {
+  app.post('/api/auth/logout-all', { preHandler: [app.authenticate] }, async (request, reply) => {
+    const count = await revokeAllUserSessions(request.currentUser!.id, 'logout_all');
+    await recordAuditEvent({
+      actorId: request.currentUser!.id,
+      action: 'auth.logout_all',
+      targetType: 'user',
+      targetId: request.currentUser!.id,
+      metadata: { revokedSessions: count }
+    });
+    clearAuthCookies(reply);
+    return reply.code(200).send({ ok: true, revokedSessions: count });
+  });
+
+  app.post('/api/auth/activate', { preHandler: [rateLimitPreHandler(RATE_LIMITS.activation, (request) => 'activation:' + request.ip)] }, async (request, reply) => {
     const body = activationInputSchema.parse(request.body);
     const tokenHash = sha256Hex(body.token);
     const invitation = await prisma.invitation.findUnique({ where: { tokenHash } });

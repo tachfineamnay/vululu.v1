@@ -4,8 +4,7 @@ import {
   createCharacter,
   createStoryboard,
   type Character,
-  type CharacterVersion,
-  type Scene as DomainScene
+  type CharacterVersion
 } from '@vululu/domain';
 import { ApplicationError } from '../errors';
 import type {

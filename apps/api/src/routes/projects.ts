@@ -6,6 +6,7 @@ import {
   sceneDurationInputSchema
 } from '@vululu/contracts';
 import { actorOf, briefs, bundles, messages, projects, scenes, storyboards } from '../application/container';
+import { rateLimitPreHandler, RATE_LIMITS } from '../infrastructure/security/rateLimiter';
 
 export async function projectRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/projects', { preHandler: [app.authenticate] }, async (request) => {
@@ -38,7 +39,7 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
     return reply.code(201).send(pair);
   });
 
-  app.post('/api/projects/:id/storyboard', { preHandler: [app.authenticate] }, async (request) => {
+  app.post('/api/projects/:id/storyboard', { preHandler: [app.authenticate, rateLimitPreHandler(RATE_LIMITS.storyboard, (request) => 'storyboard:' + (request.currentUser?.id ?? 'anon') + ':' + String((request.params as { id?: string }).id ?? ''))] }, async (request) => {
     const params = request.params as { id: string };
     return storyboards.generate(actorOf(request.currentUser), params.id);
   });

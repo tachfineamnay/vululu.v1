@@ -107,7 +107,7 @@ export default defineConfig([
   {
     files: ['tests/**/*.ts', 'e2e/**/*.ts'],
     rules: {
-      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-explicit-any': 'off',
       // Seule occurrence V0 dans tests/api.test.ts (variable affectee une fois).
       'prefer-const': debt
     }

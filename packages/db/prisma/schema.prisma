@@ -244,8 +244,9 @@ model Session {
   expiresAt  DateTime
   createdAt  DateTime @default(now())
   lastUsedAt DateTime @default(now())
-  revokedAt  DateTime?
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  revokedAt      DateTime?
+  revokedReason  String?
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([expiresAt])
@@ -306,6 +307,8 @@ model JobRun {
   outputsChecksum  String?
   workflowRunId    String?
   orchestrator     String?
+  traceId          String?
+  requestId        String?
   lastTransitionAt DateTime?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
@@ -340,6 +343,8 @@ model AuditEvent {
   targetType String
   targetId   String?
   metadata   Json?
+  traceId    String?
+  requestId  String?
   createdAt  DateTime @default(now())
 
   @@index([createdAt])
@@ -444,6 +449,8 @@ model OrchestrationOutbox {
   nextAttemptAt  DateTime  @default(now())
   lastError      String?
   workflowRunId  String?
+  traceId        String?
+  requestId      String?
   dispatchedAt   DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
@@ -523,4 +530,29 @@ model ArtifactObject {
   @@index([state])
   @@index([jobRunId])
   @@index([sha256])
+}
+// ---------------------------------------------------------------------------
+// V1-01-F : rate limiting persistant, heartbeats workers et correlation.
+// ---------------------------------------------------------------------------
+
+model RateLimitCounter {
+  key         String   @id
+  count       Int      @default(1)
+  windowStart DateTime
+  expiresAt   DateTime
+  updatedAt   DateTime @updatedAt
+
+  @@index([expiresAt])
+}
+
+model WorkerHeartbeat {
+  id         String   @id
+  name       String
+  status     String   @default("running")
+  lastSeenAt DateTime @default(now())
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([lastSeenAt])
 }
