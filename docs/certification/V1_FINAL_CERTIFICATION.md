@@ -4,7 +4,7 @@
 - **Branche de certification** : v1-01-g-architecture-certification
 - **Base F** : 11e11e5
 - **Commit code G** : 0e79c08
-- **Commit docs G** : sera enregistre apres ce document
+- **Commit docs G** : 4fbce9d
 - **Statut de revue** : READY_FOR_PUSH_REVIEW
 - **Verdict architecture** : ARCHITECTURE_GO_CONDITIONNEL
 - **Verdict deploiement** : DEPLOYMENT_NOT_READY
@@ -103,7 +103,7 @@ Aucun deploiement ne doit etre tente. Conditions detaillees dans V1_DEPLOYMENT_R
 
 - Base F : 11e11e5
 - Code G : 0e79c08
-- Docs G : commit suivant, reference dans V1_GIT_REVIEW_HANDOFF.md
+- Docs G : 4fbce9d
 - V0 : ddda015
 - main : 69c6549
 
