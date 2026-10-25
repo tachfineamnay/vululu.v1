@@ -4,8 +4,8 @@
 - **Branche** : v1-01-f-hardening-observability
 - **Base E** : d2446ca
 - **Commit code F** : c4b5ab2
-- **Commit docs F** : a completer par le commit final
-- **Commit correctif code** : inclure dans le commit de finalisation
+- **Commit docs F** : f31f259
+- **HEAD final** : documente dans le checkpoint de clôture
 - **Verdict** : GO CONDITIONNEL
 - **Portee** : consolidation locale, pas de production
 
