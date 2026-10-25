@@ -740,7 +740,13 @@ describe('V1-00 auth security: sessions serveur persistantes, CSRF, invitations,
         where: { artifactVersionId: masterVersionA.id, approvedBy: userB.id }
       });
       expect(approvalCount).toBe(0);
-      const transferCount = await prisma.transfer.count();
+      // Comptage scope a l'artefact de projectA : une base de test locale peut
+      // contenir des transferts issus d'autres campagnes (E2E, runs precedents).
+      // L'intention de securite reste verifiee : aucun transfert n'est cree pour
+      // l'artefact cible de la tentative inter-utilisateurs.
+      const transferCount = await prisma.transfer.count({
+        where: { approval: { artifactVersionId: masterVersionA.id } }
+      });
       expect(transferCount).toBe(0);
     });
 
