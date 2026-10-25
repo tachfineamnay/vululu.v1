@@ -39,6 +39,7 @@ import {
   PrismaDurableProductionStore,
   PrismaArtifactPublisher,
   createArtifactStorage,
+  createArtifactStorageRegistry,
   DurableProductionExecutor,
   HatchetOrchestratorAdapter,
   OutboxApprovalSignal,
@@ -62,7 +63,8 @@ const durableStore = new PrismaDurableProductionStore();
 const audit = new PrismaAuditAdapter();
 const storage = new LocalStoragePort();
 const artifactStorage = createArtifactStorage();
-export { artifactStorage, PrismaArtifactPublisher };
+const artifactStorages = createArtifactStorageRegistry();
+export { artifactStorage, artifactStorages, PrismaArtifactPublisher };
 const durableMode = process.env.ORCHESTRATOR_MODE === 'hatchet';
 const orchestrator = durableMode ? new HatchetOrchestratorAdapter() : null;
 const outboxDispatcher = orchestrator ? new OutboxDispatcher(orchestrator) : null;
@@ -94,7 +96,7 @@ export const storyboards = new StoryboardUseCases(
 export const messages = new MessageUseCases(projectRepository, messageStore, bundleQuery, audit);
 export const scenes = new SceneUseCases(projectRepository, sceneRepository, audit);
 export const bundles = new ProjectBundleUseCases(bundleQuery);
-export const artifacts = new ArtifactAccessUseCases(new PrismaArtifactAccess(artifactStorage));
+export const artifacts = new ArtifactAccessUseCases(new PrismaArtifactAccess(artifactStorage, undefined, artifactStorages));
 export const production = new ProductionUseCases(
   projectRepository,
   runRepository,

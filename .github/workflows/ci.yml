@@ -70,12 +70,10 @@ jobs:
           cache: pnpm
       - name: Installer les dependances
         run: pnpm install --frozen-lockfile
-      - name: ESLint (0 erreur requise, dette V0 en warnings)
-        run: pnpm lint
-      - name: Rappel mode strict
-        run: |
-          echo "Gate : 0 erreur ESLint. La dette V0 restante est en warnings."
-          echo "Mode strict : LINT_STRICT=1 pnpm lint (echoue sur la dette connue)."
+      - name: ESLint strict (0 erreur / 0 warning)
+        run: LINT_STRICT=1 pnpm lint
+      - name: Verification documentaire
+        run: pwsh -NoProfile -File scripts/verify-foundation-docs.ps1
 
   typecheck:
     name: Typecheck (tsc --noEmit)
@@ -164,6 +162,8 @@ jobs:
       - name: Secret de session ephemere (jamais versionne)
         run: |
           echo "SESSION_SECRET=ci-session-$(openssl rand -hex 24)" >> "$GITHUB_ENV"
+          echo "APP_ENV=local" >> "$GITHUB_ENV"
+          echo "LINT_STRICT=1" >> "$GITHUB_ENV"
       - name: Attendre PostgreSQL
         run: |
           for i in $(seq 1 30); do
@@ -177,12 +177,8 @@ jobs:
           exit 1
       - name: Appliquer les migrations sur la base de test
         run: pnpm exec prisma migrate deploy --schema packages/db/prisma/schema.prisma
-      - name: Tests API, securite des sessions/RBAC et infrastructure
-        run: >-
-          pnpm exec vitest run
-          tests/api.test.ts
-          tests/v1/auth-security.test.ts
-          tests/v1/infrastructure.test.ts
+      - name: Tests API, securite, orchestration, stockage et hardening
+        run: pnpm exec vitest run tests/api.test.ts tests/v1
 
   media-tests:
     name: Tests media (FFmpeg)

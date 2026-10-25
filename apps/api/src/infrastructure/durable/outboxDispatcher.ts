@@ -119,13 +119,22 @@ export class OutboxDispatcher {
       }
       if (row.kind === 'approval_signal') {
         const projectId = String(payload.projectId ?? '');
-        const jobRun = await this.db.jobRun.findFirst({
-          where: {
-            projectId,
-            status: { in: ['waiting_approval', 'running', 'queued', 'recovery_pending'] }
-          },
-          orderBy: { createdAt: 'desc' }
-        });
+        const approvalStatuses = ['waiting_approval', 'running', 'queued', 'recovery_pending'];
+        const jobRun = row.jobRunId
+          ? await this.db.jobRun.findFirst({
+              where: {
+                id: row.jobRunId,
+                projectId,
+                status: { in: approvalStatuses }
+              }
+            })
+          : await this.db.jobRun.findFirst({
+              where: {
+                projectId,
+                status: { in: approvalStatuses }
+              },
+              orderBy: { createdAt: 'desc' }
+            });
         if (!jobRun) throw new Error('approval_job_run_absent');
         await this.orchestrator.signalApproval({
           jobRunId: jobRun.id,

@@ -240,7 +240,7 @@ export class PrismaDurableProductionStore implements DurableProductionStore {
               });
             }
             if (scene.storage) {
-              await tx.artifactObject.updateMany({
+              const objectUpdated = await tx.artifactObject.updateMany({
                 where: { provider: scene.storage.provider, key: scene.storage.key },
                 data: {
                   state: 'ready',
@@ -248,6 +248,13 @@ export class PrismaDurableProductionStore implements DurableProductionStore {
                   finalizedAt: new Date()
                 }
               });
+              if (objectUpdated.count !== 1) {
+                throw new ApplicationError(
+                  'artifact_object_missing',
+                  'Objet de scene absent pour la version finalisee.',
+                  409
+                );
+              }
             }
           }
           const artifact = await tx.artifact.upsert({
@@ -277,7 +284,7 @@ export class PrismaDurableProductionStore implements DurableProductionStore {
             }
           });
           if (input.master.storage) {
-            await tx.artifactObject.updateMany({
+            const objectUpdated = await tx.artifactObject.updateMany({
               where: { provider: input.master.storage.provider, key: input.master.storage.key },
               data: {
                 state: 'ready',
@@ -285,6 +292,13 @@ export class PrismaDurableProductionStore implements DurableProductionStore {
                 finalizedAt: new Date()
               }
             });
+            if (objectUpdated.count !== 1) {
+              throw new ApplicationError(
+                'artifact_object_missing',
+                'Objet master absent pour la version finalisee.',
+                409
+              );
+            }
           }
           await tx.approval.updateMany({
             where: { artifactVersion: { is: { artifact: { is: { projectId: input.projectId } } } }, invalidatedAt: null },

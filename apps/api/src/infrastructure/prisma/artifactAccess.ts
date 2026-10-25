@@ -21,7 +21,8 @@ export class PrismaArtifactAccess implements ArtifactAccessPort {
 
   constructor(
     private readonly storage: ArtifactStoragePort = new LocalFilesystemArtifactStorage(env.artifactRoot),
-    private readonly db = prisma
+    private readonly db = prisma,
+    private readonly storages: Record<string, ArtifactStoragePort> = {}
   ) {
     this.legacy = new LocalFilesystemArtifactStorage(env.artifactRoot);
   }
@@ -32,7 +33,16 @@ export class PrismaArtifactAccess implements ArtifactAccessPort {
     contentType: 'image/png' | 'video/mp4',
     sha256?: string | null
   ): Promise<ArtifactFile> {
-    const head = await this.storage.head(storageKey);
+    const storage = this.storages[storageProvider] ??
+      (this.storage.provider === storageProvider ? this.storage : null);
+    if (!storage) {
+      throw new ApplicationError(
+        'artifact_provider_unavailable',
+        'Adaptateur de stockage indisponible pour ' + storageProvider + '.',
+        503
+      );
+    }
+    const head = await storage.head(storageKey);
     if (!head) {
       throw new ApplicationError('artifact_missing', 'Objet de stockage introuvable.', 404);
     }
@@ -42,7 +52,7 @@ export class PrismaArtifactAccess implements ArtifactAccessPort {
       sha256: sha256 ?? head.sha256,
       contentType,
       size: head.sizeBytes,
-      openRead: async (range) => (await this.storage.get(storageKey, range)).stream
+      openRead: async (range) => (await storage.get(storageKey, range)).stream
     };
   }
 

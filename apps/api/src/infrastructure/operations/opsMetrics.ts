@@ -21,6 +21,17 @@ export class OpsMetricsService {
     } catch {
       database = 'error';
     }
+    if (database === 'error') {
+      return {
+        generatedAt: new Date().toISOString(),
+        database,
+        workers: [],
+        jobRuns: {},
+        stepRuns: {},
+        outbox: {},
+        artifacts: {}
+      };
+    }
     const [workers, jobRuns, stepRuns, outbox, artifacts] = await Promise.all([
       this.db.workerHeartbeat.findMany({ orderBy: { lastSeenAt: 'desc' }, take: 20 }),
       this.db.jobRun.groupBy({ by: ['status'], _count: { _all: true } }),

@@ -7,6 +7,7 @@ import {
 } from '@vululu/domain';
 import { ApplicationError } from '@vululu/application';
 import type {
+  CapabilityProviderPort,
   DurableRoutingPort,
   DurableRunRoutingSnapshot,
   ModelRecord
@@ -43,18 +44,19 @@ export class DurableRoutingService implements DurableRoutingPort {
   private readonly agents: PrismaAgentRepository;
   private readonly catalog: PrismaProviderCatalogRepository;
   private readonly routes: PrismaRoutingRepository;
-  private readonly provider: MockCapabilityProvider;
+  private readonly provider: CapabilityProviderPort;
 
   constructor(
     private readonly db: PrismaClient = prisma,
     failedModelKeys: ReadonlySet<string> = new Set(
       (process.env.DURABLE_MOCK_FAIL_MODEL || '').split(',').map((item) => item.trim()).filter(Boolean)
-    )
+    ),
+    provider?: CapabilityProviderPort
   ) {
     this.agents = new PrismaAgentRepository(db);
     this.catalog = new PrismaProviderCatalogRepository(db);
     this.routes = new PrismaRoutingRepository(db);
-    this.provider = new MockCapabilityProvider(failedModelKeys);
+    this.provider = provider ?? new MockCapabilityProvider(failedModelKeys);
   }
 
   async resolve(input: {

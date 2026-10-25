@@ -3,23 +3,22 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { approvalInputSchema, correctionInputSchema } from '@vululu/contracts';
 import type { ArtifactFile } from '@vululu/application';
 import { rateLimitPreHandler, RATE_LIMITS } from '../infrastructure/security/rateLimiter';
+import { parseByteRange } from '../infrastructure/http/byteRange';
+import { HttpError } from '../errors';
 import { actorOf, artifacts, bundles, durableStore, production } from '../application/container';
 
 function sendVideo(request: FastifyRequest, reply: FastifyReply, file: string, size: number) {
-  const range = request.headers.range;
+  const range = parseByteRange(request.headers.range, size);
+  if (range === null) {
+    return reply.code(416).header('Content-Range', 'bytes */' + size).send();
+  }
   if (range) {
-    const value = range.replace('bytes=', '');
-    const parts = value.split('-');
-    const start = Number(parts[0] || '0');
-    const end = parts[1] ? Number(parts[1]) : size - 1;
-    if (start >= 0 && end < size && start <= end) {
-      reply.code(206);
-      reply.header('Content-Range', 'bytes ' + start + '-' + end + '/' + size);
-      reply.header('Accept-Ranges', 'bytes');
-      reply.header('Content-Length', String(end - start + 1));
-      reply.type('video/mp4');
-      return reply.send(fs.createReadStream(file, { start, end }));
-    }
+    reply.code(206);
+    reply.header('Content-Range', 'bytes ' + range.start + '-' + range.end + '/' + size);
+    reply.header('Accept-Ranges', 'bytes');
+    reply.header('Content-Length', String(range.end - range.start + 1));
+    reply.type('video/mp4');
+    return reply.send(fs.createReadStream(file, { start: range.start, end: range.end }));
   }
   reply.header('Content-Length', String(size));
   reply.header('Accept-Ranges', 'bytes');
@@ -38,30 +37,20 @@ async function sendArtifact(
   if (!file.openRead) {
     return reply.code(404).send({ error: 'artifact_not_found' });
   }
-  const rangeHeader = request.headers.range;
-  let range: { start: number; end: number } | undefined;
-  if (rangeHeader) {
-    const value = rangeHeader.replace('bytes=', '');
-    const parts = value.split('-');
-    const start = Number(parts[0] || '0');
-    const end = parts[1] ? Number(parts[1]) : file.size - 1;
-    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end >= file.size || start > end) {
-      return reply.code(416).header('Content-Range', 'bytes */' + file.size).send();
-    }
-    range = { start, end };
+  const range = parseByteRange(request.headers.range, file.size);
+  if (range === null) {
+    return reply.code(416).header('Content-Range', 'bytes */' + file.size).send();
+  }
+  if (range) {
     reply.code(206);
-    reply.header('Content-Range', 'bytes ' + start + '-' + end + '/' + file.size);
-    reply.header('Content-Length', String(end - start + 1));
+    reply.header('Content-Range', 'bytes ' + range.start + '-' + range.end + '/' + file.size);
+    reply.header('Content-Length', String(range.end - range.start + 1));
   } else {
     reply.header('Content-Length', String(file.size));
   }
   reply.header('Accept-Ranges', 'bytes');
   reply.type(file.contentType);
-  try {
-    return reply.send(await file.openRead(range));
-  } catch {
-    return reply.code(416).header('Content-Range', 'bytes */' + file.size).send();
-  }
+  return reply.send(await file.openRead(range));
 }
 
 export async function productionRoutes(app: FastifyInstance): Promise<void> {
@@ -105,7 +94,13 @@ export async function productionRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/projects/:id/master', { preHandler: [app.authenticate] }, async (request, reply) => {
     const params = request.params as { id: string };
     const query = request.query as { version?: string };
-    const requested = query.version ? Number(query.version) : undefined;
+    let requested: number | undefined;
+    if (query.version !== undefined) {
+      requested = Number(query.version);
+      if (!Number.isInteger(requested) || requested < 1) {
+        throw new HttpError(400, 'invalid_version', 'Version de master invalide.');
+      }
+    }
     const file = await artifacts.getMaster(actorOf(request.currentUser), params.id, requested);
     return sendArtifact(request, reply, file);
   });
@@ -132,7 +127,7 @@ export async function productionRoutes(app: FastifyInstance): Promise<void> {
     const bundle = await bundles.get(actorOf(request.currentUser), params.id);
     const evidence = await durableStore.getRunEvidence(params.jobRunId);
     if (evidence.projectId !== bundle.project.id) {
-      throw new Error('job_run_not_found');
+      throw new HttpError(404, 'job_run_not_found', 'Run introuvable.');
     }
     return evidence;
   });

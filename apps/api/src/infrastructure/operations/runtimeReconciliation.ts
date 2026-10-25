@@ -64,10 +64,14 @@ export class RuntimeReconciliationService {
     });
     const actions: RuntimeReconciliationReport['actions'] = [];
     if (!dryRun && this.dispatcher) {
-      const recovered = await this.dispatcher.recoverStaleClaims(0);
+      const recovered = await this.dispatcher.recoverStaleClaims(staleSeconds * 1000);
       actions.push({ kind: 'outbox_recover_claims', id: 'global', applied: true, detail: 'recovered=' + recovered });
       const approvals = await this.dispatcher.reconcileApprovals();
       actions.push({ kind: 'outbox_reconcile_approvals', id: 'global', applied: true, detail: 'created=' + approvals });
+      const expiredLimiters = await this.db.rateLimitCounter.deleteMany({
+        where: { expiresAt: { lt: new Date(now) } }
+      });
+      actions.push({ kind: 'rate_limit_cleanup', id: 'global', applied: true, detail: 'deleted=' + expiredLimiters.count });
     }
     const incidents: RuntimeReconciliationReport['incidents'] = [];
     for (const worker of workers) {
