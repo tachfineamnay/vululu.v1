@@ -13,7 +13,8 @@
       - aucun secret/certificat (*.pem, *.key, *.p12, *.pfx, *.crt, *.cer).
 
     Puis, hors documentation (docs/) :
-      - aucun chemin absolu personnel Windows (X:/Users/..., X:/Desktop/...)
+      - aucun chemin absolu personnel Windows (lettre de lecteur suivie de
+        Users/ ou Desktop/)
         ne doit apparaitre dans le contenu des fichiers texte versionnes.
 
     Les chemins absolus de machine de travail sont toleres dans docs/ (ils
