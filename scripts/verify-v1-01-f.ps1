@@ -1,31 +1,35 @@
-param(
-  [switch]$SkipTests,
-  [switch]$IncludeTests = $true
-)
+param([switch]$SkipTests)
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $repoRoot
 try {
-  $failed = @()
-  function Step([string]$name, [scriptblock]$action) {
-    Write-Output ('=== ' + $name + ' ===')
-    try { & $action; if ($LASTEXITCODE -ne 0) { $failed += $name } }
-    catch { Write-Output ('FAIL ' + $name + ': ' + $_.Exception.Message); $failed += $name }
-  }
-  Step 'secrets' { pwsh -NoProfile -File scripts/check-secrets.ps1; $global:LASTEXITCODE = $LASTEXITCODE }
-  Step 'docs' { pwsh -NoProfile -File scripts/verify-foundation-docs.ps1 }
-  Step 'typecheck' { pnpm typecheck }
-  Step 'lint-strict' { $env:LINT_STRICT = '1'; pnpm lint }
-  if (-not $SkipTests) {
-    Step 'tests' { pnpm test }
+  Write-Output '=== secrets ==='
+  pwsh -NoProfile -File scripts/check-secrets.ps1
+  if ($LASTEXITCODE -ne 0) { throw 'secrets' }
+  Write-Output '=== docs ==='
+  pwsh -NoProfile -File scripts/verify-foundation-docs.ps1
+  if ($LASTEXITCODE -ne 0) { throw 'docs' }
+  Write-Output '=== typecheck ==='
+  pnpm typecheck
+  if ($LASTEXITCODE -ne 0) { throw 'typecheck' }
+  Write-Output '=== lint-strict ==='
+  $env:LINT_STRICT = '1'
+  pnpm lint
+  if ($LASTEXITCODE -ne 0) { throw 'lint' }
+  if ($SkipTests) {
+    Write-Output '=== tests NOT_RUN (-SkipTests) ==='
   } else {
-    Write-Output 'NOT_RUN tests (-SkipTests)'
+    Write-Output '=== tests ==='
+    pnpm test
+    if ($LASTEXITCODE -ne 0) { throw 'tests' }
   }
-  Step 'build' { pnpm build }
-  if ($failed.Count -gt 0) {
-    Write-Output ('V1_01_F_GATE_FAIL: ' + ($failed -join ','))
-    exit 1
-  }
+  Write-Output '=== build ==='
+  pnpm build
+  if ($LASTEXITCODE -ne 0) { throw 'build' }
   Write-Output 'V1_01_F_GATE_PASS'
+}
+catch {
+  Write-Output ('V1_01_F_GATE_FAIL: ' + $_.Exception.Message)
+  exit 1
 }
 finally { Pop-Location }

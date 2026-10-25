@@ -91,7 +91,7 @@ export async function beginRun(input: PipelineInput): Promise<Record<string, unk
     );
   } catch (error) {
     if (typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === '23505') {
-      throw new Error('run_already_active_for_project');
+      throw new Error('run_already_active_for_project', { cause: error });
     }
     throw error;
   }
