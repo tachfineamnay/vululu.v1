@@ -65,6 +65,9 @@ Aucun de ces documents n'a été inventé. Les lacunes sont tracées dans le [ra
 | backlog/P0_0_AUDIT_FONDATIONS.md | Proposition du premier lot technique |
 | v2/README.md | Garde-fou V2 et points d'extension |
 | reviews/ | Audit V0, preuves de tests, gaps V1 et baseline d'implémentation |
+| certification/ | Matrice des capacités, dette technique, certification V1 et readiness de déploiement |
+| review/ | Audits pré-push V1-01-H : historique Git, sécurité, diff, CI, vérification locale et handoff |
+| reports/ | Baseline exécutable COOLIFY + ADMIN + STUDIO et rapports de mission |
 
 ## 7. Vérification
 
