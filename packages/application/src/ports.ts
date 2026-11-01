@@ -433,6 +433,28 @@ export type ProjectBundleRecord = {
   master: MasterVersionView | null;
   masterVersions: MasterVersionView[];
   job: ProductionJobRecord | null;
+  jobRun: {
+    id: string;
+    status: string;
+    orchestrator: string | null;
+    workflowRunId: string | null;
+    traceId: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+    steps: Array<{
+      name: string;
+      status: string;
+      attempts: number;
+      error: string | null;
+      startedAt: Date | null;
+      finishedAt: Date | null;
+    }>;
+  } | null;
+  costs: {
+    totalCents: number;
+    events: number;
+    mode: 'MOCK';
+  };
 };
 
 export type QaView = {

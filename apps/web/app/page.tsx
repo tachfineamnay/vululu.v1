@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, BrandContext, ProjectSummary, SessionUser } from '../lib/api';
+import StudioNav from '../components/StudioNav';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -45,6 +46,7 @@ export default function DashboardPage() {
           <span className="brand-mark small">V</span>
           <span>Vululu AI</span>
         </Link>
+        <StudioNav />
         <div className="topbar-actions">
           {user && user.role === 'super_admin' ? (
             <Link className="btn btn-ghost" href="/admin" data-testid="admin-link">
@@ -58,10 +60,10 @@ export default function DashboardPage() {
 
       <main className="page">
         <section className="hero">
-          <p className="eyebrow">V0 — Studio vertical</p>
+          <p className="eyebrow">Studio V1 — verticale locale deterministe</p>
           <h1>Bonjour. Je suis Vululu.</h1>
           <p className="lead">
-            Cree un contexte de marque, prepare un brief et laisse-moi produire un master video de cinq scenes.
+            Cree un contexte de marque, prepare un brief et produis un master video de cinq scenes. Le rendu est deterministe (Sharp/FFmpeg), Postiz est MOCK et les couts sont simules.
           </p>
           <div className="hero-actions">
             <Link className="btn btn-primary" data-testid="new-context" href="/contexts/new">Creer un contexte</Link>
@@ -73,7 +75,11 @@ export default function DashboardPage() {
           <section className="card">
             <div className="section-head">
               <h2>Contextes de marque</h2>
-              <Link className="text-link" href="/contexts/new">Ajouter</Link>
+              <span>
+                <Link className="text-link" href="/contexts" data-testid="manage-contexts">Gerer</Link>
+                {' / '}
+                <Link className="text-link" href="/contexts/new">Ajouter</Link>
+              </span>
             </div>
             {contexts.length === 0 ? (
               <p className="muted">Aucun contexte. Commence par une fiche de marque reutilisable.</p>

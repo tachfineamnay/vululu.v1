@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { postJson } from '../../../lib/api';
+import StudioNav from '../../../components/StudioNav';
 
 export default function NewContextPage() {
   const router = useRouter();
@@ -35,6 +36,7 @@ export default function NewContextPage() {
     <div className="shell">
       <header className="topbar">
         <Link href="/" className="brand"><span className="brand-mark small">V</span><span>Vululu AI</span></Link>
+        <StudioNav />
         <Link href="/" className="text-link">Retour</Link>
       </header>
       <main className="page narrow">

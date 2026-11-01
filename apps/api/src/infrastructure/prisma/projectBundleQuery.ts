@@ -49,6 +49,15 @@ export class PrismaProjectBundleQuery implements ProjectBundleQueryPort {
       throw new ApplicationError('project_not_found', 'Projet introuvable.', 404);
     }
 
+    const [latestRun, costAggregate] = await Promise.all([
+      this.db.jobRun.findFirst({
+        where: { projectId },
+        orderBy: { createdAt: 'desc' },
+        include: { steps: { orderBy: { createdAt: 'asc' } } }
+      }),
+      this.db.costEvent.aggregate({ where: { projectId }, _sum: { amountCents: true }, _count: { _all: true } })
+    ]);
+
     const masterArtifact = project.artifacts.find((artifact) => artifact.kind === 'master') ?? null;
     const masterVersions: MasterVersionView[] = (masterArtifact?.versions ?? []).map((version) => ({
       id: version.id,
@@ -191,7 +200,31 @@ export class PrismaProjectBundleQuery implements ProjectBundleQueryPort {
             createdAt: job.createdAt,
             updatedAt: job.updatedAt
           }
-        : null
+        : null,
+      jobRun: latestRun
+        ? {
+            id: latestRun.id,
+            status: latestRun.status,
+            orchestrator: latestRun.orchestrator,
+            workflowRunId: latestRun.workflowRunId,
+            traceId: latestRun.traceId,
+            createdAt: latestRun.createdAt,
+            updatedAt: latestRun.updatedAt,
+            steps: latestRun.steps.map((step) => ({
+              name: step.name,
+              status: step.status,
+              attempts: step.attempts,
+              error: step.error,
+              startedAt: step.startedAt,
+              finishedAt: step.finishedAt
+            }))
+          }
+        : null,
+      costs: {
+        totalCents: costAggregate._sum.amountCents ?? 0,
+        events: costAggregate._count._all,
+        mode: 'MOCK'
+      }
     };
   }
 }

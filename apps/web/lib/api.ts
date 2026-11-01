@@ -89,6 +89,32 @@ export type ProductionJob = {
   error: string | null;
 };
 
+export type JobStep = {
+  name: string;
+  status: string;
+  attempts: number;
+  error: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+};
+
+export type JobRunTracking = {
+  id: string;
+  status: string;
+  orchestrator: string | null;
+  workflowRunId: string | null;
+  traceId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  steps: JobStep[];
+};
+
+export type MockCostSummary = {
+  totalCents: number;
+  events: number;
+  mode: 'MOCK';
+};
+
 export type ProjectBundle = {
   project: {
     id: string;
@@ -131,6 +157,8 @@ export type ProjectBundle = {
   master: MasterVersion | null;
   masterVersions: MasterVersion[];
   job: ProductionJob | null;
+  jobRun: JobRunTracking | null;
+  costs: MockCostSummary;
 };
 
 function readCookie(name: string): string {

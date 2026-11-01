@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, BrandContext, ProjectSummary, postJson } from '../../../lib/api';
+import StudioNav from '../../../components/StudioNav';
 
 export default function NewProjectPage() {
   const router = useRouter();
@@ -57,6 +58,7 @@ export default function NewProjectPage() {
     <div className="shell">
       <header className="topbar">
         <Link href="/" className="brand"><span className="brand-mark small">V</span><span>Vululu AI</span></Link>
+        <StudioNav />
         <Link href="/" className="text-link">Retour</Link>
       </header>
       <main className="page narrow">
