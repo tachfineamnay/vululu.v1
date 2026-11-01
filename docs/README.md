@@ -70,6 +70,7 @@ Aucun de ces documents n'a été inventé. Les lacunes sont tracées dans le [ra
 | reports/ | Baseline exécutable COOLIFY + ADMIN + STUDIO et rapports de mission |
 | admin/ | Parcours, actions sensibles et limites de l'interface d'administration |
 | preprod/ | Runbook de préproduction Hatchet, PostgreSQL, S3-compatible et sauvegardes |
+| coolify/ | Runbook d'installation Coolify sans GitHub Actions (build, Compose, migrations, rollback) |
 
 ## 7. Vérification
 
