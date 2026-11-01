@@ -46,6 +46,11 @@ export default function DashboardPage() {
           <span>Vululu AI</span>
         </Link>
         <div className="topbar-actions">
+          {user && user.role === 'super_admin' ? (
+            <Link className="btn btn-ghost" href="/admin" data-testid="admin-link">
+              Admin
+            </Link>
+          ) : null}
           <span className="muted">{user ? user.name : ''}</span>
           <button className="btn btn-ghost" onClick={logout}>Sortir</button>
         </div>

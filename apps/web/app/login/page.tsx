@@ -4,6 +4,20 @@ import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { postJson, SessionUser } from '../../lib/api';
 
+/**
+ * Accepte uniquement un chemin interne (commence par / sans // ni /\\).
+ * Evite toute redirection ouverte via le parametre next.
+ */
+function safeNextPath(value: string | null): string {
+  if (!value || !value.startsWith('/') || value.startsWith('//')) {
+    return '/';
+  }
+  if (value.charAt(1) === '\\') {
+    return '/';
+  }
+  return value;
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('demo@vululu.local');
@@ -17,7 +31,8 @@ export default function LoginPage() {
     setError('');
     try {
       await postJson<{ user: SessionUser }>('/api/auth/login', { email, password });
-      router.push('/');
+      const next = new URLSearchParams(window.location.search).get('next');
+      router.push(safeNextPath(next));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Connexion impossible.');
     } finally {

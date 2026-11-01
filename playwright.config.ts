@@ -15,13 +15,13 @@ export default defineConfig({
       command: 'pnpm --filter @vululu/api dev',
       url: 'http://127.0.0.1:3101/api/health',
       reuseExistingServer: true,
-      timeout: 120000
+      timeout: 240000
     },
     {
       command: 'pnpm --filter @vululu/web dev',
       url: 'http://127.0.0.1:3100',
       reuseExistingServer: true,
-      timeout: 120000
+      timeout: 240000
     }
   ]
 });

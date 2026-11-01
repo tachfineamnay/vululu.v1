@@ -286,9 +286,10 @@ jobs:
 
       # playwright.config.ts demarre l'API (3101) et le Web (3100) et attend
       # leurs URLs avant d'executer les tests. Aucun continue-on-error : un echec
-      # E2E fait echouer le workflow.
-      - name: E2E Playwright (verticale V0)
-        run: pnpm exec playwright test e2e/v0.spec.ts --reporter=list
+      # E2E fait echouer le workflow. Les deux specs sont bloquantes :
+      # verticale V0 (studio) et parcours admin super_admin / refus user.
+      - name: E2E Playwright (verticale V0 + admin)
+        run: pnpm exec playwright test e2e/ --reporter=list
 
       - name: Archiver les traces Playwright en cas d'echec
         if: failure()
