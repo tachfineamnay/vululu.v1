@@ -5,6 +5,12 @@ test.setTimeout(300000);
 
 const demoEmail = process.env.V0_DEMO_EMAIL || 'demo@vululu.local';
 const demoPassword = process.env.V0_DEMO_PASSWORD || 'vululu-demo';
+const captureStudio = process.env.CAPTURE_STUDIO === '1';
+
+async function shot(page: Page, name: string): Promise<void> {
+  if (!captureStudio) return;
+  await page.screenshot({ path: 'docs/reports/studio-v1-captures/' + name + '.png', fullPage: true });
+}
 
 async function login(page: Page) {
   await page.goto('/login');
@@ -40,8 +46,10 @@ test('verticale Studio V1 complete (deterministe, correction ciblee, MOCK)', asy
 
   await login(page);
 
+  await shot(page, '01-dashboard');
   await page.getByTestId('nav-catalog').click();
   await expect(page.getByTestId('catalog-page')).toBeVisible();
+  await shot(page, '02-catalog');
   await expect(page.getByTestId('format-Video')).toContainText('DISPONIBLE');
   await expect(page.getByTestId('format-Affiche')).toContainText('NON IMPLEMENTE');
   await expect(page.getByTestId('capability-audio')).toContainText('NON CONNECTE');
@@ -67,6 +75,7 @@ test('verticale Studio V1 complete (deterministe, correction ciblee, MOCK)', asy
   await page.getByTestId('nav-contexts').click();
   await expect(page.getByTestId('contexts-page')).toBeVisible();
   await expect(page.getByTestId('contexts-list')).toContainText(contextName);
+  await shot(page, '03-contexts');
   await expect(page.getByTestId('context-detail')).toContainText(contextName);
   await page.getByTestId('nav-home').click();
   await expect(page.getByTestId('new-project')).toBeVisible();
@@ -111,6 +120,7 @@ test('verticale Studio V1 complete (deterministe, correction ciblee, MOCK)', asy
   await expect(page.getByTestId('job-steps')).toContainText('Assemblage du master');
   await expect(page.getByTestId('job-steps')).toContainText('Controle qualite');
   await expect(page.getByTestId('provenance')).toContainText('Deterministe');
+  await shot(page, '04-studio-production');
 
   const before = await fetchBundle(page, projectId);
   expect(before.scenes.length).toBe(5);
@@ -153,6 +163,7 @@ test('verticale Studio V1 complete (deterministe, correction ciblee, MOCK)', asy
   await expect(page.locator('[data-testid=scene-versions-SCENE-002]')).toContainText('v2');
   await page.locator('[data-testid=compare-version]').selectOption('1');
   await expect(page.getByTestId('master-video-compare')).toBeVisible();
+  await shot(page, '05-studio-comparison');
 
   const after = await fetchBundle(page, projectId);
   const checksumsAfter: Record<string, string> = {};
