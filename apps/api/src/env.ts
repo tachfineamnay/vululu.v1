@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
+import { assertDatabaseLocation } from './envPolicy';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const repoRoot = path.resolve(here, '../../..');
@@ -26,33 +27,22 @@ if (!selected) {
   throw new Error('DATABASE_URL manquant pour l API.');
 }
 
-function isLocalDatabaseUrl(value: string): boolean {
-  try {
-    const parsed = new URL(value);
-    const host = parsed.hostname.toLowerCase();
-    return host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '[::1]';
-  } catch {
-    return false;
-  }
-}
-
-if (!isLocalDatabaseUrl(selected)) {
-  let host = 'invalide';
-  try {
-    host = new URL(selected).hostname;
-  } catch {
-    // Keep the generic host value.
-  }
-  throw new Error('V0 refuse une base non locale: ' + host);
-}
+const allowNonLocalDatabase = process.env.ALLOW_NON_LOCAL_DATABASE === '1';
+assertDatabaseLocation(selected, { appEnv, allowNonLocal: allowNonLocalDatabase });
 
 const sessionSecret = process.env.SESSION_SECRET || '';
 if (sessionSecret.length < 32) {
   throw new Error('SESSION_SECRET manquant ou trop court pour V0.');
 }
 
+const apiHost = process.env.API_HOST || '127.0.0.1';
+if (!['127.0.0.1', '0.0.0.0', '::1', '::'].includes(apiHost)) {
+  throw new Error('API_HOST invalide: ' + apiHost);
+}
+
 export const env = {
   repoRoot,
+  host: apiHost,
   port: Number(process.env.API_PORT || '3001'),
   databaseUrl: selected,
   sessionSecret,
