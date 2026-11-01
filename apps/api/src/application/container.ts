@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import {
+  AdminQueryUseCases,
   AgentConfigUseCases,
   ArtifactAccessUseCases,
   BriefUseCases,
@@ -20,6 +21,7 @@ import {
   MediaRendererAdapter,
   PostizMockAdapter,
   MockCapabilityProvider,
+  PrismaAdminQuery,
   PrismaAgentRepository,
   PrismaArtifactAccess,
   PrismaAuditAdapter,
@@ -126,6 +128,9 @@ const providerCatalogRepository = new PrismaProviderCatalogRepository();
 const routingRepository = new PrismaRoutingRepository();
 const costRepository = new PrismaCostRepository();
 const mockCapabilityProvider = new MockCapabilityProvider();
+
+const adminQueryPort = new PrismaAdminQuery({ storage: artifactStorage });
+export const adminQueries = new AdminQueryUseCases(adminQueryPort);
 
 export const agentConfigs = new AgentConfigUseCases(agentRepository, clock, ids, audit);
 export const providerCatalog = new ProviderCatalogUseCases(providerCatalogRepository, audit);

@@ -1021,3 +1021,228 @@ export interface ArtifactPublisherPort {
   publish(input: ArtifactPublishRequest): Promise<ArtifactStorageMetadata>;
   verifyPublished(input: ArtifactStorageMetadata): Promise<boolean>;
 }
+
+// ---------------------------------------------------------------------------
+// Administration — lectures agrégées (Mission 03)
+// Le port ne porte aucune écriture métier : les mutations existantes gardent
+// leurs use cases et routes. Ces lectures sont réservées au super_admin.
+// ---------------------------------------------------------------------------
+
+export type AdminPageInput = {
+  page: number;
+  pageSize: number;
+  q?: string;
+};
+
+export type AdminRunQuery = AdminPageInput & { status?: string };
+export type AdminAuditQuery = AdminPageInput & {
+  action?: string;
+  actorId?: string;
+  targetType?: string;
+  from?: string;
+  to?: string;
+};
+export type AdminCostQuery = AdminPageInput & { provider?: string; from?: string; to?: string };
+
+export type AdminPageRecord<T> = {
+  items: T[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+};
+
+export type AdminFlagStatusRecord = 'CONNECTED' | 'MOCK' | 'NOT_CONNECTED';
+
+export type AdminFlagRecord = {
+  key: string;
+  label: string;
+  status: AdminFlagStatusRecord;
+  detail: string;
+};
+
+export type AdminOverviewRecord = {
+  generatedAt: string;
+  counts: {
+    users: number;
+    superAdmins: number;
+    invitations: number;
+    pendingInvitations: number;
+    contexts: number;
+    projects: number;
+    jobRuns: number;
+    failedRuns: number;
+    auditEvents24h: number;
+    rbacDenied24h: number;
+    costEvents: number;
+    costCents: number;
+  };
+  runsByStatus: Record<string, number>;
+  stepsByStatus: Record<string, number>;
+  outboxByStatus: Record<string, number>;
+  artifactsByState: Record<string, number>;
+  workers: { active: number; stale: number; total: number };
+  database: 'ok' | 'error';
+  storage: { backend: string; ok: boolean; detail: string };
+  orchestrator: { mode: 'local' | 'hatchet'; detail: string };
+  providers: { mode: 'MOCK' | 'REAL'; detail: string };
+  postiz: { mode: 'MOCK' | 'REAL'; detail: string };
+  flags: AdminFlagRecord[];
+  recentErrors: Array<{
+    id: string;
+    source: 'job_run' | 'step_run' | 'outbox';
+    status: string;
+    error: string;
+    createdAt: string;
+    jobRunId: string | null;
+    projectId: string | null;
+  }>;
+};
+
+export type AdminUserRecord = {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  createdAt: string;
+  projectsCount: number;
+  sessionsCount: number;
+  lastSessionAt: string | null;
+  lastSessionStatus: 'active' | 'expired' | 'revoked' | 'none';
+};
+
+export type AdminProjectRecord = {
+  id: string;
+  title: string;
+  ownerEmail: string;
+  status: string;
+  platform: string;
+  format: string;
+  contextName: string;
+  scenesCount: number;
+  runsCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AdminRunRecord = {
+  id: string;
+  projectId: string;
+  projectTitle: string;
+  ownerEmail: string;
+  type: string;
+  status: string;
+  orchestrator: string | null;
+  workflowRunId: string | null;
+  traceId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  stepsTotal: number;
+  stepsFailed: number;
+  currentStep: string | null;
+  error: string | null;
+  productionStatus: string | null;
+  progress: number | null;
+};
+
+export type AdminStepRecord = {
+  name: string;
+  status: string;
+  attempts: number;
+  error: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+};
+
+export type AdminRunDetailRecord = AdminRunRecord & {
+  steps: AdminStepRecord[];
+  outbox: Array<{
+    id: string;
+    kind: string;
+    status: string;
+    attempts: number;
+    lastError: string | null;
+    workflowRunId: string | null;
+    createdAt: string;
+  }>;
+  artifact: {
+    id: string;
+    artifactVersionId: string;
+    masterVersion: number;
+    checksum: string;
+    createdAt: string;
+  } | null;
+};
+
+export type AdminAuditEventRecord = {
+  id: string;
+  actorId: string | null;
+  action: string;
+  targetType: string;
+  targetId: string | null;
+  metadata: unknown;
+  traceId: string | null;
+  requestId: string | null;
+  createdAt: string;
+};
+
+export type AdminCostEventRecord = {
+  id: string;
+  projectId: string | null;
+  projectTitle: string | null;
+  jobRunId: string | null;
+  provider: string;
+  model: string | null;
+  units: number;
+  amountCents: number;
+  createdAt: string;
+};
+
+export type AdminCostsRecord = {
+  items: AdminCostEventRecord[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  totalCents: number;
+  totalEvents: number;
+  byProvider: Array<{ provider: string; events: number; cents: number }>;
+  mode: 'MOCK' | 'REAL';
+};
+
+export type AdminRoutingDecisionRecord = {
+  id: string;
+  capabilityKey: string;
+  candidateModelIds: string[];
+  selectedModelId: string;
+  fallbackModelId: string | null;
+  criteria: unknown;
+  reason: string;
+  createdAt: string;
+};
+
+export type AdminRuntimeRecord = {
+  generatedAt: string;
+  appEnv: string;
+  orchestratorMode: 'local' | 'hatchet';
+  storageBackend: 'local' | 's3';
+  s3TlsRequired: boolean;
+  sessionTtlHours: number;
+  invitationTtlHours: number;
+  budget: { durableBudgetCents: number | null; maxRunCostCents: number | null };
+  flags: AdminFlagRecord[];
+  versions: { node: string; prisma: string };
+};
+
+/** Lectures agrégées d'administration. Aucune écriture, aucun secret. */
+export interface AdminQueryPort {
+  overview(): Promise<AdminOverviewRecord>;
+  listUsers(input: AdminPageInput): Promise<AdminPageRecord<AdminUserRecord>>;
+  listProjects(input: AdminPageInput): Promise<AdminPageRecord<AdminProjectRecord>>;
+  listRuns(input: AdminRunQuery): Promise<AdminPageRecord<AdminRunRecord>>;
+  getRun(jobRunId: string): Promise<AdminRunDetailRecord | null>;
+  listAudit(input: AdminAuditQuery): Promise<AdminPageRecord<AdminAuditEventRecord>>;
+  listCosts(input: AdminCostQuery): Promise<AdminCostsRecord>;
+  listRoutingDecisions(input: AdminPageInput): Promise<AdminPageRecord<AdminRoutingDecisionRecord>>;
+  runtime(): Promise<AdminRuntimeRecord>;
+}

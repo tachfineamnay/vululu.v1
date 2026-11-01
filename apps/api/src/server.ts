@@ -10,6 +10,7 @@ import { isAllowedOrigin } from './security/origin';
 import { logEvent, newTraceId, sanitizeRequestId } from './observability/logger';
 import { authRoutes } from './routes/auth';
 import { adminRoutes } from './routes/admin';
+import { adminReadRoutes } from './routes/adminRead';
 import { adminAgentRoutes } from './routes/adminAgents';
 import { contextRoutes } from './routes/contexts';
 import { projectRoutes } from './routes/projects';
@@ -110,6 +111,7 @@ export async function buildServer() {
 
   await app.register(authRoutes);
   await app.register(adminRoutes);
+  await app.register(adminReadRoutes);
   await app.register(adminAgentRoutes);
   await app.register(contextRoutes);
   await app.register(projectRoutes);

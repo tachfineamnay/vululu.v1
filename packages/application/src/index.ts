@@ -11,3 +11,4 @@ export * from './use-cases/production';export * from './use-cases/artifacts';exp
 export * from './use-cases/provider-catalog';
 export * from './use-cases/routing';
 export * from './use-cases/durableProduction';
+export * from './use-cases/admin';
