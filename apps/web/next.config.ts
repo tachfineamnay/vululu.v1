@@ -1,17 +1,11 @@
 import type { NextConfig } from 'next';
 
-const apiInternalUrl = (process.env.API_INTERNAL_URL || 'http://127.0.0.1:3101').replace(/\/+$/, '');
-
+/**
+ * Le proxy /api est un route handler runtime (app/api/[...path]/route.ts) :
+ * API_INTERNAL_URL est lu a la requete, pas fige au build.
+ */
 const nextConfig: NextConfig = {
-  allowedDevOrigins: ['127.0.0.1', 'localhost'],
-  async rewrites() {
-    return [
-      {
-        source: '/api/:path*',
-        destination: apiInternalUrl + '/api/:path*'
-      }
-    ];
-  }
+  allowedDevOrigins: ['127.0.0.1', 'localhost']
 };
 
 export default nextConfig;

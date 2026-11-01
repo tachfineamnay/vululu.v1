@@ -1,0 +1,37 @@
+# syntax=docker/dockerfile:1.7
+# Image API + worker Vululu V1 — production/preproduction Coolify.
+# Base identique builder/runner (glibc) pour Prisma et Sharp.
+FROM node:24-bookworm-slim AS builder
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN corepack enable && corepack prepare pnpm@10.6.1 --activate
+WORKDIR /app
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+COPY packages ./packages
+COPY apps/api ./apps/api
+COPY apps/web/package.json ./apps/web/package.json
+COPY scripts ./scripts
+RUN pnpm install --frozen-lockfile
+RUN pnpm db:generate
+
+FROM node:24-bookworm-slim AS runner
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg ca-certificates openssl tini \
+    && rm -rf /var/lib/apt/lists/*
+RUN groupadd --gid 10001 vululu \
+    && useradd --uid 10001 --gid vululu --create-home --shell /usr/sbin/nologin vululu \
+    && mkdir -p /data/artifacts \
+    && chown -R vululu:vululu /data
+WORKDIR /app
+COPY --from=builder --chown=vululu:vululu /app /app
+ENV NODE_ENV=production \
+    API_HOST=0.0.0.0 \
+    API_PORT=3101 \
+    ARTIFACT_DIR=/data/artifacts \
+    HOME=/home/vululu
+USER vululu
+EXPOSE 3101
+ENTRYPOINT ["/usr/bin/tini", "--"]
+# API par defaut ; le worker surcharge la commande :
+#   node_modules/.bin/tsx apps/api/src/worker/main.ts
+CMD ["node_modules/.bin/tsx", "apps/api/src/index.ts"]

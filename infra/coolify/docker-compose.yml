@@ -1,0 +1,221 @@
+# Vululu V1 — Compose Coolify (preproduction/production interne)
+# Services de base : db, migrate (one-shot), api, web.
+# Profils optionnels : worker, durable (Hatchet), s3 (MinIO/objet interne).
+# Aucune donnee sensible dans ce fichier : Coolify injecte les variables.
+# Aucun port PostgreSQL/S3 n'est publie. Seul le Web expose 3100 au proxy Coolify.
+
+name: vululu
+
+x-api-env: &api-env
+  APP_ENV: production
+  API_HOST: 0.0.0.0
+  API_PORT: "3101"
+  TRUST_PROXY: "true"
+  SESSION_COOKIE_SECURE: "1"
+  SESSION_SAMESITE: lax
+  APP_ORIGIN: ${APP_ORIGIN:?APP_ORIGIN requis}
+  WEB_ORIGIN: ${WEB_ORIGIN:?WEB_ORIGIN requis}
+  SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET requis (32+ caracteres)}
+  DATABASE_URL: postgresql://${POSTGRES_USER:-vululu}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD requis}@db:5432/${POSTGRES_DB:-vululu}?schema=public
+  ALLOW_NON_LOCAL_DATABASE: "1"
+  ARTIFACT_STORAGE_BACKEND: ${ARTIFACT_STORAGE_BACKEND:-local}
+  ARTIFACT_DIR: /data/artifacts
+  S3_ENDPOINT: ${S3_ENDPOINT:-}
+  S3_REGION: ${S3_REGION:-us-east-1}
+  S3_BUCKET: ${S3_BUCKET:-}
+  S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+  S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+  S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+  S3_REQUIRE_TLS: ${S3_REQUIRE_TLS:-0}
+  ORCHESTRATOR_MODE: ${ORCHESTRATOR_MODE:-local}
+  HATCHET_CLIENT_TOKEN: ${HATCHET_CLIENT_TOKEN:-}
+  HATCHET_CLIENT_HOST_PORT: ${HATCHET_CLIENT_HOST_PORT:-hatchet:17077}
+  HATCHET_CLIENT_API_URL: ${HATCHET_CLIENT_API_URL:-http://hatchet:18243}
+  HATCHET_CLIENT_TLS_STRATEGY: none
+  RATE_LIMIT_ENABLED: "1"
+  LOG_LEVEL: info
+
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vululu}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD requis}
+      POSTGRES_DB: ${POSTGRES_DB:-vululu}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vululu} -d ${POSTGRES_DB:-vululu}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks:
+      - internal
+
+  # Migration explicite : jamais de reset, jamais de db push.
+  # L'echec de migration bloque le demarrage de l'API (service_completed_successfully).
+  migrate:
+    build:
+      context: ../..
+      dockerfile: infra/coolify/Dockerfile.api
+    image: vululu-api:${VULULU_IMAGE_TAG:-latest}
+    restart: "no"
+    command: ["node_modules/.bin/prisma", "migrate", "deploy", "--schema", "packages/db/prisma/schema.prisma"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-vululu}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD requis}@db:5432/${POSTGRES_DB:-vululu}?schema=public
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+
+  # Initialise le volume artefacts avec l'UID non-root de l'image API.
+  artifacts-init:
+    image: alpine:3.20
+    restart: "no"
+    command: ["sh", "-c", "chown -R 10001:10001 /data"]
+    volumes:
+      - artifacts:/data
+    networks:
+      - internal
+
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/coolify/Dockerfile.api
+    image: vululu-api:${VULULU_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      <<: *api-env
+    expose:
+      - "3101"
+    volumes:
+      - artifacts:/data/artifacts
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      artifacts-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3101/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - internal
+
+  web:
+    build:
+      context: ../..
+      dockerfile: infra/coolify/Dockerfile.web
+    image: vululu-web:${VULULU_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      API_INTERNAL_URL: http://api:3101
+      PORT: "3100"
+    ports:
+      - "${WEB_PORT:-3100}:3100"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3100/login').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - internal
+
+  # Profil worker : necessite un orchestrateur durable (Hatchet) accessible.
+  worker:
+    profiles: ["worker", "durable"]
+    build:
+      context: ../..
+      dockerfile: infra/coolify/Dockerfile.api
+    image: vululu-api:${VULULU_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    command: ["node_modules/.bin/tsx", "apps/api/src/worker/main.ts"]
+    environment:
+      <<: *api-env
+      ORCHESTRATOR_MODE: hatchet
+      HATCHET_CLIENT_TOKEN: ${HATCHET_CLIENT_TOKEN:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      artifacts-init:
+        condition: service_completed_successfully
+    networks:
+      - internal
+
+  # Profil durable : moteur Hatchet embedded + PostgreSQL dedie (preprod uniquement).
+  hatchet-pg:
+    profiles: ["durable"]
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hatchet
+      POSTGRES_PASSWORD: ${HATCHET_PG_PASSWORD:-}
+      POSTGRES_DB: hatchet
+    volumes:
+      - hatchetpg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hatchet -d hatchet"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks:
+      - internal
+
+  hatchet:
+    profiles: ["durable"]
+    build:
+      context: ../..
+      dockerfile: infra/preprod/Dockerfile.hatchet
+    image: vululu-hatchet:${VULULU_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      HATCHET_DATABASE_URL: postgresql://hatchet:${HATCHET_PG_PASSWORD:-}@hatchet-pg:5432/hatchet?sslmode=disable
+    volumes:
+      - hatchetruntime:/data
+    depends_on:
+      hatchet-pg:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /data/handshake.json"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    networks:
+      - internal
+
+  # Profil s3 : objet store interne optionnel (MinIO). En production, preferer
+  # un S3 manage ou MinIO certifie et injecter S3_* dans Coolify.
+  s3:
+    profiles: ["s3"]
+    image: ${S3_IMAGE:-minio/minio:latest}
+    restart: unless-stopped
+    command: ["server", "/data"]
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-}
+    volumes:
+      - s3data:/data
+    networks:
+      - internal
+
+volumes:
+  pgdata:
+  artifacts:
+  hatchetpg:
+  hatchetruntime:
+  s3data:
+
+networks:
+  internal:
+    driver: bridge

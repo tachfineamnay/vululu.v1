@@ -6,7 +6,13 @@ import { assertDatabaseLocation } from './envPolicy';
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const repoRoot = path.resolve(here, '../../..');
 
-dotenv.config({ path: path.join(repoRoot, '.env'), override: true });
+// En production (Coolify), les variables sont injectees par la plateforme :
+// aucun fichier .env local ne doit les ecraser. En local/test uniquement, le
+// fichier .env complete les variables absentes (jamais prioritaire).
+const bootAppEnv = process.env.APP_ENV || (process.env.NODE_ENV === 'production' ? 'production' : 'local');
+if (bootAppEnv !== 'production') {
+  dotenv.config({ path: path.join(repoRoot, '.env'), override: false });
+}
 
 const appEnv = process.env.APP_ENV || (process.env.NODE_ENV === 'production' ? 'production' : 'local');
 if (!['local', 'development', 'test', 'production'].includes(appEnv)) {

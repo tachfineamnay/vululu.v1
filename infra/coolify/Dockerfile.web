@@ -1,0 +1,30 @@
+# syntax=docker/dockerfile:1.7
+# Image Web Next 16 (studio + admin) — production/preproduction Coolify.
+FROM node:24-bookworm-slim AS builder
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN corepack enable && corepack prepare pnpm@10.6.1 --activate
+WORKDIR /app
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+COPY packages ./packages
+COPY apps/web ./apps/web
+COPY apps/api/package.json ./apps/api/package.json
+RUN pnpm install --frozen-lockfile
+# API_INTERNAL_URL n'est pas fige ici : le proxy /api le lit a la requete.
+RUN pnpm --filter @vululu/web build
+
+FROM node:24-bookworm-slim AS runner
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates tini \
+    && rm -rf /var/lib/apt/lists/*
+RUN groupadd --gid 10001 vululu \
+    && useradd --uid 10001 --gid vululu --create-home --shell /usr/sbin/nologin vululu
+WORKDIR /app
+COPY --from=builder --chown=vululu:vululu /app /app
+ENV NODE_ENV=production \
+    PORT=3100 \
+    HOME=/home/vululu
+USER vululu
+EXPOSE 3100
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["sh", "-c", "cd apps/web && exec node_modules/.bin/next start -p 3100"]
