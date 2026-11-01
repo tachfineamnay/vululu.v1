@@ -71,6 +71,7 @@ Aucun de ces documents n'a été inventé. Les lacunes sont tracées dans le [ra
 | admin/ | Parcours, actions sensibles et limites de l'interface d'administration |
 | preprod/ | Runbook de préproduction Hatchet, PostgreSQL, S3-compatible et sauvegardes |
 | coolify/ | Runbook d'installation Coolify sans GitHub Actions (build, Compose, migrations, rollback) |
+| studio/ | Walkthrough du Studio V1, preuves E2E et limites assumees |
 
 ## 7. Vérification
 
