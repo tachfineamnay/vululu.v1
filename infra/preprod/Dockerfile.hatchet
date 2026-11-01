@@ -1,0 +1,18 @@
+# Image du moteur Hatchet embedded v0.110.5 pour la preproduction locale.
+# Le binaire Linux amd64 est fourni par scripts/preprod/fetch-hatchet.ps1 dans
+# infra/preprod/build/ (non versionne) et verifie par SHA-256 avant build.
+FROM node:24-bookworm-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends socat \
+    && rm -rf /var/lib/apt/lists/*
+RUN useradd --create-home --uid 10001 hatchet
+COPY infra/preprod/build/hatchet-embedded-sidecar /usr/local/bin/hatchet-embedded-sidecar
+RUN chmod 0755 /usr/local/bin/hatchet-embedded-sidecar
+COPY infra/preprod/hatchet-entrypoint.sh /usr/local/bin/hatchet-entrypoint.sh
+RUN chmod 0755 /usr/local/bin/hatchet-entrypoint.sh
+
+VOLUME ["/data"]
+EXPOSE 17077 18243
+
+ENTRYPOINT ["/usr/local/bin/hatchet-entrypoint.sh"]

@@ -81,3 +81,7 @@ blob-report/
 *.local
 *.bak
 *.orig
+
+# Preproduction locale (binaires, volumes, sauvegardes)
+infra/preprod/runtime/
+infra/preprod/backups/

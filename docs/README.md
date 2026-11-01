@@ -69,6 +69,7 @@ Aucun de ces documents n'a été inventé. Les lacunes sont tracées dans le [ra
 | review/ | Audits pré-push V1-01-H : historique Git, sécurité, diff, CI, vérification locale et handoff |
 | reports/ | Baseline exécutable COOLIFY + ADMIN + STUDIO et rapports de mission |
 | admin/ | Parcours, actions sensibles et limites de l'interface d'administration |
+| preprod/ | Runbook de préproduction Hatchet, PostgreSQL, S3-compatible et sauvegardes |
 
 ## 7. Vérification
 

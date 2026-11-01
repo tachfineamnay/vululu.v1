@@ -1,0 +1,17 @@
+node_modules
+.git
+.v0
+.v1
+data
+test-results
+playwright-report
+.next
+dist
+coverage
+*.log
+.env
+.env.*
+!.env.example
+infra/preprod/runtime
+infra/preprod/backups
+infra/preprod/certs

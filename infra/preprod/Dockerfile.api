@@ -1,0 +1,15 @@
+# Image API + worker Vululu V1 (runtime tsx, identique aux deux processus).
+FROM node:24-bookworm-slim AS base
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN corepack enable && corepack prepare pnpm@10.6.1 --activate
+WORKDIR /app
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+COPY packages ./packages
+COPY apps/api ./apps/api
+COPY scripts ./scripts
+RUN pnpm install --frozen-lockfile
+RUN pnpm db:generate
+ENV NODE_ENV=production
+EXPOSE 3101
+CMD ["pnpm", "--filter", "@vululu/api", "start"]
