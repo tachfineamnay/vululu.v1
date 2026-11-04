@@ -4,12 +4,14 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { api, BrandContext } from '../../lib/api';
 import StudioNav from '../../components/StudioNav';
+import ContextReviewPanel from '../../components/ContextReviewPanel';
 
 export default function ContextsPage() {
   const [items, setItems] = useState<BrandContext[]>([]);
   const [selectedId, setSelectedId] = useState<string>('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -43,7 +45,7 @@ export default function ContextsPage() {
           <div>
             <p className="eyebrow">Bibliotheque de marque</p>
             <h1>Contextes</h1>
-            <p className="muted">Fiches reutilisables pour preparer briefs et productions. Les revisions et actifs ne sont pas encore exposes par l API.</p>
+            <p className="muted">Relisez votre fiche de marque, confirmez les propositions démo et retrouvez chaque révision enregistrée.</p>
           </div>
         </section>
 
@@ -64,7 +66,7 @@ export default function ContextsPage() {
               <div className="section-head"><h2 id="contexts-list-heading">Vos contextes</h2><span className="muted small">{items.length}</span></div>
               <div className="contexts-list" data-testid="contexts-list" role="list">
                 {items.map((context) => (
-                  <button key={context.id} type="button" role="listitem" className={'context-card' + (context.id === selectedId ? ' is-active' : '')} data-testid={'context-card-' + context.id} onClick={() => setSelectedId(context.id)} aria-pressed={context.id === selectedId}>
+                  <button key={context.id} type="button" role="listitem" className={'context-card' + (context.id === selectedId ? ' is-active' : '')} disabled={busy} data-testid={'context-card-' + context.id} onClick={() => setSelectedId(context.id)} aria-pressed={context.id === selectedId}>
                     <span className="color-dot" style={{ background: context.colorPrimary }} aria-hidden="true" />
                     <span>
                       <strong>{context.name}</strong>
@@ -78,17 +80,11 @@ export default function ContextsPage() {
             <section className="card" aria-labelledby="context-detail-heading" data-testid="context-detail">
               <div className="section-head"><h2 id="context-detail-heading">Detail</h2>{selected ? <span className="pill">{selected.name}</span> : null}</div>
               {selected ? (
-                <dl className="detail-list">
-                  <div><dt>Description</dt><dd>{selected.description}</dd></div>
-                  <div><dt>Site</dt><dd>{selected.website || 'non renseigne'}</dd></div>
-                  <div><dt>Audience</dt><dd>{selected.audience || 'non renseignee'}</dd></div>
-                  <div><dt>Ton</dt><dd>{selected.tone || 'non renseigne'}</dd></div>
-                  <div><dt>Couleurs</dt><dd><span className="color-dot" style={{ background: selected.colorPrimary }} aria-hidden="true" /> {selected.colorPrimary} / <span className="color-dot" style={{ background: selected.colorSecondary }} aria-hidden="true" /> {selected.colorSecondary}</dd></div>
-                </dl>
+                <ContextReviewPanel key={selected.id} contextId={selected.id} onBusy={setBusy} onSaved={(value) => setItems((current) => current.map((item) => item.id === value.id ? value : item))} />
               ) : <p className="muted">Selectionnez un contexte.</p>}
               <div className="studio-banners">
-                <span className="studio-banner studio-banner--warn" data-testid="context-revisions-status">Revisions de contexte : backend present, lecture UI non exposee</span>
-                <Link className="studio-banner studio-banner--info" href="/assets" data-testid="context-assets-status">Actifs : contrat defini, backend non connecte</Link>
+                <span className="studio-banner studio-banner--info" data-testid="context-revisions-status">Révisions immuables · confirmation humaine</span>
+                <Link className="studio-banner studio-banner--info" href="/assets" data-testid="context-assets-status">Ouvrir la bibliothèque d’actifs</Link>
               </div>
               <p className="hint">La creation d un projet reste disponible depuis l accueil ou le formulaire projet.</p>
               <Link className="btn btn-secondary" href="/projects/new">Preparer une creation</Link>

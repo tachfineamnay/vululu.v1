@@ -7,6 +7,7 @@ import {
   ContextUseCases,
   CampaignUseCases,
   AssetUseCases,
+  ContextReviewUseCases,
   MessageUseCases,
   ProductionUseCases,
   ProjectBundleUseCases,
@@ -52,6 +53,8 @@ import {
 import { PrismaCampaignRepository } from '../infrastructure/prisma/campaignRepository';
 import { PrismaAssetRepository } from '../infrastructure/prisma/assetRepository';
 import { inspectAsset } from '@vululu/media';
+import { PrismaContextReviewStore } from '../infrastructure/prisma/contextReviewStore';
+import { DeterministicContextAnalyzer } from '../infrastructure/providers/deterministicContextAnalyzer';
 
 const clock = { now: () => new Date() };
 const ids = { next: () => crypto.randomUUID() };
@@ -88,6 +91,7 @@ const executor = durableMode
 export { outboxDispatcher, durableMode, durableStore };
 
 export const contexts = new ContextUseCases(contextRepository, clock, ids);
+export const contextReview = new ContextReviewUseCases(new PrismaContextReviewStore(), new DeterministicContextAnalyzer(), audit, clock, ids);
 export const campaigns = new CampaignUseCases(new PrismaCampaignRepository(), projectRepository, audit, clock, ids);
 export const assets = new AssetUseCases(new PrismaAssetRepository(), contextRepository, projectRepository, { inspect: inspectAsset }, artifactStorage, artifactStorages, audit, clock, ids);
 export const projects = new ProjectUseCases(projectRepository, contextRepository, clock, ids);

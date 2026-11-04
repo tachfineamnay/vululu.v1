@@ -3,6 +3,7 @@ import { contentChecksum } from './checksum';
 import { assertEntityId, EntityId, requireNonEmpty } from './identifiers';
 import { deepFreeze } from './immutability';
 import { assertIsoTimestamp, IsoTimestamp } from './timestamp';
+import { DomainError } from './errors';
 
 export interface ContextSnapshot {
   readonly name: string;
@@ -40,6 +41,13 @@ export function createBrandContext(input: {
   readonly colorPrimary?: string;
   readonly colorSecondary?: string;
 }): BrandContext {
+  for (const [field, max] of [['name', 160], ['description', 8000], ['website', 2048], ['audience', 2000], ['tone', 1000]] as const) {
+    const value = input[field];
+    if (value != null && (typeof value !== 'string' || value.length > max)) throw new DomainError('invalid_input', 'Champ de contexte invalide : ' + field);
+  }
+  for (const color of [input.colorPrimary ?? '#6C5CE7', input.colorSecondary ?? '#00D2FF']) {
+    if (!/^#(?:[a-f0-9]{3}|[a-f0-9]{6})$/i.test(color)) throw new DomainError('invalid_input', 'Couleur attendue au format hexadécimal #RGB ou #RRGGBB.');
+  }
   return deepFreeze({
     id: assertEntityId(input.id),
     userId: assertEntityId(input.userId, 'userId'),

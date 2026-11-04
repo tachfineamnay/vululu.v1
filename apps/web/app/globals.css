@@ -1893,3 +1893,5 @@ select {
 .asset-hash, .asset-provenance, .asset-card h3 { overflow-wrap: anywhere; }
 .check-row { display: flex; gap: 10px; align-items: center; min-height: 44px; cursor: pointer; }
 @media (max-width: 850px) { .asset-layout { grid-template-columns: 1fr; } }
+.context-proposal { padding: 20px; border: 1px solid var(--line); border-radius: 12px; }
+.input.context-color { height: 48px; padding: 4px; }

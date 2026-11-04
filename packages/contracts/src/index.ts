@@ -28,14 +28,15 @@ export const loginSchema = z.object({
 });
 
 export const contextInputSchema = z.object({
-  name: z.string().min(2),
-  website: z.string().optional().default(''),
-  description: z.string().min(5),
-  audience: z.string().optional().default(''),
-  tone: z.string().optional().default(''),
-  colorPrimary: z.string().optional().default('#6C5CE7'),
-  colorSecondary: z.string().optional().default('#00D2FF')
+  name: z.string().min(2).max(160),
+  website: z.string().max(2048).optional().default(''),
+  description: z.string().min(5).max(8000),
+  audience: z.string().max(2000).optional().default(''),
+  tone: z.string().max(1000).optional().default(''),
+  colorPrimary: z.string().regex(/^#(?:[a-f0-9]{3}|[a-f0-9]{6})$/i).optional().default('#6C5CE7'),
+  colorSecondary: z.string().regex(/^#(?:[a-f0-9]{3}|[a-f0-9]{6})$/i).optional().default('#00D2FF')
 });
+export const contextReviewInputSchema = z.object({ content: contextInputSchema, expectedVersion: z.number().int().min(0), confirmed: z.literal(true) }).strict();
 
 export const sceneDurationSchema = z.number().int().min(1).max(15);
 
