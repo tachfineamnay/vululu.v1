@@ -35,10 +35,13 @@ Chaque décision suit [template.md](template.md) :
 | [0011](0011-artefacts-immuables-stockage-interchangeable.md) | Artefacts immuables et stockage interchangeable | Acceptée sous condition | 2026-10-25 |
 | [0012](0012-durcissement-securite-observabilite.md) | Durcissement sécurité, observabilité et exploitation | Acceptée sous condition | 2026-10-25 |
 | [0013](0013-certification-locale-readiness-separees.md) | Certification locale et readiness de déploiement séparées | Acceptée sous condition | 2026-10-25 |
+| [0014](0014-admin-dans-apps-web.md) | Administration dans apps/web | Acceptée pour V1 | 2026-11-01 |
+| [0015](0015-topologie-preprod-hatchet-s3.md) | Topologie préproduction Hatchet/S3 | Acceptée avec limites ; déploiement complet non validé | 2026-11-01 |
+| [0016](0016-v1-demo-sans-fournisseur-ia.md) | V1-DEMO sans connexion IA et compte ordinaire distinct | Acceptée pour la démo autorisée | 2026-11-04 |
 
 ## Décisions encore ouvertes
 
-Les arbitrages suivants ne sont pas des ADR acceptés : stack applicative, authentification MCP, fournisseur S3, API Postiz, licence, protection de branche, budgets et rétention. Voir la section 9 du [rapport d'inauguration](../INAUGURATION_REPORT.md).
+Le registre d’inauguration reste historique. La stack présente est décrite dans les ADR et rapports V1 ; les choix encore ouverts portent notamment sur l’authentification MCP, le S3 et le moteur qualifiés pour la cible finale, Postiz réel, licence, protection de branche, budgets réels et rétention. Leur état courant est suivi dans la [traçabilité V1-DEMO](../releases/V1_DEMO_TRACEABILITY.md). Aucun statut conditionnel n’est transformé en certification par cet index.
 
 ## Sources
 

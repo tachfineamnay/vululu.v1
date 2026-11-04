@@ -8,6 +8,7 @@ name: vululu
 
 x-api-env: &api-env
   APP_ENV: production
+  DEMO_MODE: ${DEMO_MODE:-0}
   API_HOST: 0.0.0.0
   API_PORT: "3101"
   TRUST_PROXY: "true"
@@ -70,6 +71,25 @@ services:
     networks:
       - internal
 
+  # Bootstrap explicite : utilisateur ordinaire, sans reinitialisation au redéploiement.
+  demo-seed:
+    profiles: ["demo-bootstrap"]
+    build:
+      context: ../..
+      dockerfile: infra/coolify/Dockerfile.api
+    image: vululu-api:${VULULU_IMAGE_TAG:-latest}
+    restart: "no"
+    command: ["node_modules/.bin/tsx", "scripts/coolify/seed-demo.ts"]
+    environment:
+      <<: *api-env
+      DEMO_EMAIL: ${DEMO_EMAIL:-}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - internal
+
   # Initialise le volume artefacts avec l'UID non-root de l'image API.
   artifacts-init:
     image: alpine:3.20
@@ -116,10 +136,11 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
+      DEMO_MODE: ${DEMO_MODE:-0}
       API_INTERNAL_URL: http://api:3101
       PORT: "3100"
-    ports:
-      - "${WEB_PORT:-3100}:3100"
+    expose:
+      - "3100"
     depends_on:
       api:
         condition: service_healthy

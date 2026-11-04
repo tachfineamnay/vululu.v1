@@ -2,7 +2,7 @@
 
 - Date : 2026-11-01
 - Cible : préproduction/production interne sur VPS Coolify
-- Sources : infra/coolify/Dockerfile.api, Dockerfile.web, docker-compose.yml, .env.coolify.example
+- Sources : infra/coolify/Dockerfile.api, Dockerfile.web, docker-compose.yml, .env.example (nom corrigé le 2026-11-04 ; anciens rapports conservés)
 - Preuves locales : docs/reports/VULULU_COOLIFY_BUILD_EVIDENCE.md
 - Statut : configuration validée localement ; **build et démarrage des conteneurs BLOCKED** sur ce poste par le disque Docker Desktop read-only. Les commandes ci-dessous sont celles à rejouer sur le VPS ou après réparation Docker.
 
@@ -40,7 +40,7 @@
 
 ## 4. Variables d'environnement
 
-Copier infra/coolify/.env.coolify.example et remplacer les placeholders. Variables clés :
+Utiliser infra/coolify/.env.example comme modèle et injecter les valeurs dans Coolify ; pour un test local, copier vers un fichier ignoré. Variables clés :
 
     APP_ENV=production
     APP_ORIGIN=https://votre-domaine
@@ -93,6 +93,18 @@ Build manuel de vérification (à exécuter sur un Docker sain) :
 - Politique de compatibilité : migrations additives (expand/contract), backfill séparé, suppression différée ; rollback code possible tant que le schéma reste rétro-compatible.
 
 ## 7. Premier démarrage et bootstrap super_admin
+
+### Compte démo (ajout 2026-11-04)
+
+Injecter `DEMO_MODE=1` sur API/Web et les variables `DEMO_EMAIL` / `DEMO_PASSWORD` dans Coolify (mot de passe de 12 caractères minimum et 72 octets UTF-8 maximum). Elles ne sont pas publiques et aucun identifiant n’est prérempli dans le formulaire. Le bootstrap démo est distinct du bootstrap super-admin :
+
+    docker compose -f infra/coolify/docker-compose.yml run --rm demo-seed
+
+Ce service lit les credentials par environnement ; ne pas les passer en arguments. Il crée un compte `user`, un contexte fictif avec révision et un projet de départ. Le replay conserve le mot de passe et les modifications existants ; une collision avec un autre compte, un rôle promu ou un actif détenu par un tiers fait échouer toute la transaction. Aucun reset automatique. Les campagnes/actifs supplémentaires seront ajoutés par leurs lots.
+
+Le service Web ne publie plus de port hôte : Coolify route vers son port interne 3100. Un test Docker local exige l’override `-f infra/coolify/docker-compose.local.yml` en plus du fichier principal ; il lie le port uniquement sur 127.0.0.1. Les preuves historiques de build restent datées, les nouveaux profils ne sont pas déclarés exécutés par cette procédure.
+
+### Compte super-admin séparé
 
     docker compose -f infra/coolify/docker-compose.yml --env-file infra/coolify/.env.coolify.local up -d db migrate api web
     docker compose -f infra/coolify/docker-compose.yml --env-file infra/coolify/.env.coolify.local ps

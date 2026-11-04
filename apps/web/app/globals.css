@@ -40,6 +40,17 @@ a {
   text-decoration: none;
 }
 
+.demo-mode-banner {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-2);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
 button,
 input,
 textarea,

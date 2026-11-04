@@ -1,12 +1,14 @@
 # Feuille de route V1 — Vululu AI
 
-- **Statut** : proposition issue de la Mission 00, non encore approuvée lot par lot
-- **Date** : 2026-10-21
+- **Statut courant** : finalisation V1-DEMO autorisée le 2026-11-04 ; plan d’exécution lié ci-dessous
+- **Date** : 2026-11-04 ; proposition initiale conservée ci-dessous (2026-10-21)
 - **Sources** : [PRD V1.2](../01_PRD_V1.md), [CDC V1.2](../02_CAHIER_DES_CHARGES_V1.md), [Architecture V1](../03_ARCHITECTURE_V1.md), [Backlog](../11_BACKLOG.md), [Rapport d'inauguration](../INAUGURATION_REPORT.md)
 
 ## 1. État de départ
 
-Le dépôt ne contient encore aucune application. La Mission 00 a livré le corpus documentaire, les ADR et la structure. Le premier lot technique proposé est P0-0 (audit et fondations), avant tout développement métier.
+La proposition initiale partait d’un dépôt documentaire. Au 2026-11-04, main contient un socle V1 avec API, Web/Admin, média déterministe, couches domaine/application, adaptateurs et tests. Cette mise à jour explicite corrige le statut ancien sans déclarer les lots P0 terminés : la couverture reste partielle.
+
+L’utilisateur a autorisé la **V1-DEMO complète sans connexion IA** : [périmètre](../releases/V1_DEMO_SCOPE_2026-11-04.md), [traçabilité et preuves](../releases/V1_DEMO_TRACEABILITY.md), [plan](../superpowers/plans/2026-11-04-v1-demo-complete-coolify.md). Lot 0 documentaire et lot 1 release en cours ; lots suivants non clos. Les sections 2 à 7 conservent la proposition de séquencement initiale ; les statuts courants et la prochaine action sont ceux de cette section.
 
 ## 2. Principes de séquencement
 
@@ -72,6 +74,6 @@ Chaque décision est explicite, écrite et horodatée ; aucun GO implicite.
 - Le périmètre V1 est large : la verticale mock doit rester le fil conducteur pour éviter les lots horizontaux interminables.
 - Le dépôt public expose les spécifications : la visibilité doit être tranchée avant tout contenu sensible.
 
-## 7. Prochaine action
+## 7. Prochaine action de la proposition initiale (historique)
 
 Proposer et obtenir un **GO P0-0**, exécuter l'audit et les fondations, puis décider GO P0-A. Aucun développement métier n'est autorisé avant la clôture de P0-0.

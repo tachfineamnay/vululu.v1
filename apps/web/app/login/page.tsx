@@ -20,7 +20,7 @@ function safeNextPath(value: string | null): string {
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState('demo@vululu.local');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -47,7 +47,7 @@ export default function LoginPage() {
         <div className="brand-mark">V</div>
         <p className="eyebrow">Studio creatif agentique</p>
         <h1>Vululu AI</h1>
-        <p className="muted">Ton interlocutrice unique pour transformer une marque en contenus prets a publier.</p>
+        <p className="muted">Un espace de création, de la marque au master validé.</p>
         <form onSubmit={submit} className="stack">
           <label className="label">
             Email
@@ -79,7 +79,7 @@ export default function LoginPage() {
           </button>
         </form>
         <p className="hint">
-          Compte demo local : demo@vululu.local. Mot de passe defini dans .env via V0_DEMO_PASSWORD.
+          Accès sur invitation. Utilise les identifiants transmis par ton administrateur.
         </p>
       </section>
     </main>

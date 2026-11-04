@@ -4,8 +4,8 @@
 
 Vululu AI crée, orchestre et livre des contenus professionnels pour TikTok, Instagram et LinkedIn : contextes de marque structurés, briefs versionnés, agents spécialisés, production média multi-fournisseurs, contrôle qualité, validation humaine et transfert vers Postiz.
 
-> **Statut — 2026-10-23 : corpus fondateur + prototype V0 audité.**
-> Le corpus V1.2 et les ADR restent la référence. Un prototype fullstack V0 existe sur la branche v0-fullstack-sprint, non mergée dans main. Il couvre le parcours contexte, brief, storyboard, PNG/MP4, correction ciblée, QA, approbation exacte et Postiz mock. Ce prototype est une référence fonctionnelle, pas le socle V1. L'audit est dans [docs/reviews/V0_FINAL_AUDIT.md](docs/reviews/V0_FINAL_AUDIT.md) ; la V1 ne doit démarrer que par le lot de fondation décrit dans [V1_IMPLEMENTATION_BASELINE.md](docs/reviews/V1_IMPLEMENTATION_BASELINE.md).
+> **Statut — 2026-11-04 : socle V1 local ; finalisation V1-DEMO autorisée.**
+> API, Web/Admin, domaine, application, média déterministe et tests sont déjà présents dans main. La [V1-DEMO](docs/releases/V1_DEMO_SCOPE_2026-11-04.md) vise les parcours complets avec compte démo sans connexion IA. Son [plan](docs/superpowers/plans/2026-11-04-v1-demo-complete-coolify.md) est en exécution ; la recette Coolify reste à réaliser. Les fournisseurs IA et Postiz sont MOCK. Le corpus V1.2 reste intact ; aucun GO production n’est revendiqué. L’[analyse de l’existant](docs/reports/ANALYSE_EXISTANT_2026-11-04.md) distingue code, preuves historiques et vérifications récentes.
 
 ## Le problème
 
@@ -34,10 +34,11 @@ Mémoire sémantique persistante et Memory Bank, apprentissage des préférences
 | Étape | Contenu | Statut |
 |---|---|---|
 | Mission 00 | Inauguration documentaire, structure, ADR, roadmap | Livrée |
-| V0 prototype | Parcours local contexte → brief → storyboard → média → QA → approbation → Postiz mock | Livré sur v0-fullstack-sprint, non mergé |
+| V0 prototype | Référence historique du parcours déterministe | Audit conservé dans docs/reviews |
 | V1-01 | Audit V0, corrections, gaps et baseline V1 | Livré dans docs/reviews |
-| P0-0 | Audit technique, stack, environnement, POC Hatchet | Non clôturé |
-| P0-A à P0-F | Verticale V1 complète | Non démarrés |
+| Socle V1 | Domaine/application, sessions/RBAC, agents/mock, outbox/worker, stockage, Studio/Admin | Présent ; couverture dans docs/releases/V1_DEMO_TRACEABILITY.md |
+| V1-DEMO | Parcours complets et compte démo, sans clé IA | Exécution autorisée ; lots non tous clos |
+| Coolify | Images, reprise, sauvegarde/restauration et recette sur HTTPS | Non certifié ; NO-GO staging historique maintenu jusqu’aux nouvelles preuves |
 
 ## Documentation fondatrice
 
