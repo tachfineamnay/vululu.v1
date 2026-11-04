@@ -13,3 +13,5 @@ export * from './use-cases/provider-catalog';
 export * from './use-cases/routing';
 export * from './use-cases/durableProduction';
 export * from './use-cases/admin';
+export * from './assetPorts';
+export * from './use-cases/assets';

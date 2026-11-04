@@ -6,6 +6,7 @@ import {
   BriefUseCases,
   ContextUseCases,
   CampaignUseCases,
+  AssetUseCases,
   MessageUseCases,
   ProductionUseCases,
   ProjectBundleUseCases,
@@ -49,6 +50,8 @@ import {
   OutboxDispatcher
 } from '../infrastructure';
 import { PrismaCampaignRepository } from '../infrastructure/prisma/campaignRepository';
+import { PrismaAssetRepository } from '../infrastructure/prisma/assetRepository';
+import { inspectAsset } from '@vululu/media';
 
 const clock = { now: () => new Date() };
 const ids = { next: () => crypto.randomUUID() };
@@ -86,6 +89,7 @@ export { outboxDispatcher, durableMode, durableStore };
 
 export const contexts = new ContextUseCases(contextRepository, clock, ids);
 export const campaigns = new CampaignUseCases(new PrismaCampaignRepository(), projectRepository, audit, clock, ids);
+export const assets = new AssetUseCases(new PrismaAssetRepository(), contextRepository, projectRepository, { inspect: inspectAsset }, artifactStorage, artifactStorages, audit, clock, ids);
 export const projects = new ProjectUseCases(projectRepository, contextRepository, clock, ids);
 export const briefs = new BriefUseCases(projectRepository, briefStore, clock, ids, audit);
 export const storyboards = new StoryboardUseCases(

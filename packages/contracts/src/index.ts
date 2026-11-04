@@ -9,6 +9,19 @@ export const campaignInputSchema = z.object({
 });
 export const campaignAssignmentSchema = z.object({ campaignId: z.string().min(1).max(128).nullable() });
 
+export const assetUploadSchema = z.object({
+  assetId: z.string().min(1).max(128).optional(),
+  name: z.string().trim().min(2).max(160),
+  kind: z.enum(['logo', 'image', 'video', 'audio', 'document', 'font']),
+  mimeType: z.string().min(1).max(80),
+  license: z.enum(['internal', 'commercial', 'unknown']),
+  provenance: z.string().trim().min(3).max(1000)
+}).strict();
+export const assetSelectionSchema = z.object({
+  usage: z.enum(['organic', 'sponsored']).default('organic'),
+  versionIds: z.array(z.string().min(1).max(128)).max(20)
+}).strict();
+
 export const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1)

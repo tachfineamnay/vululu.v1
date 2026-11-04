@@ -1885,3 +1885,11 @@ select {
 }
 
 
+.asset-layout { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); gap: 24px; margin-top: 24px; align-items: start; }
+.asset-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 20px; }
+.asset-card { min-width: 0; }
+.asset-preview { width: 100%; max-height: 250px; object-fit: contain; border-radius: 10px; background: #f4f1eb; }
+.asset-card audio { width: 100%; }
+.asset-hash, .asset-provenance, .asset-card h3 { overflow-wrap: anywhere; }
+.check-row { display: flex; gap: 10px; align-items: center; min-height: 44px; cursor: pointer; }
+@media (max-width: 850px) { .asset-layout { grid-template-columns: 1fr; } }

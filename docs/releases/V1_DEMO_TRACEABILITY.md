@@ -8,7 +8,7 @@
 |---|---|---|---|---|
 | PRD-01 | F-001/002/003 | REAL | 2,10,12 | Auth/RBAC existants ; seed démo et recette distincte à ajouter |
 | PRD-02 | F-010/011/012 | REAL + analyse MOCK | 5,6 | Contextes/révisions présents ; actifs et analyse démo à compléter |
-| PRD-15/16 | F-013 | REAL | 5 | Campagnes persistantes et isolées vérifiées ; bibliothèque d’actifs encore absente |
+| PRD-15/16 | F-013 | REAL | 5 | Campagnes et bibliothèque versionnée présentes ; preuves locales, qualification S3 et compositing restants |
 | PRD-03/04 | F-020 | REAL | 6,7 | Profils/compatibilités et formats incomplets |
 | PRD-05 | F-021/022/023 | REAL + voix échantillons MOCK | 7 | Audio/mix absent ; licences et QA à vérifier |
 | PRD-03/06 | F-024 | REAL | 6 | Révisions présentes ; interactions démo à compléter |
@@ -46,10 +46,11 @@
 | 1 | EN COURS | Convention environnement corrigée, Compose valide ; Docker Desktop indisponible, builds conteneurisés NOT_RUN |
 | 2 | PARTIEL VÉRIFIÉ | 15 tests bootstrap/auth PASS, CLI/replay PASS, E2E formulaire/bannière PASS ; jeu démo complet et recette d’images restants |
 | 3/4 | NON CLOS | Stockage et durabilité conteneurisés non certifiés |
-| 5 | PARTIEL VÉRIFIÉ | Campagnes : domaine/API/UI, migration, IDOR/CSRF et E2E sur build production PASS ; actifs restants |
+| 5 | PARTIEL VÉRIFIÉ | Campagnes et actifs : domaine/API/UI, migrations, IDOR/CSRF, stockage local réel, snapshots et E2E sur build production PASS ; S3 et compositing à qualifier |
 | 6–13 | NON CLOS | Aucun jalon final déclaré |
 
 Preuves détaillées : `docs/execution/V1_DEMO_00_02_PROGRESS.md`.
 Preuves campagnes : `docs/execution/V1_DEMO_05_CAMPAIGNS.md`.
+Preuves actifs : `docs/execution/V1_DEMO_05_ASSETS.md`.
 
 La qualification fournisseurs IA/Postiz live reste NOT_RUN hors recette démo ; V2 reste OUT_OF_SCOPE_V2. Les états run/step/transfer de la section D et la campagne de recette section E sont vérifiés par les lots 4/8/12, pas déduits d’un simple test domaine.

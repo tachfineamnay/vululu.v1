@@ -283,7 +283,9 @@ export type ReproducibilitySnapshot = {
     format: string;
     sceneDurationSeconds: number;
     status: string;
+    usage?: string;
   };
+  assets?: Array<{ assetId: string; versionId: string; version: number; kind: string; mimeType: string; sha256: string; license: string; provenance: string; storageProvider: string; storageKey: string }>;
   context: {
     revisionId: string | null;
     checksum: string | null;

@@ -42,6 +42,8 @@ Chaque décision suit [template.md](template.md) :
 
 ## Décisions encore ouvertes
 
+[ADR 0018](0018-bibliotheque-actifs-versionnes.md) : bibliothèque, versions, droits et sélection figée (2026-11-04).
+
 Le registre d’inauguration reste historique. La stack présente est décrite dans les ADR et rapports V1 ; les choix encore ouverts portent notamment sur l’authentification MCP, le S3 et le moteur qualifiés pour la cible finale, Postiz réel, licence, protection de branche, budgets réels et rétention. Leur état courant est suivi dans la [traçabilité V1-DEMO](../releases/V1_DEMO_TRACEABILITY.md). Aucun statut conditionnel n’est transformé en certification par cet index.
 
 ## Sources

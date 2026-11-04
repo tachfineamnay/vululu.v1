@@ -25,6 +25,8 @@ RUN groupadd --gid 10001 vululu \
 WORKDIR /app
 COPY --from=builder --chown=vululu:vululu /app /app
 ENV NODE_ENV=production \
+    FFMPEG_PATH=/usr/bin/ffmpeg \
+    FFPROBE_PATH=/usr/bin/ffprobe \
     API_HOST=0.0.0.0 \
     API_PORT=3101 \
     ARTIFACT_DIR=/data/artifacts \

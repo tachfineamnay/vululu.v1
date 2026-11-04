@@ -145,6 +145,8 @@ Vérifier aussi : aucun port 5432 publié, aucun port S3 publié, logs sans secr
 
 ## 10. Logs, santé et exploitation
 
+La bibliothèque accepte des fichiers de 32 Mio maximum. Le proxy Web transmet le flux à l’API, qui contrôle session/CSRF avant lecture. Si un proxy supplémentaire borne les requêtes, autoriser au moins 32 Mio pour cette route. L’image API/worker fixe `FFMPEG_PATH=/usr/bin/ffmpeg` et `FFPROBE_PATH=/usr/bin/ffprobe` ; vérifier leur présence avec `ffmpeg -version` et `ffprobe -version` dans le conteneur. L’inspection audio/vidéo nécessite FFprobe. La validation et les aperçus sont authentifiés ; aucun bucket public n’est nécessaire.
+
 - Logs : docker compose logs -f api web migrate ; Coolify Logs par service.
 - Santé : healthchecks api (/api/health via fetch), web (/login), db (pg_isready), migrate (one-shot).
 - Admin : /admin (super_admin) expose DB, stockage, workers, outbox, erreurs, coûts MOCK.

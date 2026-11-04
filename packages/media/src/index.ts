@@ -4,6 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import sharp from 'sharp';
+export { inspectAsset, type AssetInspection } from './assetInspection';
 
 export type SceneRenderInput = {
   projectId: string;

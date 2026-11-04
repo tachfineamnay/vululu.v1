@@ -56,12 +56,11 @@ async function proxy(request: NextRequest, path: string[]): Promise<Response> {
   headers.set('x-forwarded-proto', request.headers.get('x-forwarded-proto') || 'https');
 
   const method = request.method.toUpperCase();
-  const init: RequestInit = { method, headers, redirect: 'manual', cache: 'no-store' };
+  const init: RequestInit & { duplex?: 'half' } = { method, headers, redirect: 'manual', cache: 'no-store', signal: request.signal };
   if (method !== 'GET' && method !== 'HEAD') {
-    const body = await request.arrayBuffer();
-    if (body.byteLength > 0) {
-      init.body = body;
-    }
+    // L’API contrôle session, CSRF et taille avant de lire le flux d’upload.
+    init.body = request.body;
+    init.duplex = 'half';
   }
 
   let upstream: Response;

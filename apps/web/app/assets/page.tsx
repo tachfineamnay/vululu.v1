@@ -1,47 +1,136 @@
+'use client';
+
 import Link from 'next/link';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import StudioNav from '../../components/StudioNav';
-import { ASSET_CONTRACT_FIELDS, ASSET_CONTRACT_STATUS } from '../../lib/studio';
+import { api, type BrandContext, type ProjectSummary } from '../../lib/api';
+
+type Kind = 'logo' | 'image' | 'video' | 'audio' | 'document' | 'font';
+type License = 'commercial' | 'internal' | 'unknown';
+type Version = { id: string; assetId: string; version: number; name: string; kind: Kind; mimeType: string; sizeBytes: number; sha256: string; license: License; provenance: string };
+type Asset = { id: string; contextId: string; kind: Kind; versions: Version[] };
+const kinds: Record<Kind, string> = { logo: 'Logo', image: 'Image', video: 'Vidéo', audio: 'Audio', document: 'Document', font: 'Police' };
+const licenses: Record<License, string> = { commercial: 'Usage commercial autorisé', internal: 'Usage organique interne uniquement', unknown: 'Droits à confirmer' };
+const accepts: Record<Kind, string> = { logo: '.png,.jpg,.jpeg,.webp', image: '.png,.jpg,.jpeg,.webp', video: '.mp4', audio: '.wav,.mp3', document: '.pdf,.txt', font: '.ttf,.otf' };
+const mimeByExtension: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', mp4: 'video/mp4', wav: 'audio/wav', mp3: 'audio/mpeg', pdf: 'application/pdf', txt: 'text/plain', ttf: 'font/ttf', otf: 'font/otf' };
+function contentUrl(v: Version) { return `/api/assets/${encodeURIComponent(v.assetId)}/versions/${encodeURIComponent(v.id)}/content`; }
 
 export default function AssetsPage() {
-  return (
-    <div className="shell">
-      <header className="topbar">
-        <Link href="/" className="brand"><span className="brand-mark small">V</span><span>Vululu AI</span></Link>
-        <StudioNav />
-        <div className="topbar-actions"><span className="muted small">Studio V1</span></div>
-      </header>
-      <main className="page" data-testid="assets-page">
-        <section className="studio-head">
-          <div>
-            <p className="eyebrow">Contrat d interface</p>
-            <h1>Actifs de marque</h1>
-            <p className="muted">Logos, images, videos, audios, documents et polices par contexte. Aucun backend Asset n existe encore : l interface affiche le contrat, jamais de fausses donnees.</p>
-          </div>
-          <span className="badge status-draft" data-testid="assets-not-connected">NON CONNECTE — {ASSET_CONTRACT_STATUS}</span>
-        </section>
+  const [contexts, setContexts] = useState<BrandContext[]>([]);
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [contextId, setContextId] = useState('');
+  const [items, setItems] = useState<Asset[]>([]);
+  const [versions, setVersions] = useState<Record<string, string>>({});
+  const [projectId, setProjectId] = useState('');
+  const [selection, setSelection] = useState<string[]>([]);
+  const [usage, setUsage] = useState<'organic' | 'sponsored'>('organic');
+  const [assetId, setAssetId] = useState('');
+  const [kind, setKind] = useState<Kind>('logo');
+  const [license, setLicense] = useState<License>('unknown');
+  const [provenance, setProvenance] = useState('');
+  const [name, setName] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [selectLoading, setSelectLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [feedback, setFeedback] = useState('');
+  const inputFile = useRef<HTMLInputElement>(null);
 
-        <section className="card">
-          <div className="section-head"><h2>Contrat propose</h2><span className="pill">API future : GET /api/contexts/:id/assets</span></div>
-          <div className="table-wrap">
-            <table className="history-table">
-              <caption className="sr-only">Champs du contrat Asset</caption>
-              <thead><tr><th scope="col">Champ</th><th scope="col">Label</th><th scope="col">Regle</th></tr></thead>
-              <tbody>
-                {ASSET_CONTRACT_FIELDS.map((field) => (
-                  <tr key={field.field}><td><code className="mono small">{field.field}</code></td><td>{field.label}</td><td className="muted small">{field.note}</td></tr>
-                ))}
-              </tbody>
-            </table>
+  useEffect(() => {
+    let active = true;
+    void Promise.all([api<{ items: BrandContext[] }>('/api/contexts'), api<{ items: ProjectSummary[] }>('/api/projects')])
+      .then(([a, p]) => { if (active) { setContexts(a.items); setProjects(p.items); setContextId(a.items[0]?.id || ''); } })
+      .catch((e) => { if (active) setError(e.message); }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+  useEffect(() => {
+    if (!contextId) return;
+    let active = true;
+    setLoading(true); setItems([]); setVersions({}); setProjectId(''); setSelection([]); setAssetId('');
+    void api<{ items: Asset[] }>(`/api/contexts/${encodeURIComponent(contextId)}/assets`)
+      .then((data) => { if (active) setItems(data.items); })
+      .catch((e) => { if (active) setError(e.message); }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [contextId]);
+  useEffect(() => {
+    if (!projectId) { setSelection([]); setSelectLoading(false); return; }
+    let active = true;
+    setSelectLoading(true); setSelection([]);
+    void api<{ usage: 'organic' | 'sponsored'; versionIds: string[] }>(`/api/projects/${encodeURIComponent(projectId)}/assets`)
+      .then((data) => { if (active) { setSelection(data.versionIds); setUsage(data.usage); setVersions((current) => ({ ...current, ...Object.fromEntries(items.flatMap((a) => a.versions).filter((v) => data.versionIds.includes(v.id)).map((v) => [v.assetId, v.id])) })); } })
+      .catch((e) => { if (active) setError(e.message); }).finally(() => { if (active) setSelectLoading(false); });
+    return () => { active = false; };
+  }, [projectId]);
+  async function upload(event: FormEvent) {
+    event.preventDefault(); setError(''); setFeedback('');
+    const file = inputFile.current?.files?.[0];
+    if (!file || file.size > 32 * 1024 * 1024 || !file.size) { setError('Choisissez un fichier non vide de 32 Mio maximum.'); return; }
+    setBusy(true);
+    try {
+      const mimeType = mimeByExtension[file.name.split('.').pop()?.toLowerCase() || ''] || '';
+      const metadata = { name, kind, license, provenance, mimeType, ...(assetId ? { assetId } : {}) };
+      const { version } = await api<{ version: Version }>(`/api/contexts/${encodeURIComponent(contextId)}/assets`, { method: 'POST', body: file, headers: { 'Content-Type': 'application/octet-stream', 'x-asset-metadata': encodeURIComponent(JSON.stringify(metadata)) } });
+      const data = await api<{ items: Asset[] }>(`/api/contexts/${encodeURIComponent(contextId)}/assets`);
+      setItems(data.items); setVersions((current) => ({ ...current, [version.assetId]: version.id }));
+      if (inputFile.current) inputFile.current.value = '';
+      setName(''); setFeedback(`Version ${version.version} importée et vérifiée.`);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Import impossible.'); }
+    finally { setBusy(false); }
+  }
+  async function saveSelection() {
+    setBusy(true); setError(''); setFeedback('');
+    try {
+      await api(`/api/projects/${encodeURIComponent(projectId)}/assets`, { method: 'PUT', body: JSON.stringify({ usage, versionIds: selection }) });
+      setFeedback('Sélection enregistrée pour le prochain lancement.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Sélection impossible.'); }
+    finally { setBusy(false); }
+  }
+  function toggle(v: Version, checked: boolean) {
+    const sameAsset = items.find((a) => a.id === v.assetId)!.versions.map((version) => version.id);
+    setSelection((current) => [...current.filter((id) => !sameAsset.includes(id)), ...(checked ? [v.id] : [])]);
+  }
+  return <div className="shell">
+    <header className="topbar"><Link href="/" className="brand"><span className="brand-mark small">V</span><span>Vululu AI</span></Link><StudioNav /><Link href="/contexts" className="btn btn-secondary btn-small">Mes contextes</Link></header>
+    <main className="page" data-testid="assets-page">
+      <section className="studio-head"><div><p className="eyebrow">Ressources de marque</p><h1>Actifs de marque</h1><p className="muted">Importez vos fichiers, conservez chaque version et choisissez les ressources de vos projets.</p></div></section>
+      {error ? <p className="error" role="alert">{error}</p> : null}
+      {feedback ? <p className="toast toast--success" role="status">{feedback}</p> : null}
+      <label className="label">Contexte de marque<select aria-label="Contexte de marque" className="input" value={contextId} disabled={busy || loading} onChange={(e) => { setError(''); setFeedback(''); setContextId(e.target.value); }}><option value="">Choisir un contexte</option>{contexts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+      {!loading && !contexts.length ? <p className="muted">Créez un <Link href="/contexts">contexte de marque</Link> pour importer vos premiers fichiers.</p> : null}
+      {contextId ? <div className="asset-layout">
+        <section className="card stack" aria-labelledby="asset-upload-heading">
+          <h2 id="asset-upload-heading">Importer un fichier</h2>
+          <form className="stack" onSubmit={upload}>
+            <label className="label">Destination<select aria-label="Destination" className="input" value={assetId} disabled={busy} onChange={(e) => { const a = items.find((item) => item.id === e.target.value); setAssetId(e.target.value); if (a) setKind(a.kind); }}><option value="">Nouvel actif</option>{items.map((a) => <option key={a.id} value={a.id}>Nouvelle version de {a.versions[0].name}</option>)}</select></label>
+            <label className="label">Type d’actif<select className="input" value={kind} disabled={busy || !!assetId} onChange={(e) => setKind(e.target.value as Kind)}>{Object.entries(kinds).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+            <label className="label">Nom de la version<input className="input" value={name} onChange={(e) => setName(e.target.value)} minLength={2} maxLength={160} required disabled={busy} /></label>
+            <label className="label">Fichier<input className="input" key={kind} type="file" accept={accepts[kind]} ref={inputFile} required disabled={busy} /></label>
+            <p className="hint">32 Mio maximum · Images : 16 mégapixels · Vidéo MP4/H.264 et audio : 10 minutes maximum. Documents PDF/TXT et polices TTF/OTF en pièces jointes.</p>
+            <label className="label">Droits déclarés<select className="input" value={license} onChange={(e) => setLicense(e.target.value as License)} disabled={busy}>{Object.entries(licenses).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+            <label className="label">Provenance et autorisation<textarea className="input" value={provenance} onChange={(e) => setProvenance(e.target.value)} minLength={3} maxLength={1000} required disabled={busy} placeholder="Créateur, source et autorisation d’utilisation" /></label>
+            <button className="btn btn-primary" disabled={busy || loading}>{busy ? 'Opération en cours…' : 'Importer et vérifier'}</button>
+          </form>
+        </section>
+        <section className="stack" aria-labelledby="asset-library-heading">
+          <div className="card stack"><h2 id="asset-library-heading">Bibliothèque</h2>
+            <label className="label">Sélection pour un projet<select className="input" value={projectId} disabled={busy || loading} onChange={(e) => setProjectId(e.target.value)}><option value="">Aucun projet sélectionné</option>{projects.filter((p) => p.contextId === contextId).map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}</select></label>
+            {projectId ? <><label className="label">Usage prévu<select className="input" value={usage} disabled={busy || selectLoading} onChange={(e) => setUsage(e.target.value as 'organic' | 'sponsored')}><option value="organic">Organique interne</option><option value="sponsored">Sponsorisé (droits commerciaux requis)</option></select></label><p className="hint">Une version exacte par actif. Les droits doivent être confirmés. Les ressources seront figées au lancement ; leur composition dans les sorties est en cours de finalisation.</p><button type="button" className="btn btn-secondary" disabled={busy || selectLoading || loading} onClick={saveSelection}>Enregistrer la sélection ({selection.length})</button></> : null}
           </div>
-          <p className="hint">Aucun upload, aucune validation MIME/taille, aucune URL signee et aucun controle de droits ne sont implementes. Ces fonctions resteront desactivees tant que le backend et la securite ne sont pas livres.</p>
-          <Link className="btn btn-secondary" href="/contexts">Voir les contextes</Link>
+          {loading ? <p role="status">Chargement de la bibliothèque…</p> : !items.length ? <div className="card empty-state"><h3>Aucun actif dans ce contexte</h3><p className="muted">Importez votre premier fichier pour commencer.</p></div> : null}
+          <div className="asset-grid">{items.map((asset) => {
+            const v = asset.versions.find((version) => version.id === versions[asset.id]) ?? asset.versions[0];
+            const selected = selection.includes(v.id);
+            return <article key={asset.id} className="card stack asset-card">
+              <h3>{v.name}</h3><p className="muted small">{kinds[asset.kind]} · {Math.ceil(v.sizeBytes / 1024)} Kio · {licenses[v.license]}</p>
+              <label className="label">Version de {asset.versions[0].name}<select aria-label={'Version de ' + asset.versions[0].name} className="input" value={v.id} disabled={busy} onChange={(e) => setVersions((current) => ({ ...current, [asset.id]: e.target.value }))}>{asset.versions.map((version) => <option key={version.id} value={version.id}>v{version.version} — {version.name}</option>)}</select></label>
+              {asset.kind === 'image' || asset.kind === 'logo' ? <img className="asset-preview" src={contentUrl(v)} alt={v.name} loading="lazy" /> : asset.kind === 'video' ? <video className="asset-preview" src={contentUrl(v)} controls preload="metadata" aria-label={v.name} /> : asset.kind === 'audio' ? <audio src={contentUrl(v)} controls preload="metadata" aria-label={v.name} /> : null}
+              <p className="small asset-provenance">{v.provenance}</p><details><summary className="small">Empreinte SHA-256</summary><code className="mono small asset-hash">{v.sha256}</code></details>
+              <a className="text-link" href={contentUrl(v)} download>Télécharger cette version</a>
+              {projectId ? <label className="check-row"><input type="checkbox" checked={selected} disabled={busy || selectLoading || v.license === 'unknown' || (usage === 'sponsored' && v.license !== 'commercial')} onChange={(e) => toggle(v, e.target.checked)} />Utiliser la version {v.version}</label> : null}
+            </article>;
+          })}</div>
         </section>
-
-        <section className="card empty-state">
-          <h2>Bibliotheque vide par construction</h2>
-          <p className="muted">Aucun actif ne peut etre liste ou ajoute aujourd hui. L interface est prete pour le contrat ; le stockage S3 et les validations sont a implementer.</p>
-        </section>
-      </main>
-    </div>
-  );
+      </div> : null}
+    </main>
+  </div>;
 }

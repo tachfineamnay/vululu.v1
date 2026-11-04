@@ -1,0 +1,52 @@
+import { test, expect } from '@playwright/test';
+import path from 'node:path';
+import { renderScene } from '../packages/media/src/index';
+
+test('actifs : import reel, versions, droits, selection et apercu responsive', async ({ page }) => {
+  page.setDefaultTimeout(30000);
+  const email = process.env.DEMO_EMAIL ?? ''; const password = process.env.DEMO_PASSWORD ?? '';
+  expect(email.length, 'Compte de recette normal requis').toBeGreaterThan(0);
+  await page.goto('/login');
+  await page.getByLabel('Email', { exact: true }).fill(email); await page.getByLabel('Mot de passe', { exact: true }).fill(password);
+  await page.getByRole('button', { name: 'Entrer dans le studio' }).click(); await expect(page).toHaveURL(/\/$/);
+  const csrf = await page.evaluate(() => decodeURIComponent(document.cookie.split('; ').find((c) => c.startsWith('vululu_csrf='))?.split('=')[1] ?? ''));
+  const stamp = Date.now(); const name = 'Logo recette ' + stamp;
+  const contextResponse = await page.request.post('/api/contexts', { headers: { 'x-csrf-token': csrf }, data: { name: 'Contexte actifs ' + stamp, description: 'Marque fictive pour recette actifs' } });
+  expect(contextResponse.status()).toBe(201); const { context } = await contextResponse.json();
+  const response = await page.request.post('/api/projects', { headers: { 'x-csrf-token': csrf }, data: { contextId: context.id, title: 'Projet actifs ' + stamp, platform: 'Instagram', format: 'Video', objective: 'Recette fictive' } });
+  expect(response.status()).toBe(201); const { project } = await response.json();
+  const file = await renderScene({ projectId: 'e2e-assets', artifactRoot: path.resolve('.v1/e2e-assets'), sceneKey: 'SCENE-001', position: 1, title: 'Une collection à découvrir', description: 'Céramiques artisanales · démonstration', brandName: 'Atelier Aurore', colorPrimary: '#365c4b', colorSecondary: '#ce9866', version: 1 });
+  await page.goto('/assets');
+  await page.getByLabel('Contexte de marque', { exact: true }).selectOption(context.id);
+  await page.getByLabel('Nom de la version', { exact: true }).fill(name);
+  await page.getByLabel('Fichier', { exact: true }).setInputFiles(file.absolutePath);
+  await page.getByLabel('Droits déclarés').selectOption('commercial');
+  await page.getByLabel('Provenance et autorisation').fill('Création déterministe originale, fixture de recette autorisée.');
+  await page.getByRole('button', { name: 'Importer et vérifier', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText('Version 1 importée et vérifiée.');
+  await expect(page.getByRole('img', { name, exact: true })).toBeVisible();
+  expect(await page.getByRole('img', { name, exact: true }).evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(1080);
+  await page.getByLabel('Sélection pour un projet').selectOption(project.id);
+  await page.getByLabel('Usage prévu').selectOption('sponsored');
+  await page.getByLabel('Utiliser la version 1').check();
+  await page.getByRole('button', { name: 'Enregistrer la sélection (1)' }).click();
+  await expect(page.getByRole('status')).toContainText('Sélection enregistrée');
+  const selection = await page.request.get(`/api/projects/${project.id}/assets`);
+  expect((await selection.json()).usage).toBe('sponsored');
+  const items = await (await page.request.get(`/api/contexts/${context.id}/assets`)).json();
+  await page.getByLabel('Destination', { exact: true }).selectOption(items.items[0].id);
+  await page.getByLabel('Nom de la version', { exact: true }).fill(name + ' v2');
+  await page.getByLabel('Fichier', { exact: true }).setInputFiles(file.absolutePath);
+  await page.getByRole('button', { name: 'Importer et vérifier', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText('Version 2 importée et vérifiée.');
+  const versionSelect = page.getByLabel('Version de ' + name + ' v2', { exact: true });
+  await versionSelect.selectOption(items.items[0].versions[0].id);
+  await expect(page.getByRole('img', { name, exact: true })).toBeVisible();
+  await expect(page.getByLabel('Utiliser la version 1')).toBeChecked();
+  if (process.env.CAPTURE_STUDIO === '1') {
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+    await page.screenshot({ path: '.v1/assets.png', fullPage: true });
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});

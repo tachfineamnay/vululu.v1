@@ -55,7 +55,7 @@ test('verticale Studio V1 complete (deterministe, correction ciblee, MOCK)', asy
   await expect(page.getByTestId('capability-audio')).toContainText('NON CONNECTE');
   await page.getByTestId('nav-assets').click();
   await expect(page.getByTestId('assets-page')).toBeVisible();
-  await expect(page.getByTestId('assets-not-connected')).toContainText('NON CONNECTE');
+  await expect(page.getByRole('heading', { name: 'Actifs de marque', exact: true })).toBeVisible();
   await page.getByTestId('nav-home').click();
   await expect(page.getByTestId('new-context')).toBeVisible();
 

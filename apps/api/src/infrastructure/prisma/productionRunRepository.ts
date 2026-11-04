@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 import type { PrismaClient } from '@prisma/client';
 import { prisma } from '@vululu/db';
-import { contentChecksum } from '@vululu/domain';
+import { contentChecksum, assertAssetUsage, type AssetLicense, type PublicationUsage } from '@vululu/domain';
 import { ApplicationError } from '@vululu/application';
 import type {
   JobRunRecord,
@@ -116,6 +116,7 @@ export class PrismaProductionRunRepository implements ProductionRunRepository {
             include: {
               context: { include: { revisions: { orderBy: { version: 'desc' }, take: 1 } } },
               brief: { include: { revisions: { orderBy: { version: 'desc' }, take: 1 } } },
+              assetSelections: { include: { version: { include: { asset: true } } }, orderBy: { assetId: 'asc' } },
               scenes: {
                 orderBy: { position: 'asc' },
                 include: { versions: { orderBy: { version: 'desc' }, take: 1 } }
@@ -161,6 +162,10 @@ export class PrismaProductionRunRepository implements ProductionRunRepository {
           }
 
           const contextRevision = project.context.revisions[0] ?? null;
+          for (const { version } of project.assetSelections) {
+            if (version.state !== 'ready' || version.asset.userId !== input.userId || version.asset.contextId !== project.contextId) throw new ApplicationError('asset_version_not_found', 'Actif indisponible dans ce contexte.', 400);
+            assertAssetUsage(version.license as AssetLicense, project.usage as PublicationUsage);
+          }
           const briefRevision = project.brief?.revisions[0] ?? null;
           const snapshot: ReproducibilitySnapshot = {
             schemaVersion: 1,
@@ -170,6 +175,7 @@ export class PrismaProductionRunRepository implements ProductionRunRepository {
               platform: project.platform,
               format: project.format,
               sceneDurationSeconds: project.sceneDurationSeconds,
+              usage: project.usage,
               status: project.status
             },
             context: {
@@ -185,6 +191,7 @@ export class PrismaProductionRunRepository implements ProductionRunRepository {
                 colorSecondary: project.context.colorSecondary
               }
             },
+            assets: project.assetSelections.map(({ version: v }) => ({ assetId: v.assetId, versionId: v.id, version: v.version, kind: v.asset.kind, mimeType: v.mimeType, sha256: v.sha256, license: v.license, provenance: v.provenance, storageProvider: v.storageProvider, storageKey: v.storageKey })),
             brief: {
               revisionId: briefRevision?.id ?? null,
               version: briefRevision?.version ?? project.brief?.version ?? null,

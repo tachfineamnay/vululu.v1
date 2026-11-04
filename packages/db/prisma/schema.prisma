@@ -16,6 +16,7 @@ model User {
   createdAt    DateTime       @default(now())
   contexts     BrandContext[]
   campaigns    Campaign[]
+  assets       BrandAsset[]
   projects     Project[]
   sessions     Session[]
   invitations  Invitation[] @relation("InvitationCreator")
@@ -36,6 +37,7 @@ model BrandContext {
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   projects       Project[]
   revisions      ContextRevision[]
+  assets         BrandAsset[]
 
   @@index([userId])
 }
@@ -61,6 +63,7 @@ model Project {
   platform    String
   format      String
   objective   String
+  usage       String   @default("organic")
   sceneDurationSeconds Int @default(2)
   status      String   @default("draft")
   createdAt   DateTime @default(now())
@@ -75,10 +78,55 @@ model Project {
   artifacts   Artifact[]
   jobs        ProductionJob[]
   jobRuns     JobRun[]
+  assetSelections ProjectAssetSelection[]
 
   @@index([userId])
   @@index([contextId])
   @@index([campaignId])
+}
+
+model BrandAsset {
+  id        String @id
+  userId    String
+  contextId String
+  kind      String
+  createdAt DateTime @default(now())
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  context   BrandContext @relation(fields: [contextId], references: [id], onDelete: Restrict)
+  versions  BrandAssetVersion[]
+  selections ProjectAssetSelection[]
+  @@index([userId, contextId])
+}
+
+model BrandAssetVersion {
+  id              String @id
+  assetId         String
+  version         Int
+  name            String
+  mimeType        String
+  sizeBytes       Int
+  sha256          String
+  license         String
+  provenance      String
+  metadata        Json
+  storageProvider String
+  storageKey      String @unique
+  state           String @default("staged")
+  createdAt       DateTime @default(now())
+  asset           BrandAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  selections      ProjectAssetSelection[]
+  @@unique([assetId, version])
+}
+
+model ProjectAssetSelection {
+  projectId      String
+  assetId        String
+  assetVersionId String
+  project        Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  asset          BrandAsset @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  version        BrandAssetVersion @relation(fields: [assetVersionId], references: [id], onDelete: Restrict)
+  @@id([projectId, assetId])
+  @@index([assetVersionId])
 }
 
 model Brief {
