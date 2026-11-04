@@ -118,7 +118,7 @@ async function createProject(): Promise<{ userId: string; projectId: string }> {
       brief: {
         create: {
           objective: 'o', audience: 'a', tone: 't', cta: 'c', platform: 'Instagram', format: 'Video', version: 1,
-          revisions: { create: [{ version: 1, objective: 'o', audience: 'a', tone: 't', cta: 'c', platform: 'Instagram', format: 'Video', checksum: sha('e-brief') }] }
+          revisions: { create: [{ version: 1, objective: 'o', audience: 'a', tone: 't', cta: 'c', platform: 'Instagram', format: 'Video', checksum: briefChecksum({ objective: 'o', audience: 'a', tone: 't', cta: 'c', platform: 'Instagram', format: 'Video' }) }] }
         }
       },
       scenes: {
@@ -132,6 +132,7 @@ async function createProject(): Promise<{ userId: string; projectId: string }> {
       }
     }
   });
+  await confirmFixtureBrief(prisma, project.id);
   return { userId: user.id, projectId: project.id };
 }
 
@@ -451,3 +452,4 @@ describe.skipIf(!S3_ENABLED)('V1-01-E stockage S3-compatible local', () => {
     (storage as unknown as { close?: () => void }).close?.();
   });
 });
+import { confirmFixtureBrief, briefChecksum } from '../helpers/confirmFixtureBrief';

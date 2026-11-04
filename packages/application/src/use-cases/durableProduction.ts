@@ -7,6 +7,7 @@ import {
   type QaReport as DomainQaReport
 } from '@vululu/domain';
 import { ApplicationError } from '../errors';
+import { productionSourceChecksum } from '../productionSource';
 import type {
   AuditPort,
   Clock,
@@ -171,7 +172,7 @@ export class DurableProductionUseCases {
   async renderScenes(jobRunId: string): Promise<StepScenes> {
     const existing = await this.store.getStepOutput<StepScenes>(jobRunId, 'render-scenes');
     const run = await this.store.loadRun(jobRunId);
-    const project = await this.store.loadExecutionProject(run.projectId);
+    const project = await this.store.loadExecutionProject(run.projectId, jobRunId);
     const target =
       run.type === 'correction' && run.snapshot?.correction
         ? run.snapshot.correction.targetSceneKey
@@ -219,6 +220,7 @@ export class DurableProductionUseCases {
         brandName: project.context.name,
         colorPrimary: project.context.colorPrimary,
         colorSecondary: project.context.colorSecondary,
+        ...project.render,
         version,
         ...(target && target === scene.sceneKey && run.snapshot?.correction
           ? { instruction: run.snapshot.correction.instruction }
@@ -265,7 +267,7 @@ export class DurableProductionUseCases {
     const run = await this.store.loadRun(jobRunId);
     await this.store.transitionStep(jobRunId, 'assemble-master', 'running', 'worker');
     const version = await this.store.nextMasterVersion(run.projectId);
-    const project = await this.store.loadExecutionProject(run.projectId);
+    const project = await this.store.loadExecutionProject(run.projectId, jobRunId);
     const master = await this.media.assembleMaster({
       projectId: run.projectId,
       artifactRoot: this.artifactRoot,
@@ -302,6 +304,7 @@ export class DurableProductionUseCases {
       throw new ApplicationError('media_incomplete', 'Media incomplet pour QA.', 409);
     }
     await this.store.transitionStep(jobRunId, 'qa', 'running', 'worker');
+    const run = await this.store.loadRun(jobRunId);
     const qa = await this.media.runQa(
       rendered.scenes.map((scene) => ({
         relativePath: scene.imagePath,
@@ -310,7 +313,8 @@ export class DurableProductionUseCases {
         width: scene.width,
         height: scene.height
       })),
-      master.master
+      master.master,
+      run.snapshot?.render
     );
     const output = { qa };
     await this.finishStep(jobRunId, 'qa', output);
@@ -388,6 +392,8 @@ export class DurableProductionUseCases {
     const createdAt = this.clock.now().toISOString();
     const manifest = {
       schemaVersion: 1,
+      sourceBriefVersion: run.snapshot?.brief.version ?? null,
+      sourceInputChecksum: run.snapshot ? productionSourceChecksum(run.snapshot) : null,
       createdAt,
       jobRunId,
       projectId: run.projectId,

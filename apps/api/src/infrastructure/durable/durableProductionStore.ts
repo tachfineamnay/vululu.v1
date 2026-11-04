@@ -60,8 +60,8 @@ export class PrismaDurableProductionStore implements DurableProductionStore {
     };
   }
 
-  async loadExecutionProject(projectId: string): Promise<ExecutionProject> {
-    return this.execution.loadExecutionProject(projectId);
+  async loadExecutionProject(projectId: string, jobRunId?: string): Promise<ExecutionProject> {
+    return this.execution.loadExecutionProject(projectId, jobRunId);
   }
 
   async transitionJob(
@@ -270,6 +270,7 @@ export class PrismaDurableProductionStore implements DurableProductionStore {
               checksum: input.master.checksum,
               qaStatus: input.qa.status,
               qaReport: json(input.qa),
+              manifest: json(input.manifest ?? {}),
               ...(input.master.storage
                 ? {
                     storageKey: input.master.storage.key,

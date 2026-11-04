@@ -18,6 +18,10 @@ export type SceneRenderInput = {
   colorSecondary: string;
   version: number;
   instruction?: string;
+  width?: number;
+  height?: number;
+  visualStyle?: 'editorial' | 'minimal' | 'bold';
+  direction?: string;
 };
 
 export type SceneRenderOutput = {
@@ -103,7 +107,7 @@ function wrap(value: string, maxChars: number): string[] {
 }
 
 function normalizeColor(value: string, fallback: string): string {
-  if (value.startsWith('#') && (value.length === 7 || value.length === 4)) {
+  if (/^#(?:[a-f0-9]{3}|[a-f0-9]{6})$/i.test(value)) {
     return value;
   }
   return fallback;
@@ -113,21 +117,24 @@ function svgForScene(input: SceneRenderInput): string {
   const primary = normalizeColor(input.colorPrimary, '#6C5CE7');
   const secondary = normalizeColor(input.colorSecondary, '#00D2FF');
   const accent = input.version > 1 ? secondary : primary;
+  const directionOffset = input.direction ? parseInt(crypto.createHash('sha256').update(input.direction).digest('hex').slice(0, 4), 16) % 200 : 0;
+  const opacity = input.visualStyle === 'minimal' ? '0.68' : input.visualStyle === 'bold' ? '1' : '0.92';
+  const weight = input.visualStyle === 'minimal' ? '500' : input.visualStyle === 'bold' ? '900' : '700';
   const titleLines = wrap(input.title, 22);
   const descLines = wrap(input.description, 34);
   const parts: string[] = [];
   parts.push('<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">');
   parts.push('<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="' + primary + '"/><stop offset="100%" stop-color="' + secondary + '"/></linearGradient></defs>');
   parts.push('<rect width="1080" height="1920" fill="#0B1020"/>');
-  parts.push('<rect x="0" y="0" width="1080" height="1920" fill="url(#bg)" opacity="0.92"/>');
-  parts.push('<circle cx="' + (input.version > 1 ? '860' : '180') + '" cy="260" r="300" fill="' + accent + '" opacity="0.22"/>');
+  parts.push('<rect x="0" y="0" width="1080" height="1920" fill="url(#bg)" opacity="' + opacity + '"/>');
+  parts.push('<circle cx="' + ((input.version > 1 ? 860 : 180) + directionOffset) + '" cy="260" r="300" fill="' + accent + '" opacity="' + (input.visualStyle === 'minimal' ? '0' : '0.22') + '"/>');
   parts.push('<circle cx="760" cy="1560" r="420" fill="#ffffff" opacity="0.06"/>');
   parts.push('<rect x="72" y="72" width="936" height="1776" rx="40" fill="none" stroke="#ffffff" stroke-opacity="0.25" stroke-width="2"/>');
   parts.push('<text x="112" y="180" fill="#ffffff" font-family="Arial, sans-serif" font-size="32" letter-spacing="6">' + escapeXml(input.brandName.toUpperCase()) + '</text>');
   parts.push('<text x="112" y="250" fill="#ffffff" fill-opacity="0.7" font-family="Arial, sans-serif" font-size="26">' + escapeXml(input.sceneKey) + ' / SCENE ' + input.position + '</text>');
   let titleY = 760;
   for (const line of titleLines) {
-    parts.push('<text x="112" y="' + titleY + '" fill="#ffffff" font-family="Arial, sans-serif" font-size="86" font-weight="700">' + escapeXml(line) + '</text>');
+    parts.push('<text x="112" y="' + titleY + '" fill="#ffffff" font-family="Arial, sans-serif" font-size="86" font-weight="' + weight + '">' + escapeXml(line) + '</text>');
     titleY += 104;
   }
   let descY = titleY + 40;
@@ -185,11 +192,13 @@ function runCapture(exe: string, args: string[]): Promise<{ stdout: string; stde
 }
 
 export async function renderScene(input: SceneRenderInput): Promise<SceneRenderOutput> {
+  const width = input.width ?? 1080; const height = input.height ?? 1920;
+  if (![width, height].every((n) => Number.isInteger(n) && n >= 64 && n <= 4096 && n % 2 === 0) || width * height > 16_000_000) throw new Error('Dimensions de rendu invalides.');
   const projectDir = path.join(input.artifactRoot, input.projectId, 'scenes', input.sceneKey);
   await fsp.mkdir(projectDir, { recursive: true });
   const file = path.join(projectDir, 'v' + input.version + '.png');
   const svg = svgForScene(input);
-  await sharp(Buffer.from(svg)).png().toFile(file);
+  await sharp(Buffer.from(svg)).resize(width, height, { fit: 'contain', background: normalizeColor(input.colorPrimary, '#6C5CE7') }).png().toFile(file);
   const metadata = await sharp(file).metadata();
   return {
     relativePath: toPosix(path.relative(input.artifactRoot, file)),
@@ -281,7 +290,7 @@ export async function assembleMaster(input: MasterInput): Promise<MasterOutput> 
   };
 }
 
-export async function runQa(scenes: SceneRenderOutput[], master: MasterOutput): Promise<QaReport> {
+export async function runQa(scenes: SceneRenderOutput[], master: MasterOutput, expectedDimensions = { width: 1080, height: 1920 }): Promise<QaReport> {
   const checks: QaCheck[] = [];
   for (const scene of scenes) {
     let width = scene.width;
@@ -296,7 +305,7 @@ export async function runQa(scenes: SceneRenderOutput[], master: MasterOutput): 
     } catch (error) {
       readError = error instanceof Error ? error.message : 'lecture impossible';
     }
-    const dimensionsOk = width === 1080 && height === 1920;
+    const dimensionsOk = width === expectedDimensions.width && height === expectedDimensions.height;
     const checksumOk = readError === '' && scene.checksum !== '' && checksum === scene.checksum;
     checks.push({
       name: 'png ' + scene.relativePath,
@@ -306,7 +315,7 @@ export async function runQa(scenes: SceneRenderOutput[], master: MasterOutput): 
   }
   checks.push({
     name: 'master dimensions',
-    status: master.width === 1080 && master.height === 1920 ? 'PASS' : 'FAIL',
+    status: master.width === expectedDimensions.width && master.height === expectedDimensions.height ? 'PASS' : 'FAIL',
     detail: master.width + 'x' + master.height
   });
   checks.push({

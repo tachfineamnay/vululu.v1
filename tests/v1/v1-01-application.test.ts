@@ -283,7 +283,10 @@ describe('V1-01-A.1 use cases specialises', () => {
         version: 1,
         createdAt: new Date(),
         updatedAt: new Date(),
-        revisions: []
+        confirmedVersion: 1,
+        confirmedBy: actor.id,
+        confirmedChecksum: briefChecksum({ objective: 'Objectif', audience: 'Audience', tone: 'Ton', cta: 'CTA', platform: 'Instagram', format: 'Video' }),
+        revisions: [{ id: 'brief-revision-1', briefId: 'brief-1', version: 1, objective: 'Objectif', audience: 'Audience', tone: 'Ton', cta: 'CTA', platform: 'Instagram', format: 'Video', checksum: briefChecksum({ objective: 'Objectif', audience: 'Audience', tone: 'Ton', cta: 'CTA', platform: 'Instagram', format: 'Video' }), createdAt: new Date() }]
       }),
       new FakeScenes(),
       storyboardStore,
@@ -427,8 +430,9 @@ describe('V1-01-A.1 transactions PostgreSQL', () => {
       data: { projectId, objective: 'Objectif', audience: 'Audience', tone: 'Ton', cta: 'CTA', platform: 'Instagram', format: 'Video', version: 1 }
     });
     await prisma.briefRevision.create({
-      data: { briefId: brief.id, version: 1, objective: 'Objectif', audience: 'Audience', tone: 'Ton', cta: 'CTA', platform: 'Instagram', format: 'Video', checksum: 'brief-checksum' }
+      data: { briefId: brief.id, version: 1, objective: 'Objectif', audience: 'Audience', tone: 'Ton', cta: 'CTA', platform: 'Instagram', format: 'Video', checksum: briefChecksum({ objective: 'Objectif', audience: 'Audience', tone: 'Ton', cta: 'CTA', platform: 'Instagram', format: 'Video' }) }
     });
+    await confirmFixtureBrief(prisma, projectId);
     const character = await prisma.character.create({
       data: { projectId, characterKey: 'CHAR-001', name: 'Personnage', description: 'Description' }
     });
@@ -566,3 +570,4 @@ describe('V1-01-A.1 transactions PostgreSQL', () => {
     });
   });
 });
+import { confirmFixtureBrief, briefChecksum } from '../helpers/confirmFixtureBrief';

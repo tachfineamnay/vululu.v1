@@ -20,6 +20,7 @@ import { PrismaProjectRepository } from '../../apps/api/src/infrastructure/prism
 import { PrismaAuditAdapter } from '../../apps/api/src/infrastructure/audit/prismaAuditAdapter';
 import { LocalFilesystemArtifactStorage } from '../../apps/api/src/infrastructure/storage/localArtifactStorage';
 import { PrismaProductionRunRepository } from '../../apps/api/src/infrastructure/prisma/productionRunRepository';
+import { confirmFixtureBrief } from '../helpers/confirmFixtureBrief';
 
 type Auth = { cookie: string; csrf: string; userId: string; contextId: string; projectId: string };
 type Version = { id: string; assetId: string; sha256: string; version: number; name: string };
@@ -144,6 +145,7 @@ describe('Actifs : API, stockage reel et droits', () => {
     const v = await create(); expect((await select([v.id], 'sponsored')).statusCode).toBe(200);
     await db.brief.create({ data: { projectId: a.projectId, objective: 'Fixture', audience: 'Fixture', tone: 'Fixture', cta: 'Fixture', platform: 'Instagram', format: 'Video' } });
     await db.scene.createMany({ data: Array.from({ length: 5 }, (_, i) => ({ projectId: a.projectId, sceneKey: 'SCENE-00' + (i + 1), position: i + 1, title: 'Fixture', description: 'Fixture' })) });
+    await confirmFixtureBrief(db, a.projectId);
     const run = await new PrismaProductionRunRepository(db).startRun({ userId: a.userId, projectId: a.projectId, type: 'produce', targetSceneKey: null, instruction: null, steps: ['render'] });
     const before = await db.jobRun.findUniqueOrThrow({ where: { id: run.jobRun.id } });
     expect(before.snapshot).toMatchObject({ project: { usage: 'sponsored' }, assets: [{ assetId: v.assetId, versionId: v.id, sha256: v.sha256, license: 'commercial' }] });

@@ -1,3 +1,4 @@
+import type { ProductionSettings, ProductionSettingsInput } from '@vululu/domain';
 export type Role = 'super_admin' | 'user';
 
 export interface Clock {
@@ -40,6 +41,7 @@ export type ProjectRecord = {
   userId: string;
   contextId: string;
   campaignId?: string | null;
+  storyboardBriefVersion?: number | null;
   title: string;
   platform: string;
   format: string;
@@ -76,6 +78,11 @@ export type BriefRecord = {
   platform: string;
   format: string;
   version: number;
+  settings?: ProductionSettings;
+  confirmedVersion?: number | null;
+  confirmedChecksum?: string | null;
+  confirmedBy?: string | null;
+  confirmedAt?: Date | null;
 };
 
 export type SceneRecord = {
@@ -151,6 +158,10 @@ export type SceneRenderRequest = {
   colorSecondary: string;
   version: number;
   instruction?: string;
+  width?: number;
+  height?: number;
+  visualStyle?: ProductionSettings['visualStyle'];
+  direction?: string;
 };
 
 export type SceneRenderResult = {
@@ -243,7 +254,7 @@ export interface StoragePort {
 export interface MediaRendererPort {
   renderScene(input: SceneRenderRequest): Promise<SceneRenderResult>;
   assembleMaster(input: MasterRenderRequest): Promise<MasterRenderResult>;
-  runQa(scenes: SceneRenderResult[], master: MasterRenderResult): Promise<QaReport>;
+  runQa(scenes: SceneRenderResult[], master: MasterRenderResult, expectedDimensions?: { width: number; height: number }): Promise<QaReport>;
 }
 
 export interface ProviderPort {
@@ -272,6 +283,7 @@ export type BriefInput = {
   cta: string;
   platform: 'TikTok' | 'Instagram' | 'LinkedIn';
   format: 'Affiche' | 'Carrousel' | 'Video' | 'Reel' | 'Motion';
+  settings?: ProductionSettingsInput;
 };
 
 export type ReproducibilitySnapshot = {
@@ -304,6 +316,9 @@ export type ReproducibilitySnapshot = {
     durationSeconds: number;
     version: number;
     checksum: string;
+    title?: string;
+    description?: string;
+    characterKey?: string | null;
   }>;
   characters: Array<{
     characterId: string;
@@ -343,6 +358,7 @@ export type BriefContentRecord = {
   cta: string;
   platform: 'TikTok' | 'Instagram' | 'LinkedIn';
   format: 'Affiche' | 'Carrousel' | 'Video' | 'Reel' | 'Motion';
+  settings?: ProductionSettings;
 };
 
 export type BriefRevisionRecord = BriefContentRecord & {
@@ -429,6 +445,7 @@ export type ProjectBundleRecord = {
     format: string;
     objective: string;
     sceneDurationSeconds: number;
+    storyboardBriefVersion: number | null;
     contextId: string;
     createdAt: Date;
     updatedAt: Date;
@@ -497,6 +514,10 @@ export interface BriefStore {
   }): Promise<BriefWithRevisions>;
 }
 
+export interface BriefConfirmationStore {
+  confirmOwned(input: { projectId: string; userId: string; version: number; checksum: string; confirmedAt: Date }): Promise<{ brief: BriefWithRevisions; changed: boolean }>;
+}
+
 export type StoryboardCharacterWrite = {
   id: string;
   characterKey: string;
@@ -530,6 +551,7 @@ export interface StoryboardStore {
     projectId: string;
     userId: string;
     projectStatus: string;
+    briefVersion?: number;
     character: StoryboardCharacterWrite;
     scenes: StoryboardSceneWrite[];
   }): Promise<void>;
@@ -578,6 +600,9 @@ export type ExecutionProject = {
     colorSecondary: string;
   };
   scenes: ExecutionScene[];
+  render?: { width: number; height: number; visualStyle: ProductionSettings['visualStyle']; direction: string };
+  briefVersion?: number | null;
+  sourceInputChecksum?: string;
 };
 
 export type ProductionFinalization = {
@@ -615,7 +640,7 @@ export interface ProductionExecutionStore {
   markRunning(jobRunId: string): Promise<void>;
   updateJob(jobId: string, input: { status?: string; step?: string; progress?: number; error?: string | null }): Promise<void>;
   updateStep(jobRunId: string, name: string, status: string, error?: string): Promise<void>;
-  loadExecutionProject(projectId: string): Promise<ExecutionProject>;
+  loadExecutionProject(projectId: string, jobRunId?: string): Promise<ExecutionProject>;
   nextMasterVersion(projectId: string): Promise<number>;
   finalizeRun(input: ProductionFinalization): Promise<void>;
   failRun(input: {
@@ -880,7 +905,7 @@ export interface DurableRoutingPort {
 
 export interface DurableProductionStore {
   loadRun(jobRunId: string): Promise<DurableRunRecord>;
-  loadExecutionProject(projectId: string): Promise<ExecutionProject>;
+  loadExecutionProject(projectId: string, jobRunId?: string): Promise<ExecutionProject>;
   transitionJob(
     jobRunId: string,
     toState: string,

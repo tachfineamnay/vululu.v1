@@ -1,8 +1,8 @@
 import { Prisma } from '@prisma/client';
 import type { PrismaClient } from '@prisma/client';
 import { prisma } from '@vululu/db';
-import { contentChecksum, assertAssetUsage, type AssetLicense, type PublicationUsage } from '@vululu/domain';
-import { ApplicationError } from '@vululu/application';
+import { contentChecksum, assertAssetUsage, normalizeProductionSettings, profileDimensions, type ProductionSettings, type Platform, type ProjectFormat, type AssetLicense, type PublicationUsage } from '@vululu/domain';
+import { ApplicationError, productionSourceChecksum } from '@vululu/application';
 import type {
   JobRunRecord,
   ProductionJobRecord,
@@ -137,6 +137,7 @@ export class PrismaProductionRunRepository implements ProductionRunRepository {
           if (!project.context) {
             throw new ApplicationError('context_not_found', 'Contexte introuvable.', 404);
           }
+          let masterSourceInputChecksum: string | undefined;
           if (input.type === 'produce') {
             if (!project.brief) {
               throw new ApplicationError('brief_required', 'Le brief est requis.', 400);
@@ -159,14 +160,24 @@ export class PrismaProductionRunRepository implements ProductionRunRepository {
             if (!master || !master.versions[0]) {
               throw new ApplicationError('master_required', 'Un master doit exister avant correction.', 400);
             }
+            const manifest = master.versions[0].manifest as { sourceBriefVersion?: number; sourceInputChecksum?: string } | null;
+            if (!project.brief || manifest?.sourceBriefVersion !== project.brief.version) throw new ApplicationError('brief_changed_full_production_required', 'Une production complète est requise avant une correction avec ce brief.', 409);
+            masterSourceInputChecksum = manifest.sourceInputChecksum;
           }
 
           const contextRevision = project.context.revisions[0] ?? null;
+          const currentBriefRevision = project.brief?.revisions[0];
+          if (!project.brief || !currentBriefRevision || project.brief.confirmedVersion !== project.brief.version || currentBriefRevision.version !== project.brief.version || project.brief.confirmedChecksum !== currentBriefRevision.checksum || project.brief.confirmedBy !== input.userId) throw new ApplicationError('brief_confirmation_required', 'Confirmez la version exacte du brief avant le lancement.', 409);
+          if (input.type === 'produce' && project.storyboardBriefVersion !== project.brief.version) throw new ApplicationError('storyboard_stale', 'Régénérez le storyboard pour cette version du brief.', 409);
           for (const { version } of project.assetSelections) {
             if (version.state !== 'ready' || version.asset.userId !== input.userId || version.asset.contextId !== project.contextId) throw new ApplicationError('asset_version_not_found', 'Actif indisponible dans ce contexte.', 400);
             assertAssetUsage(version.license as AssetLicense, project.usage as PublicationUsage);
           }
           const briefRevision = project.brief?.revisions[0] ?? null;
+          const settings = project.brief.settings ? normalizeProductionSettings(project.platform as Platform, project.format as ProjectFormat, project.brief.settings as unknown as ProductionSettings) : undefined;
+          if (project.format !== 'Video') throw new ApplicationError('format_not_qualified', 'Ce format attend sa qualification média.', 409);
+          if (settings?.audio.voiceVersionId || settings?.audio.musicVersionId) throw new ApplicationError('audio_not_qualified', 'Les fichiers et le mix audio attendent leur qualification média.', 409);
+          const dimensions = settings ? profileDimensions(settings.ratio) : { width: 1080, height: 1920 };
           const snapshot: ReproducibilitySnapshot = {
             schemaVersion: 1,
             capturedAt: new Date().toISOString(),
@@ -203,7 +214,8 @@ export class PrismaProductionRunRepository implements ProductionRunRepository {
                     tone: project.brief.tone,
                     cta: project.brief.cta,
                     platform: project.brief.platform,
-                    format: project.brief.format
+                    format: project.brief.format,
+                    ...(project.brief.settings ? { settings: project.brief.settings } : {})
                   }
                 : {}
             },
@@ -214,6 +226,9 @@ export class PrismaProductionRunRepository implements ProductionRunRepository {
                 sceneKey: scene.sceneKey,
                 position: scene.position,
                 durationSeconds: scene.durationSeconds,
+                title: scene.title,
+                description: scene.description,
+                characterKey: scene.characterKey,
                 version: version?.version ?? 0,
                 checksum: version?.checksum ?? ''
               };
@@ -235,8 +250,8 @@ export class PrismaProductionRunRepository implements ProductionRunRepository {
               deterministic: true
             },
             render: {
-              width: 1080,
-              height: 1920,
+              width: dimensions.width,
+              height: dimensions.height,
               fps: 30,
               imageFormat: 'png',
               videoCodec: 'h264',
@@ -247,6 +262,7 @@ export class PrismaProductionRunRepository implements ProductionRunRepository {
               ? { correction: { targetSceneKey: input.targetSceneKey, instruction: input.instruction } }
               : {})
           };
+          if (input.type === 'correction' && masterSourceInputChecksum !== productionSourceChecksum(snapshot)) throw new ApplicationError('brief_changed_full_production_required', 'Les entrées communes ont changé : une production complète est requise avant une correction.', 409);
           const checksum = snapshotChecksum(snapshot);
           const jobRun = await tx.jobRun.create({
             data: {

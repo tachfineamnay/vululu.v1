@@ -1,3 +1,4 @@
+import type { ProductionSettings } from '@vululu/contracts';
 export type SessionUser = {
   id: string;
   email: string;
@@ -127,6 +128,7 @@ export type ProjectBundle = {
     objective: string;
     sceneDurationSeconds: number;
     contextId: string;
+    storyboardBriefVersion?: number | null;
     createdAt: string;
     updatedAt: string;
   };
@@ -152,6 +154,9 @@ export type ProjectBundle = {
       checksum: string;
       createdAt: string;
     }>;
+    confirmedVersion?: number | null;
+    confirmedChecksum?: string | null;
+    settings?: ProductionSettings;
   } | null;
   messages: Message[];
   scenes: Scene[];

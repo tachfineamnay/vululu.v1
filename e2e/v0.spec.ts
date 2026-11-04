@@ -103,6 +103,8 @@ test('verticale Studio V1 complete (deterministe, correction ciblee, MOCK)', asy
   await page.locator('[data-testid=brief-cta]').fill('Decouvrir la collection');
   await page.locator('[data-testid=brief-save]').click();
   await expect(page.getByTestId('toast')).toContainText('Brief enregistre', { timeout: 15000 });
+  await page.getByTestId('brief-confirm').click();
+  await expect(page.getByTestId('toast')).toContainText('Version exacte du brief confirmée');
   await expect(page.locator('[data-testid=storyboard-generate]')).toBeEnabled();
 
   await page.locator('[data-testid=storyboard-generate]').click();

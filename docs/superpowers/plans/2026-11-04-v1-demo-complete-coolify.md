@@ -331,3 +331,7 @@ Ces références ne certifient pas la version de Coolify de l’utilisateur, qui
 Plan proposé sur la base de la demande clarifiée. Aucune tâche d’implémentation n’est déclarée terminée ; cases non cochées volontairement. Aucun test applicatif, déploiement, compte ou appel externe n’a été exécuté par ce plan. Les preuves de l’analyse précédente restent dans son rapport daté.
 
 La première action d’exécution est le **lot 0**, puis les corrections de release et le bootstrap démo du lot 1/2. La mise en ligne intervient après préparation du candidat et autorisation explicite, sans requalifier le mode démo en certification live.
+
+### Suivi d’exécution du 2026-11-04
+
+Le paragraphe ci-dessus décrit la proposition initiale. L’exécution autorisée est suivie dans `docs/releases/V1_DEMO_TRACEABILITY.md` : bootstrap privé, campagnes, bibliothèque et relecture des contextes disposent de preuves locales ; la tranche 6A ajoute profils, confirmation du brief et provenance des dépendances (rapport `docs/execution/V1_DEMO_06A_BRIEF_PROFILES.md`). Le lot 6 complet et les lots suivants restent ouverts. Les cases initiales ne valent pas certification de release. L’utilisateur déploiera directement sur son serveur ; les images Linux et la recette HTTPS restent à exécuter, sans déploiement public implicite.

@@ -100,6 +100,11 @@ export class PrismaProjectBundleQuery implements ProjectBundleQueryPort {
           platform: project.brief.platform,
           format: project.brief.format,
           version: project.brief.version,
+          ...(project.brief.settings ? { settings: project.brief.settings as unknown as import('@vululu/domain').ProductionSettings } : {}),
+          confirmedVersion: project.brief.confirmedVersion,
+          confirmedChecksum: project.brief.confirmedChecksum,
+          confirmedBy: project.brief.confirmedBy,
+          confirmedAt: project.brief.confirmedAt,
           createdAt: project.brief.createdAt,
           updatedAt: project.brief.updatedAt,
           revisions: project.brief.revisions.map((revision) => ({
@@ -113,6 +118,7 @@ export class PrismaProjectBundleQuery implements ProjectBundleQueryPort {
             platform: revision.platform as BriefContentRecord['platform'],
             format: revision.format as BriefContentRecord['format'],
             checksum: revision.checksum,
+            ...(revision.settings ? { settings: revision.settings as unknown as import('@vululu/domain').ProductionSettings } : {}),
             createdAt: revision.createdAt
           }))
         }
@@ -166,6 +172,7 @@ export class PrismaProjectBundleQuery implements ProjectBundleQueryPort {
         format: project.format,
         objective: project.objective,
         sceneDurationSeconds: project.sceneDurationSeconds,
+        storyboardBriefVersion: project.storyboardBriefVersion,
         contextId: project.contextId,
         createdAt: project.createdAt,
         updatedAt: project.updatedAt

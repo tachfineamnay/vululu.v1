@@ -64,6 +64,7 @@ model Project {
   format      String
   objective   String
   usage       String   @default("organic")
+  storyboardBriefVersion Int?
   sceneDurationSeconds Int @default(2)
   status      String   @default("draft")
   createdAt   DateTime @default(now())
@@ -139,6 +140,11 @@ model Brief {
   platform  String
   format    String
   version   Int      @default(1)
+  settings  Json?
+  confirmedVersion Int?
+  confirmedChecksum String?
+  confirmedBy String?
+  confirmedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -156,6 +162,7 @@ model BriefRevision {
   platform  String
   format    String
   checksum  String
+  settings  Json?
   createdAt DateTime @default(now())
   brief     Brief    @relation(fields: [briefId], references: [id], onDelete: Cascade)
 

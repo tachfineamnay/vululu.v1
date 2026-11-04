@@ -5,10 +5,12 @@ export type Versioned = { readonly version: number };
 
 /**
  * Numéro de version suivant : max(versions existantes) + 1.
- * Les versions ne sont jamais réutilisées, même si l'historique est incomplet.
+ * Le dernier numéro connu peut provenir d'un pointeur courant lorsque
+ * l'historique est incomplet ; aucune révision absente n'est inventée.
  */
-export function nextVersion(existing: readonly Versioned[]): number {
-  let highest = 0;
+export function nextVersion(existing: readonly Versioned[], lastKnownVersion = 0): number {
+  if (!Number.isInteger(lastKnownVersion) || lastKnownVersion < 0) throw new DomainError('invalid_input', 'Last known version must be a non-negative integer.');
+  let highest = lastKnownVersion;
   for (const item of existing) {
     if (!Number.isInteger(item.version) || item.version < 1) {
       throw new DomainError('invalid_input', 'Existing versions must be positive integers.', {
@@ -44,9 +46,10 @@ export type AppendResult<T extends Versioned> = {
  */
 export function appendVersion<T extends Versioned>(
   existing: readonly T[],
-  candidate: T
+  candidate: T,
+  lastKnownVersion = 0
 ): AppendResult<T> {
-  const expected = nextVersion(existing);
+  const expected = nextVersion(existing, lastKnownVersion);
   if (!Number.isInteger(candidate.version) || candidate.version !== expected) {
     throw new DomainError(
       'version_conflict',

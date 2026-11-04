@@ -66,13 +66,15 @@ export class StoryboardUseCases {
     if (!brief) {
       throw new ApplicationError('brief_required', 'Le brief doit etre enregistre avant le storyboard.', 400);
     }
+    const revision = brief.revisions.find((value) => value.version === brief.version);
+    if (!revision || brief.confirmedVersion !== brief.version || brief.confirmedChecksum !== revision.checksum || brief.confirmedBy !== actor.id) throw new ApplicationError('brief_confirmation_required', 'Confirmez la version exacte du brief avant le storyboard.', 409);
     const existingScenes = await this.scenes.listByProject(projectId);
     const existingByKey = new Map(existingScenes.map((scene) => [scene.sceneKey, scene]));
     const created = createStoryboard({
       projectId,
       templates: SCENE_TEMPLATES.map((template) => ({
         ...template,
-        durationSeconds: project.sceneDurationSeconds,
+        durationSeconds: brief.settings?.defaultSceneDurationSeconds ?? project.sceneDurationSeconds,
         characterKey: CHARACTER_KEY
       })),
       makeId: () => this.ids.next(),
@@ -133,6 +135,7 @@ export class StoryboardUseCases {
       projectId,
       userId: actor.id,
       projectStatus: 'storyboard_ready',
+      briefVersion: brief.version,
       character: {
         id: character.id,
         characterKey: character.characterKey,

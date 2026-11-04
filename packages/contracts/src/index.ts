@@ -49,13 +49,24 @@ export const projectInputSchema = z.object({
   sceneDurationSeconds: sceneDurationSchema.default(2)
 });
 
+export const productionSettingsInputSchema = z.object({
+  schemaVersion: z.literal(1).optional(), profileVersion: z.literal('v1-demo-2026-11-04').optional(),
+  ratio: z.enum(['9:16', '4:5', '1:1', '16:9']).optional(),
+  defaultSceneDurationSeconds: sceneDurationSchema.optional(), visualStyle: z.enum(['editorial', 'minimal', 'bold']).optional(),
+  direction: z.string().max(1000).optional(), maxMockCents: z.number().int().min(0).max(100000).optional(),
+  audio: z.object({ voiceVersionId: z.string().min(1).max(128).nullable().optional(), musicVersionId: z.string().min(1).max(128).nullable().optional(), spokenText: z.string().max(2000).optional(), voiceGainDb: z.number().min(-24).max(6).optional(), musicGainDb: z.number().min(-36).max(0).optional(), ducking: z.boolean().optional() }).strict().optional()
+}).strict();
+export type ProductionSettingsInput = z.infer<typeof productionSettingsInputSchema>;
+export type ProductionSettings = Required<Omit<ProductionSettingsInput, 'audio'>> & { audio: Required<NonNullable<ProductionSettingsInput['audio']>> };
+export const briefConfirmationSchema = z.object({ version: z.number().int().positive(), checksum: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
 export const briefInputSchema = z.object({
   objective: z.string().min(2),
   audience: z.string().min(2),
   tone: z.string().min(2),
   cta: z.string().min(2),
   platform: platformSchema,
-  format: formatSchema
+  format: formatSchema,
+  settings: productionSettingsInputSchema.optional()
 });
 
 export const messageInputSchema = z.object({

@@ -57,7 +57,7 @@ export class LocalProductionExecutor implements ProductionExecutorPort {
     await this.store.markRunning(input.jobRunId);
     await this.store.updateStep(input.jobRunId, 'snapshot', 'succeeded');
     await this.store.updateJob(input.jobId, { status: 'running', step: 'preparation', progress: 5 });
-    const project = await this.store.loadExecutionProject(input.projectId);
+    const project = await this.store.loadExecutionProject(input.projectId, input.jobRunId);
     if (input.type === 'produce') {
       await this.runProduction(input, project);
     } else {
@@ -93,6 +93,7 @@ export class LocalProductionExecutor implements ProductionExecutorPort {
         brandName: project.context.name,
         colorPrimary: project.context.colorPrimary,
         colorSecondary: project.context.colorSecondary,
+        ...project.render,
         version
       });
       rendered.push({
@@ -123,7 +124,7 @@ export class LocalProductionExecutor implements ProductionExecutorPort {
     await this.store.updateStep(input.jobRunId, 'assemble-master', 'succeeded');
     await this.store.updateStep(input.jobRunId, 'qa', 'running');
     await this.store.updateJob(input.jobId, { step: 'qa', progress: 85 });
-    const qa = await this.media.runQa(rendered.map((item) => item.result), master);
+    const qa = await this.media.runQa(rendered.map((item) => item.result), master, project.render);
     await this.store.finalizeRun({
       jobRunId: input.jobRunId,
       jobId: input.jobId,
@@ -140,6 +141,7 @@ export class LocalProductionExecutor implements ProductionExecutorPort {
         prompt: item.prompt,
         checksum: item.checksum
       })),
+      manifest: { sourceBriefVersion: project.briefVersion ?? null, sourceInputChecksum: project.sourceInputChecksum ?? null },
       outputs: {
         completedAt: new Date().toISOString(),
         scenes: rendered.map((item) => ({
@@ -184,6 +186,7 @@ export class LocalProductionExecutor implements ProductionExecutorPort {
       brandName: project.context.name,
       colorPrimary: project.context.colorPrimary,
       colorSecondary: project.context.colorSecondary,
+      ...project.render,
       version,
       instruction: input.instruction ?? undefined
     });
@@ -216,7 +219,7 @@ export class LocalProductionExecutor implements ProductionExecutorPort {
     await this.store.updateStep(input.jobRunId, 'assemble-master', 'succeeded');
     await this.store.updateStep(input.jobRunId, 'qa', 'running');
     await this.store.updateJob(input.jobId, { step: 'qa', progress: 85 });
-    const qa = await this.media.runQa(sceneResults, master);
+    const qa = await this.media.runQa(sceneResults, master, project.render);
     const outputs = project.scenes.map((scene) => {
       const isTarget = scene.id === target.id;
       return {
@@ -244,6 +247,7 @@ export class LocalProductionExecutor implements ProductionExecutorPort {
           checksum: targetResult.checksum
         }
       ],
+      manifest: { sourceBriefVersion: project.briefVersion ?? null, sourceInputChecksum: project.sourceInputChecksum ?? null },
       outputs: {
         completedAt: new Date().toISOString(),
         scenes: outputs,

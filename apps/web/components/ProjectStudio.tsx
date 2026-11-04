@@ -74,6 +74,8 @@ export default function ProjectStudio({ id }: { id: string }) {
   const [briefAudience, setBriefAudience] = useState('');
   const [briefTone, setBriefTone] = useState('');
   const [briefCta, setBriefCta] = useState('');
+  const [productionSettings, setProductionSettings] = useState<import('@vululu/contracts').ProductionSettings | null>(null);
+  const settingsLoaded = useRef(false);
   const briefLoaded = useRef(false);
   const bundleRef = useRef<ProjectBundle | null>(null);
   const lastMasterVersionRef = useRef<number | null>(null);
@@ -98,6 +100,10 @@ export default function ProjectStudio({ id }: { id: string }) {
       }
       lastMasterVersionRef.current = nextMasterVersion;
       setBundle(data);
+      if (!settingsLoaded.current) {
+        setProductionSettings(data.brief?.settings ?? { schemaVersion: 1, profileVersion: 'v1-demo-2026-11-04', ratio: data.project.platform === 'LinkedIn' ? '1:1' : '9:16', defaultSceneDurationSeconds: data.project.sceneDurationSeconds, visualStyle: 'editorial', direction: '', maxMockCents: 1000, audio: { voiceVersionId: null, musicVersionId: null, spokenText: '', voiceGainDb: -3, musicGainDb: -18, ducking: true } });
+        settingsLoaded.current = true;
+      }
       setError('');
       if (!briefLoaded.current && data.brief) {
         setBriefObjective(data.brief.objective);
@@ -151,18 +157,29 @@ export default function ProjectStudio({ id }: { id: string }) {
   async function saveBrief(event: FormEvent) {
     event.preventDefault();
     if (!bundle) return;
-    await runAction('brief', () => patchJson('/api/projects/' + id + '/brief', {
+    await runAction('brief', async () => {
+      const result = await patchJson<{ brief: { settings?: import('@vululu/contracts').ProductionSettings } }>('/api/projects/' + id + '/brief', {
       objective: briefObjective,
       audience: briefAudience,
       tone: briefTone,
       cta: briefCta,
       platform: bundle.project.platform,
-      format: bundle.project.format
-    }), 'Brief enregistre. Une nouvelle revision est conservee.');
+      format: bundle.project.format,
+      ...(productionSettings ? { settings: productionSettings } : {})
+      });
+      if (result.brief.settings) setProductionSettings(result.brief.settings);
+    }, 'Brief enregistre. Une nouvelle revision est conservee.');
   }
 
   async function generateStoryboard() {
     await runAction('storyboard', () => postJson('/api/projects/' + id + '/storyboard', {}), 'Storyboard de 5 scenes genere.');
+  }
+
+  async function confirmBrief() {
+    if (!bundle?.brief) return;
+    const revision = bundle.brief.revisions.find((value) => value.version === bundle.brief!.version);
+    if (!revision) return;
+    await runAction('brief-confirm', () => postJson('/api/projects/' + id + '/brief/confirm', { version: revision.version, checksum: revision.checksum }), 'Version exacte du brief confirmée.');
   }
 
   async function produce() {
@@ -223,7 +240,10 @@ export default function ProjectStudio({ id }: { id: string }) {
   const activeVersion = selectedVersion || (master ? master.version : 0);
   const activeMaster = bundle.masterVersions.find((item) => item.version === activeVersion) || master;
   const effectiveCompareVersion = compareVersion || (bundle.masterVersions.find((item) => item.version !== activeVersion) || master)?.version || null;
-  const canProduce = bundle.scenes.length === 5 && !busy;
+  const briefConfirmed = Boolean(bundle.brief && bundle.brief.confirmedVersion === bundle.brief.version && bundle.brief.confirmedChecksum === bundle.brief.revisions.find((value) => value.version === bundle.brief!.version)?.checksum);
+  const canonical = (value: unknown) => JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.keys(item).sort().map((key) => [key, item[key]])) : item);
+  const briefDirty = Boolean(bundle.brief && (briefObjective !== bundle.brief.objective || briefAudience !== bundle.brief.audience || briefTone !== bundle.brief.tone || briefCta !== bundle.brief.cta || canonical(productionSettings) !== canonical(bundle.brief.settings)));
+  const canProduce = bundle.scenes.length === 5 && briefConfirmed && bundle.project.storyboardBriefVersion === bundle.brief?.version && !briefDirty && !busy;
   const job = bundle.job;
   const jobRun = bundle.jobRun;
   const checks = qaChecks(activeMaster);
@@ -318,10 +338,19 @@ export default function ProjectStudio({ id }: { id: string }) {
               <label className="label">Appel a action
                 <input className="input" data-testid="brief-cta" value={briefCta} onChange={(event) => setBriefCta(event.target.value)} placeholder="Decouvrir la collection" required />
               </label>
-              <button className="btn btn-secondary" data-testid="brief-save" type="submit" disabled={busy === 'brief'}>
-                {bundle.brief ? 'Mettre a jour le brief' : 'Preparer le brief'}
+              {productionSettings ? <fieldset className="stack production-profile"><legend>Profil de production démo</legend>
+                <label className="label">Ratio de sortie<select aria-label="Ratio de sortie" className="input" value={productionSettings.ratio} disabled={Boolean(busy)} onChange={(e) => setProductionSettings({ ...productionSettings, ratio: e.target.value as typeof productionSettings.ratio })}>{(bundle.project.platform === 'TikTok' ? ['9:16'] : bundle.project.platform === 'LinkedIn' ? ['1:1', '16:9'] : ['9:16', '4:5', '1:1']).map((ratio) => <option key={ratio}>{ratio}</option>)}</select></label>
+                <label className="label">Style de simulation<select aria-label="Style de simulation" className="input" value={productionSettings.visualStyle} disabled={Boolean(busy)} onChange={(e) => setProductionSettings({ ...productionSettings, visualStyle: e.target.value as typeof productionSettings.visualStyle })}><option value="editorial">Éditorial</option><option value="minimal">Minimal</option><option value="bold">Contrasté</option></select></label>
+                <label className="label">Direction artistique simulée<textarea aria-label="Direction artistique simulée" className="input" value={productionSettings.direction} maxLength={1000} disabled={Boolean(busy)} onChange={(e) => setProductionSettings({ ...productionSettings, direction: e.target.value })} /></label>
+                <p className="hint">La direction fait varier le décor de façon déterministe. Aucun modèle IA n’interprète le texte.</p>
+                <label className="label">Durée par défaut d’une scène (secondes)<input className="input" type="number" min={1} max={15} value={productionSettings.defaultSceneDurationSeconds} disabled={Boolean(busy)} onChange={(e) => setProductionSettings({ ...productionSettings, defaultSceneDurationSeconds: Number(e.target.value) })} /></label>
+                <p className="hint">Voix et musique : fichiers et mix en cours de qualification. Cette tranche produit une piste silencieuse.</p>
+              </fieldset> : null}
+              <button className="btn btn-secondary" data-testid="brief-save" type="submit" disabled={Boolean(busy)}>
+                {bundle.brief ? 'Enregistrer une nouvelle révision' : 'Enregistrer le brouillon du brief'}
               </button>
             </form>
+            {bundle.brief ? <div className="stack"><p className="hint">{briefConfirmed ? 'Version exacte confirmée.' : 'Relisez cette version puis confirmez-la avant le lancement.'}{briefDirty ? ' Enregistrez d’abord vos modifications.' : ''}</p><button type="button" className="btn btn-secondary" data-testid="brief-confirm" disabled={briefConfirmed || briefDirty || Boolean(busy) || !bundle.brief.revisions.length} onClick={confirmBrief}>Confirmer la version {bundle.brief.version} du brief</button></div> : null}
             {bundle.brief && bundle.brief.revisions.length > 0 ? (
               <details className="history-details">
                 <summary>Historique des revisions ({bundle.brief.revisions.length})</summary>
@@ -335,7 +364,7 @@ export default function ProjectStudio({ id }: { id: string }) {
                 </ul>
               </details>
             ) : null}
-            <button className="btn btn-primary full-width" data-testid="storyboard-generate" onClick={generateStoryboard} disabled={!bundle.brief || busy === 'storyboard'}>
+            <button className="btn btn-primary full-width" data-testid="storyboard-generate" onClick={generateStoryboard} disabled={!briefConfirmed || briefDirty || Boolean(busy)}>
               Generer le storyboard de 5 scenes
             </button>
           </section>
@@ -367,9 +396,7 @@ export default function ProjectStudio({ id }: { id: string }) {
                       <p className="muted small">{scene.description}</p>
                       <label className="label duration-label">Duree
                         <select className="input duration-select" data-testid={'duration-' + scene.sceneKey} value={scene.durationSeconds} onChange={(event) => updateDuration(scene.sceneKey, Number(event.target.value))} disabled={busy !== '' || bundle.project.status === 'producing'}>
-                          <option value={2}>2 s</option>
-                          <option value={5}>5 s</option>
-                          <option value={10}>10 s</option>
+                          {Array.from({ length: 15 }, (_, index) => index + 1).map((seconds) => <option key={seconds} value={seconds}>{seconds} s</option>)}
                         </select>
                       </label>
                       <div className="scene-actions">

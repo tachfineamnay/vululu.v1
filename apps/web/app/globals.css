@@ -519,7 +519,7 @@ select {
 .scene-image {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   display: block;
 }
 
@@ -604,7 +604,14 @@ select {
 
 .qa-list .list-row {
   padding: 9px 11px;
+  display: grid;
+  grid-template-columns: 9px minmax(0, 1fr);
+  gap: 4px 10px;
+  overflow-wrap: anywhere;
 }
+
+.qa-list .list-row > :last-child { grid-column: 2; }
+.production-profile { min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
 
 .dot {
   width: 9px;

@@ -1,13 +1,14 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { prisma } from '@vululu/db';
-import { contentChecksum } from '@vululu/domain';
-import { ApplicationError } from '@vululu/application';
+import { contentChecksum, normalizeProductionSettings, type ProductionSettings, type Platform, type ProjectFormat } from '@vululu/domain';
+import { ApplicationError, productionSourceChecksum } from '@vululu/application';
 import type {
   ExecutionProject,
   ExecutionScene,
   ProductionExecutionStore,
   ProductionFinalization,
-  SceneVersionRecord
+  SceneVersionRecord,
+  ReproducibilitySnapshot
 } from '@vululu/application';
 
 function mapSceneSceneVersion(row: {
@@ -63,19 +64,38 @@ export class PrismaProductionExecutionStore implements ProductionExecutionStore 
     });
   }
 
-  async loadExecutionProject(projectId: string): Promise<ExecutionProject> {
+  async loadExecutionProject(projectId: string, jobRunId?: string): Promise<ExecutionProject> {
     const project = await this.db.project.findUnique({
       where: { id: projectId },
       include: {
         context: true,
         scenes: {
           orderBy: { position: 'asc' },
-          include: { versions: { orderBy: { version: 'desc' }, take: 1 } }
+          include: { versions: { orderBy: { version: 'desc' } } }
         }
       }
     });
     if (!project || !project.context) {
       throw new ApplicationError('project_not_found', 'Projet ou contexte introuvable.', 404);
+    }
+    if (jobRunId) {
+      const run = await this.db.jobRun.findFirst({ where: { id: jobRunId, projectId } });
+      const snapshot = run?.snapshot as ReproducibilitySnapshot | null;
+      if (!snapshot || !run?.snapshotChecksum || contentChecksum(snapshot) !== run.snapshotChecksum) throw new ApplicationError('snapshot_invalid', 'Snapshot de production absent ou altéré.', 409);
+      const context = snapshot.context.data;
+      if (typeof context.name !== 'string' || typeof context.colorPrimary !== 'string' || typeof context.colorSecondary !== 'string') throw new ApplicationError('snapshot_invalid', 'Contexte figé incomplet.', 409);
+      const settings = snapshot.brief.data.settings ? normalizeProductionSettings(snapshot.project.platform as Platform, snapshot.project.format as ProjectFormat, snapshot.brief.data.settings as ProductionSettings) : undefined;
+      return { id: projectId, status: snapshot.project.status, sceneDurationSeconds: snapshot.project.sceneDurationSeconds, briefVersion: snapshot.brief.version, sourceInputChecksum: productionSourceChecksum(snapshot),
+        context: { name: context.name, colorPrimary: context.colorPrimary, colorSecondary: context.colorSecondary },
+        render: { width: snapshot.render.width, height: snapshot.render.height, visualStyle: settings?.visualStyle ?? 'editorial', direction: settings?.direction ?? '' },
+        scenes: snapshot.scenes.map((frozen) => {
+          const row = project.scenes.find((scene) => scene.id === frozen.sceneId);
+          const version = row?.versions.find((value) => value.version === frozen.version);
+          if (!row || (frozen.version > 0 && (!version || version.checksum !== frozen.checksum))) throw new ApplicationError('snapshot_invalid', 'Version de scène figée indisponible.', 409);
+          return { id: frozen.sceneId, projectId, sceneKey: frozen.sceneKey, position: frozen.position, durationSeconds: frozen.durationSeconds,
+            title: frozen.title ?? row.title, description: frozen.description ?? row.description,
+            characterKey: frozen.characterKey === undefined ? row.characterKey : frozen.characterKey, latestVersion: version ? mapSceneSceneVersion(version) : null };
+        }) };
     }
     const scenes: ExecutionScene[] = project.scenes.map((scene) => ({
       id: scene.id,
@@ -152,7 +172,8 @@ export class PrismaProductionExecutionStore implements ProductionExecutionStore 
             masterPath: input.master.relativePath,
             checksum: input.master.checksum,
             qaStatus: input.qa.status,
-            qaReport: input.qa as unknown as Prisma.InputJsonValue
+            qaReport: input.qa as unknown as Prisma.InputJsonValue,
+            manifest: (input.manifest ?? {}) as Prisma.InputJsonValue
           }
         });
         await tx.approval.updateMany({

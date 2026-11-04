@@ -51,6 +51,7 @@ export function toProjectRecord(row: PrismaProject): ProjectRecord {
     userId: row.userId,
     contextId: row.contextId,
     campaignId: row.campaignId,
+    storyboardBriefVersion: row.storyboardBriefVersion,
     title: row.title,
     platform: row.platform,
     format: row.format,

@@ -2,6 +2,7 @@ import {
   createBrief,
   reviseBrief,
   snapshotBriefContent,
+  normalizeProductionSettings,
   type BriefRevision as DomainBriefRevision
 } from '@vululu/domain';
 import { ApplicationError } from '../errors';
@@ -28,6 +29,7 @@ function toDomainRevision(revision: BriefWithRevisions['revisions'][number]): Do
     cta: revision.cta,
     platform: revision.platform as DomainBriefRevision['platform'],
     format: revision.format as DomainBriefRevision['format'],
+    ...(revision.settings ? { settings: revision.settings } : {}),
     checksum: revision.checksum,
     createdAt: revision.createdAt.toISOString()
   };
@@ -54,8 +56,11 @@ export class BriefUseCases {
     if (project.status === 'producing') {
       throw new ApplicationError('project_busy', 'Le brief ne peut pas etre modifie pendant une production.', 409);
     }
-    const content = snapshotBriefContent(input) as BriefContentRecord;
+    if (input.platform !== project.platform || input.format !== project.format) throw new ApplicationError('brief_project_mismatch', 'Le réseau et le format doivent correspondre au projet.', 400);
     const existing = await this.briefs.findWithRevisions(projectId);
+    const { settings: incomingSettings, ...fields } = input;
+    const settings = incomingSettings === undefined ? existing?.settings : normalizeProductionSettings(input.platform, input.format, incomingSettings);
+    const content = snapshotBriefContent({ ...fields, ...(settings ? { settings } : {}) }) as BriefContentRecord;
     const createdAt = this.clock.now().toISOString();
     let briefId: string;
     let revisionId: string;

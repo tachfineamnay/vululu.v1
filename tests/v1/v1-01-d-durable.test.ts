@@ -177,7 +177,7 @@ async function createProject(title: string) {
           format: 'Video',
           version: 1,
           revisions: {
-            create: [{ version: 1, checksum: sha('brief:' + title), objective: 'Objectif', audience: 'Audience', tone: 'Direct', cta: 'CTA', platform: 'Instagram', format: 'Video' }]
+            create: [{ version: 1, checksum: briefChecksum({ objective: 'Objectif', audience: 'Audience', tone: 'Direct', cta: 'CTA', platform: 'Instagram', format: 'Video' }), objective: 'Objectif', audience: 'Audience', tone: 'Direct', cta: 'CTA', platform: 'Instagram', format: 'Video' }]
           }
         }
       },
@@ -193,6 +193,7 @@ async function createProject(title: string) {
     },
     include: { scenes: true, brief: true, context: true }
   });
+  await confirmFixtureBrief(prisma, project.id);
   return project;
 }
 
@@ -431,3 +432,4 @@ describe('V1-01-D orchestration durable', () => {
     ).rejects.toThrow(/No eligible model/);
   });
 });
+import { confirmFixtureBrief, briefChecksum } from '../helpers/confirmFixtureBrief';

@@ -8,6 +8,7 @@ import {
   CampaignUseCases,
   AssetUseCases,
   ContextReviewUseCases,
+  BriefConfirmationUseCases,
   MessageUseCases,
   ProductionUseCases,
   ProjectBundleUseCases,
@@ -96,6 +97,7 @@ export const campaigns = new CampaignUseCases(new PrismaCampaignRepository(), pr
 export const assets = new AssetUseCases(new PrismaAssetRepository(), contextRepository, projectRepository, { inspect: inspectAsset }, artifactStorage, artifactStorages, audit, clock, ids);
 export const projects = new ProjectUseCases(projectRepository, contextRepository, clock, ids);
 export const briefs = new BriefUseCases(projectRepository, briefStore, clock, ids, audit);
+export const briefConfirmations = new BriefConfirmationUseCases(projectRepository, briefStore, audit, clock);
 export const storyboards = new StoryboardUseCases(
   projectRepository,
   briefStore,

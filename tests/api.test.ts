@@ -160,6 +160,8 @@ describe('API V0', () => {
     });
     expect(briefV2Response.statusCode).toBe(200);
     expect(briefV2Response.json().brief.version).toBe(2);
+    const confirmed = await app.inject({ method: 'POST', url: '/api/projects/' + projectId + '/brief/confirm', headers: authHeaders(), payload: { version: 2, checksum: briefV2Response.json().brief.revisions.at(-1).checksum } });
+    expect(confirmed.statusCode).toBe(200);
 
     const storyboardResponse = await app.inject({
       method: 'POST',
@@ -218,6 +220,9 @@ describe('API V0', () => {
       }
     });
     expect(briefResponse.statusCode).toBe(200);
+
+    const durationConfirmation = await app.inject({ method: 'POST', url: '/api/projects/' + durationProjectId + '/brief/confirm', headers: authHeaders(), payload: { version: 1, checksum: briefResponse.json().brief.revisions[0].checksum } });
+    expect(durationConfirmation.statusCode).toBe(200);
 
     const storyboardResponse = await app.inject({
       method: 'POST',
