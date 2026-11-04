@@ -9,6 +9,7 @@ import type {
   ProductionRunRepository,
   ReproducibilitySnapshot
 } from '@vululu/application';
+import { captureRunPolicy } from './captureRunPolicy';
 
 function snapshotChecksum(snapshot: ReproducibilitySnapshot): string {
   return contentChecksum(snapshot);
@@ -179,6 +180,7 @@ export class PrismaProductionRunRepository implements ProductionRunRepository {
           if (settings?.audio.voiceVersionId || settings?.audio.musicVersionId) throw new ApplicationError('audio_not_qualified', 'Les fichiers et le mix audio attendent leur qualification média.', 409);
           const dimensions = settings ? profileDimensions(settings.ratio) : { width: 1080, height: 1920 };
           const snapshot: ReproducibilitySnapshot = {
+            executionPolicy: await captureRunPolicy(tx, { steps: input.steps, durable: Boolean(input.outbox), usage: project.usage, maxMockCents: settings?.maxMockCents ?? 100 }),
             schemaVersion: 1,
             capturedAt: new Date().toISOString(),
             project: {

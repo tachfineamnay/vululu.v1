@@ -335,3 +335,5 @@ La première action d’exécution est le **lot 0**, puis les corrections de rel
 ### Suivi d’exécution du 2026-11-04
 
 Le paragraphe ci-dessus décrit la proposition initiale. L’exécution autorisée est suivie dans `docs/releases/V1_DEMO_TRACEABILITY.md` : bootstrap privé, campagnes, bibliothèque et relecture des contextes disposent de preuves locales ; la tranche 6A ajoute profils, confirmation du brief et provenance des dépendances (rapport `docs/execution/V1_DEMO_06A_BRIEF_PROFILES.md`). Le lot 6 complet et les lots suivants restent ouverts. Les cases initiales ne valent pas certification de release. L’utilisateur déploiera directement sur son serveur ; les images Linux et la recette HTTPS restent à exécuter, sans déploiement public implicite.
+
+La tranche 6B fige agents, catalogue, plafond, droits et workflow au lancement ; promotion et modification du catalogue ne changent plus le run en file. Preuve : `docs/execution/V1_DEMO_06B_FROZEN_POLICY.md` (345 tests PASS / 2 S3 SKIP et 2 E2E production PASS). Prochaine tranche : plan/estimation et refus de dépassement avant la mise en file, puis conversation et adaptation du storyboard. Le lot 6 reste partiel.

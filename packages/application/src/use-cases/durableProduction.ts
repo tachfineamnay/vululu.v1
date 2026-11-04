@@ -138,7 +138,7 @@ export class DurableProductionUseCases {
       jobRunId,
       projectId: run.projectId,
       capabilityKey: 'scene.generate',
-      budgetCents: this.budgetCents,
+      budgetCents: run.snapshot?.executionPolicy?.maxMockCents ?? this.budgetCents,
       input: { projectId: run.projectId, jobRunId },
       idempotencyKey: 'route:' + jobRunId
     });

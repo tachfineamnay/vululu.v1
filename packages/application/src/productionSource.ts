@@ -9,6 +9,7 @@ export function productionSourceChecksum(snapshot: ReproducibilitySnapshot): str
     brief: { version: snapshot.brief.version, checksum: snapshot.brief.checksum },
     assets: [...(snapshot.assets ?? [])].sort((a, b) => a.assetId.localeCompare(b.assetId)),
     render: snapshot.render,
+    policy: snapshot.executionPolicy ? { agent: snapshot.executionPolicy.agent, models: snapshot.executionPolicy.models, workflowVersion: snapshot.executionPolicy.workflow.version } : null,
     characters: [...snapshot.characters].sort((a, b) => a.characterId.localeCompare(b.characterId))
   });
 }

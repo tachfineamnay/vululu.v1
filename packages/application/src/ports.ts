@@ -287,6 +287,7 @@ export type BriefInput = {
 };
 
 export type ReproducibilitySnapshot = {
+  executionPolicy?: RunExecutionPolicy;
   schemaVersion: 1;
   capturedAt: string;
   project: {
@@ -738,6 +739,17 @@ export type ModelRecord = {
   active: boolean;
   qualified: boolean;
   createdAt: Date;
+};
+
+export type RunExecutionPolicy = {
+  schemaVersion: 1;
+  mode: 'MOCK';
+  mockFailedModelKeys: string[];
+  workflow: { version: 'v1-demo-workflow-2026-11-04'; engine: 'local' | 'hatchet'; steps: Array<{ key: string; dependsOn: string[] }> };
+  usage: 'organic' | 'sponsored';
+  maxMockCents: number;
+  agent: { definitionId: string | null; key: string; config: Omit<AgentConfigVersionRecord, 'createdAt'> | null; capabilityRequirements: AgentCapabilityRequirementRecord[] };
+  models: Array<Omit<ModelRecord, 'createdAt'>>;
 };
 
 export type RouteDecisionRecord = {

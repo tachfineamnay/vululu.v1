@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
-import { contentChecksum } from '../../packages/domain/src';
+import { productionSourceChecksum } from '@vululu/application';
 import { beforeAll, afterAll, expect, it, vi } from 'vitest';
 vi.hoisted(() => {
   process.env.APP_ENV = 'test'; process.env.V0_TEST_DB = '1';
@@ -117,7 +117,7 @@ it('refuse de melanger deux contextes de marque dans une correction locale', asy
   expect((await confirm(value.projectId, 1, value.brief.revisions[0].checksum)).statusCode).toBe(200);
   const run = await start(value.projectId);
   const snapshot = run.jobRun.snapshot as unknown as import('@vululu/application').ReproducibilitySnapshot;
-  const sourceInputChecksum = contentChecksum({ schemaVersion: 1, context: snapshot.context.data, brief: { version: snapshot.brief.version, checksum: snapshot.brief.checksum }, assets: snapshot.assets ?? [], render: snapshot.render, characters: snapshot.characters });
+  const sourceInputChecksum = productionSourceChecksum(snapshot);
   await db.jobRun.update({ where: { id: run.jobRun.id }, data: { status: 'completed' } });
   await db.project.update({ where: { id: value.projectId }, data: { status: 'review' } });
   const rows = await db.scene.findMany({ where: { projectId: value.projectId } });

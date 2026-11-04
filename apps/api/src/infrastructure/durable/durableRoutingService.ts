@@ -2,61 +2,36 @@ import type { PrismaClient } from '@prisma/client';
 import { prisma } from '@vululu/db';
 import {
   routeCapability,
+  contentChecksum,
   type CapabilityRequirement,
-  type ModelDefinition
+  type LicenseType
 } from '@vululu/domain';
 import { ApplicationError } from '@vululu/application';
 import type {
   CapabilityProviderPort,
   DurableRoutingPort,
   DurableRunRoutingSnapshot,
-  ModelRecord
+  ReproducibilitySnapshot
 } from '@vululu/application';
-import { PrismaAgentRepository } from '../prisma/agentRepository';
-import { PrismaProviderCatalogRepository } from '../prisma/providerCatalogRepository';
 import { PrismaRoutingRepository } from '../prisma/routingRepository';
 import { MockCapabilityProvider } from '../providers/mockCapabilityProvider';
 
-function toDomain(record: ModelRecord): ModelDefinition {
-  return {
-    id: record.id,
-    providerId: record.providerId,
-    providerKey: record.providerKey,
-    modelKey: record.modelKey,
-    capabilityKeys: record.capabilityKeys,
-    quality: record.quality,
-    latencyMs: record.latencyMs,
-    costCentsPerUnit: record.costCentsPerUnit,
-    license: record.license,
-    active: record.active,
-    qualified: record.qualified
-  };
-}
-
 /**
- * Routage fige du run : configuration agent active, catalogue providers,
+ * Routage depuis le snapshot de lancement : aucun catalogue/config actif relu.
  * decision deterministe, fallback mock trace et cout mock idempotent.
  *
  * La decision est persistee dans RoutingDecision et RunRoutingSnapshot. Les
  * modifications ulterieures de la config agent ne reecrivent pas ce snapshot.
  */
 export class DurableRoutingService implements DurableRoutingPort {
-  private readonly agents: PrismaAgentRepository;
-  private readonly catalog: PrismaProviderCatalogRepository;
   private readonly routes: PrismaRoutingRepository;
-  private readonly provider: CapabilityProviderPort;
 
   constructor(
     private readonly db: PrismaClient = prisma,
-    failedModelKeys: ReadonlySet<string> = new Set(
-      (process.env.DURABLE_MOCK_FAIL_MODEL || '').split(',').map((item) => item.trim()).filter(Boolean)
-    ),
-    provider?: CapabilityProviderPort
+    private readonly failedModelKeys?: ReadonlySet<string>,
+    private readonly provider?: CapabilityProviderPort
   ) {
-    this.agents = new PrismaAgentRepository(db);
-    this.catalog = new PrismaProviderCatalogRepository(db);
     this.routes = new PrismaRoutingRepository(db);
-    this.provider = provider ?? new MockCapabilityProvider(failedModelKeys);
   }
 
   async resolve(input: {
@@ -67,24 +42,33 @@ export class DurableRoutingService implements DurableRoutingPort {
     input: Record<string, unknown>;
     idempotencyKey: string;
   }): Promise<DurableRunRoutingSnapshot> {
-    const agentKey = process.env.DURABLE_AGENT_KEY || 'production-director';
-    const definition = await this.agents.findDefinitionByKey(agentKey);
-    const config = definition?.activeConfigVersionId
-      ? (await this.agents.listConfigs(definition.id)).find((item) => item.id === definition.activeConfigVersionId)
-      : undefined;
+    const run = await this.db.jobRun.findFirst({ where: { id: input.jobRunId, projectId: input.projectId } });
+    const snapshot = run?.snapshot as ReproducibilitySnapshot | null;
+    const policy = snapshot?.executionPolicy;
+    if (!policy) throw new ApplicationError('routing_snapshot_required', 'La politique historique manque ; créez un nouveau run après relecture.', 409);
+    if (!run?.snapshotChecksum || contentChecksum(snapshot) !== run.snapshotChecksum) throw new ApplicationError('snapshot_invalid', 'Snapshot de routage altéré.', 409);
+    if (!Number.isInteger(input.budgetCents) || input.budgetCents < 0) throw new ApplicationError('invalid_budget', 'Plafond MOCK invalide.', 400);
+    const config = policy.agent.config;
+    const configured = policy.agent.capabilityRequirements.find((value) => value.capabilityKey === input.capabilityKey);
+    if (policy.agent.definitionId && !configured) throw new ApplicationError('capability_not_allowed', 'Capacité absente de la politique de cet agent.', 409);
+    const usageLicenses: LicenseType[] = policy.usage === 'sponsored' ? ['commercial'] : ['internal', 'commercial'];
     const requirement: CapabilityRequirement = {
+      ...configured,
       capabilityKey: input.capabilityKey,
-      allowedLicenses: ['internal', 'commercial']
+      allowedLicenses: usageLicenses.filter((license) => !configured?.allowedLicenses || configured.allowedLicenses.includes(license))
     };
-    const models = await this.catalog.listModels(input.capabilityKey);
+    const models = policy.models.filter((model) => model.capabilityKeys.includes(input.capabilityKey));
+    const budgetCents = Math.min(input.budgetCents, policy.maxMockCents);
+    const provider = this.provider ?? new MockCapabilityProvider(this.failedModelKeys ?? new Set(policy.mockFailedModelKeys));
+    const invocationInput = { ...input.input, agentConfig: config, mock: true };
     if (models.length === 0) {
       throw new ApplicationError('no_route', 'Aucun modele pour la capacite ' + input.capabilityKey + '.', 409);
     }
     const failed: string[] = [];
     let decision = routeCapability({
-      models: models.map(toDomain),
+      models,
       requirement,
-      budgetCents: input.budgetCents,
+      budgetCents,
       failedModelIds: failed,
       decidedAt: new Date().toISOString()
     });
@@ -93,30 +77,30 @@ export class DurableRoutingService implements DurableRoutingPort {
     let usedFallback = false;
     let result: { providerKey: string; modelKey: string; costCents: number };
     try {
-      result = await this.provider.invoke({
+      result = await provider.invoke({
         providerKey: selected.providerKey,
         modelKey: selected.modelKey,
         capabilityKey: input.capabilityKey,
-        input: input.input
+        input: invocationInput
       });
     } catch (primaryError) {
       usedFallback = true;
       failed.push(selected.id);
       decision = routeCapability({
-        models: models.map(toDomain),
+        models,
         requirement,
-        budgetCents: input.budgetCents,
+        budgetCents,
         failedModelIds: failed,
         decidedAt: new Date().toISOString()
       });
       const fallback = models.find((model) => model.id === decision.selectedModelId);
       if (!fallback) throw primaryError;
       selected = fallback;
-      result = await this.provider.invoke({
+      result = await provider.invoke({
         providerKey: selected.providerKey,
         modelKey: selected.modelKey,
         capabilityKey: input.capabilityKey,
-        input: input.input
+        input: invocationInput
       });
     }
     const saved = await this.routes.saveDecision({
@@ -128,7 +112,7 @@ export class DurableRoutingService implements DurableRoutingPort {
       reason: decision.reason
     });
     return {
-      agentDefinitionId: definition?.id ?? null,
+      agentDefinitionId: policy.agent.definitionId,
       agentConfigVersionId: config?.id ?? null,
       agentConfigChecksum: config?.checksum ?? null,
       capabilityKey: input.capabilityKey,
@@ -142,7 +126,9 @@ export class DurableRoutingService implements DurableRoutingPort {
         catalogueSize: models.length,
         failedModelIds: failed,
         usedFallback,
-        budgetCents: input.budgetCents,
+        budgetCents,
+        priceSource: 'frozen-catalogue-MOCK',
+        workflowVersion: policy.workflow.version,
         decisionReason: decision.reason
       },
       decisionId: saved.id,
