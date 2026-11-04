@@ -38,6 +38,7 @@ Chaque décision suit [template.md](template.md) :
 | [0014](0014-admin-dans-apps-web.md) | Administration dans apps/web | Acceptée pour V1 | 2026-11-01 |
 | [0015](0015-topologie-preprod-hatchet-s3.md) | Topologie préproduction Hatchet/S3 | Acceptée avec limites ; déploiement complet non validé | 2026-11-01 |
 | [0016](0016-v1-demo-sans-fournisseur-ia.md) | V1-DEMO sans connexion IA et compte ordinaire distinct | Acceptée pour la démo autorisée | 2026-11-04 |
+| [0017](0017-campagnes-groupement-simple-projets.md) | Campagnes : regroupement explicite de projets par propriétaire | Acceptée localement, revue de release requise | 2026-11-04 |
 
 ## Décisions encore ouvertes
 

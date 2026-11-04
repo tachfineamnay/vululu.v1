@@ -66,6 +66,8 @@ Aucun de ces documents n'a été inventé. Les lacunes sont tracées dans le [ra
 | v2/README.md | Garde-fou V2 et points d'extension |
 | reviews/ | Audit V0, preuves de tests, gaps V1 et baseline d'implémentation |
 | certification/ | Matrice des capacités, dette technique, certification V1 et readiness de déploiement |
+| releases/ | Périmètre V1-DEMO, contrats des tranches et matrice de traçabilité courante |
+| superpowers/plans/ | Plan V1-DEMO complète sur Coolify autorisé le 2026-11-04 |
 | review/ | Audits pré-push V1-01-H : historique Git, sécurité, diff, CI, vérification locale et handoff |
 | reports/ | Baseline exécutable COOLIFY + ADMIN + STUDIO et rapports de mission |
 | admin/ | Parcours, actions sensibles et limites de l'interface d'administration |

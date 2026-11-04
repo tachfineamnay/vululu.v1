@@ -1,6 +1,7 @@
 export * from './ports';
 export * from './errors';
 export * from './use-cases/contexts';
+export * from './use-cases/campaigns';
 export * from './use-cases/projects';
 export * from './use-cases/briefs';
 export * from './use-cases/storyboards';

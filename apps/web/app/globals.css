@@ -1850,6 +1850,11 @@ select {
 .history-list li { display: flex; gap: 8px; align-items: center; }
 .contexts-layout { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.4fr); gap: 14px; align-items: start; }
 .contexts-list { display: flex; flex-direction: column; gap: 6px; }
+.campaigns-page .card { min-width: 0; }
+.campaigns-page h2, .campaigns-page .context-card strong, .campaign-project a { overflow-wrap: anywhere; }
+.campaign-projects { padding: 0; list-style: none; }
+.campaign-project { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: start; border-bottom: 1px solid var(--line); padding: 12px 0; }
+.campaign-project > div { flex: 1 1 180px; min-width: 0; }
 .context-card { display: flex; gap: 10px; align-items: center; width: 100%; text-align: left; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 10px; padding: 10px 12px; color: inherit; cursor: pointer; }
 .context-card:hover { border-color: rgba(0, 210, 255, 0.35); }
 .context-card.is-active { border-color: rgba(0, 210, 255, 0.55); background: rgba(0, 210, 255, 0.08); }

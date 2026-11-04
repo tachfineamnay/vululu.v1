@@ -18,6 +18,8 @@ export type BrandContext = {
 
 export type ProjectSummary = {
   id: string;
+  contextId: string;
+  campaignId?: string | null;
   title: string;
   status: string;
   platform: string;
@@ -159,6 +161,13 @@ export type ProjectBundle = {
   job: ProductionJob | null;
   jobRun: JobRunTracking | null;
   costs: MockCostSummary;
+};
+
+export type CampaignSummary = {
+  id: string;
+  name: string;
+  description: string;
+  createdAt: string;
 };
 
 function readCookie(name: string): string {

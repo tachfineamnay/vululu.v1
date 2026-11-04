@@ -39,6 +39,7 @@ export type ProjectRecord = {
   id: string;
   userId: string;
   contextId: string;
+  campaignId?: string | null;
   title: string;
   platform: string;
   format: string;
@@ -48,6 +49,22 @@ export type ProjectRecord = {
   createdAt?: Date;
   updatedAt?: Date;
 };
+
+export type CampaignRecord = {
+  id: string;
+  userId: string;
+  name: string;
+  description: string;
+  createdAt: Date;
+};
+
+export interface CampaignRepository {
+  create(input: CampaignRecord): Promise<CampaignRecord>;
+  listOwned(userId: string): Promise<CampaignRecord[]>;
+  findOwned(campaignId: string, userId: string): Promise<CampaignRecord | null>;
+  listProjectsOwned(campaignId: string, userId: string): Promise<ProjectRecord[]>;
+  assignProjectOwned(projectId: string, campaignId: string | null, userId: string): Promise<boolean>;
+}
 
 export type BriefRecord = {
   id: string;

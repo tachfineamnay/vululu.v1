@@ -35,6 +35,25 @@ beforeEach(cleanFixtures);
 afterAll(async () => { await cleanFixtures(); await db.$disconnect(); });
 
 describe('Bootstrap demo isole et non destructif', () => {
+  it('ajoute la campagne fictive sans ecraser une affectation existante au replay', async () => {
+    const result = await bootstrapDemo(db, env);
+    const initial = await db.project.findUniqueOrThrow({ where: { id: result.projectId } });
+    expect(initial.campaignId).not.toBeNull();
+    const campaign = await db.campaign.findUniqueOrThrow({ where: { id: initial.campaignId! } });
+    expect(campaign.userId).toBe(result.userId);
+    const other = await db.campaign.create({ data: { userId: result.userId, name: 'Autre operation' } });
+    await db.project.update({ where: { id: result.projectId }, data: { campaignId: other.id } });
+    await bootstrapDemo(db, env);
+    expect((await db.project.findUniqueOrThrow({ where: { id: result.projectId } })).campaignId).toBe(other.id);
+    expect(await db.campaign.count({ where: { userId: result.userId } })).toBe(2);
+  });
+  it('refuse une collision de campagne et annule les autres creations', async () => {
+    const foreign = await db.user.create({ data: { email: 'foreign@example.test', name: 'Tiers', passwordHash: 'fixture-foreign-hash' } });
+    await db.campaign.create({ data: { id: 'v1-demo-campaign', userId: foreign.id, name: 'Prive tiers' } });
+    await expect(bootstrapDemo(db, env)).rejects.toThrow('demo_resource_collision');
+    expect(await db.user.count({ where: { email: env.DEMO_EMAIL } })).toBe(0);
+    expect(await db.brandContext.count({ where: { id: 'v1-demo-context' } })).toBe(0);
+  });
   it('cree un utilisateur ordinaire, une revision checksummée et un projet de depart', async () => {
     const result = await bootstrapDemo(db, env);
     const user = await db.user.findUniqueOrThrow({ where: { id: result.userId } });

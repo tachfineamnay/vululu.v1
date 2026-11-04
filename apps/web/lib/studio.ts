@@ -72,6 +72,6 @@ export const CAPABILITY_STATUS: Array<{ key: string; label: string; status: Stud
   { key: 'postiz', label: 'Transfert Postiz', status: 'MOCK', detail: 'Adaptateur postiz-mock, aucune publication.' },
   { key: 'costs', label: 'Couts et estimation', status: 'MOCK', detail: 'CostEvent mock, aucun cout fournisseur reel.' },
   { key: 'assets', label: 'Bibliotheque d actifs', status: 'NOT_CONNECTED', detail: 'Contrat defini, aucun backend.' },
-  { key: 'campaigns', label: 'Campagnes', status: 'NOT_CONNECTED', detail: 'Le projet est l unite ; pas de modele Campaign.' },
+  { key: 'campaigns', label: 'Campagnes', status: 'AVAILABLE', detail: 'Regroupements persistants de projets, isolés par propriétaire.' },
   { key: 'mcp', label: 'MCP V1', status: 'NOT_CONNECTED', detail: 'Aucun serveur MCP.' }
 ];

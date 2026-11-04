@@ -1,7 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
-import { createBrandContext, createContextRevision } from '@vululu/domain';
+import { createBrandContext, createContextRevision, createCampaign } from '@vululu/domain';
 import { toJsonInput } from '../prisma/mappers';
 
 const identity = {
@@ -9,6 +9,7 @@ const identity = {
   contextId: 'v1-demo-context',
   projectId: 'v1-demo-project'
 };
+const campaignId = 'v1-demo-campaign';
 
 /** Bootstrap explicite, atomique et répétable ; ne remet jamais les données à zéro. */
 export async function bootstrapDemo(
@@ -38,7 +39,7 @@ export async function bootstrapDemo(
       } });
       await tx.auditEvent.create({ data: {
         actorId: identity.userId, action: 'demo.bootstrap.created',
-        targetType: 'user', targetId: identity.userId, metadata: { mode: 'MOCK', seedVersion: 1 }
+        targetType: 'user', targetId: identity.userId, metadata: { mode: 'MOCK', seedVersion: 2 }
       } });
     }
 
@@ -59,13 +60,24 @@ export async function bootstrapDemo(
       } });
     }
 
+    const existingCampaign = await tx.campaign.findUnique({ where: { id: campaignId } });
+    if (existingCampaign && existingCampaign.userId !== identity.userId) throw new Error('demo_resource_collision');
+    if (!existingCampaign) {
+      const campaign = createCampaign({
+        id: campaignId, userId: identity.userId, name: 'Première collection — démo',
+        description: 'Une opération fictive pour découvrir les regroupements de créations.',
+        createdAt: new Date().toISOString()
+      });
+      await tx.campaign.create({ data: { ...campaign, createdAt: new Date(campaign.createdAt) } });
+    }
+
     const existingProject = await tx.project.findUnique({ where: { id: identity.projectId } });
     if (existingProject && (existingProject.userId !== identity.userId || existingProject.contextId !== identity.contextId)) {
       throw new Error('demo_resource_collision');
     }
     if (!existingProject) {
       await tx.project.create({ data: {
-        id: identity.projectId, userId: identity.userId, contextId: identity.contextId,
+        id: identity.projectId, userId: identity.userId, contextId: identity.contextId, campaignId,
         title: 'Découvrir Atelier Aurore — exemple démo', platform: 'Instagram', format: 'Video',
         objective: 'Présenter une marque fictive et explorer le workflow sans IA connectée.',
         sceneDurationSeconds: 2, status: 'draft'

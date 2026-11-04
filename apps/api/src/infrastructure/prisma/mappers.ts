@@ -50,6 +50,7 @@ export function toProjectRecord(row: PrismaProject): ProjectRecord {
     id: row.id,
     userId: row.userId,
     contextId: row.contextId,
+    campaignId: row.campaignId,
     title: row.title,
     platform: row.platform,
     format: row.format,

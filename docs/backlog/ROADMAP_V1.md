@@ -8,7 +8,7 @@
 
 La proposition initiale partait d’un dépôt documentaire. Au 2026-11-04, main contient un socle V1 avec API, Web/Admin, média déterministe, couches domaine/application, adaptateurs et tests. Cette mise à jour explicite corrige le statut ancien sans déclarer les lots P0 terminés : la couverture reste partielle.
 
-L’utilisateur a autorisé la **V1-DEMO complète sans connexion IA** : [périmètre](../releases/V1_DEMO_SCOPE_2026-11-04.md), [traçabilité et preuves](../releases/V1_DEMO_TRACEABILITY.md), [plan](../superpowers/plans/2026-11-04-v1-demo-complete-coolify.md). Lot 0 documentaire et lot 1 release en cours ; lots suivants non clos. Les sections 2 à 7 conservent la proposition de séquencement initiale ; les statuts courants et la prochaine action sont ceux de cette section.
+L’utilisateur a autorisé la **V1-DEMO complète sans connexion IA** : [périmètre](../releases/V1_DEMO_SCOPE_2026-11-04.md), [traçabilité et preuves](../releases/V1_DEMO_TRACEABILITY.md), [plan](../superpowers/plans/2026-11-04-v1-demo-complete-coolify.md). Le périmètre documentaire est réconcilié ; bootstrap démo et campagnes ont des preuves locales. Les lots release/infra restent non clos ; la bibliothèque d’actifs est la prochaine tranche fonctionnelle. Les sections 2 à 7 conservent la proposition de séquencement initiale ; les statuts courants et la prochaine action sont ceux de cette section.
 
 ## 2. Principes de séquencement
 

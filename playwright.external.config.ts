@@ -12,5 +12,6 @@ export default defineConfig({
   expect: { timeout: 30000 },
   fullyParallel: false,
   workers: 1,
-  use: { baseURL, trace: 'retain-on-failure' }
+  // Une trace réseau peut conserver credentials/cookies sur une cible réelle.
+  use: { baseURL, trace: 'off', screenshot: 'only-on-failure' }
 });

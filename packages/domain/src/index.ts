@@ -19,6 +19,7 @@ export * from './versions';
 export * from './identity';
 export * from './project';
 export * from './context';
+export * from './campaign';
 export * from './brief';
 export * from './scene';
 export * from './character';

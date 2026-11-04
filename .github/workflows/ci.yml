@@ -212,6 +212,10 @@ jobs:
       V0_DEMO_PASSWORD: vululu-demo
       V1_BOOTSTRAP_EMAIL: demo@vululu.local
       V1_BOOTSTRAP_PASSWORD: vululu-demo
+      # Compte ordinaire fictif sur DB jetable uniquement ; aucun secret deploye.
+      DEMO_MODE: '1'
+      DEMO_EMAIL: demo-user@example.test
+      DEMO_PASSWORD: ci-demo-user-test
       DATABASE_URL: postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public
       DATABASE_URL_TEST: postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public
     services:
@@ -280,6 +284,9 @@ jobs:
       # E2E. V1_BOOTSTRAP_* = V0_DEMO_* : le scenario se connecte avec ces valeurs.
       - name: Seed de la base jetable (compte de demonstration)
         run: pnpm exec tsx packages/db/prisma/seed.ts
+
+      - name: Seed utilisateur ordinaire et exemples demo (base jetable)
+        run: pnpm exec tsx scripts/coolify/seed-demo.ts
 
       - name: Installer Chromium Playwright (+ dependances systeme)
         run: pnpm exec playwright install --with-deps chromium

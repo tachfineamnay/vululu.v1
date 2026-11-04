@@ -3,6 +3,12 @@ import { z } from 'zod';
 export const platformSchema = z.enum(['TikTok', 'Instagram', 'LinkedIn']);
 export const formatSchema = z.enum(['Affiche', 'Carrousel', 'Video', 'Reel', 'Motion']);
 
+export const campaignInputSchema = z.object({
+  name: z.string().trim().min(2).max(160),
+  description: z.string().trim().max(2000).default('')
+});
+export const campaignAssignmentSchema = z.object({ campaignId: z.string().min(1).max(128).nullable() });
+
 export const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1)

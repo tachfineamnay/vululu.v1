@@ -5,6 +5,7 @@ import {
   ArtifactAccessUseCases,
   BriefUseCases,
   ContextUseCases,
+  CampaignUseCases,
   MessageUseCases,
   ProductionUseCases,
   ProjectBundleUseCases,
@@ -47,6 +48,7 @@ import {
   OutboxApprovalSignal,
   OutboxDispatcher
 } from '../infrastructure';
+import { PrismaCampaignRepository } from '../infrastructure/prisma/campaignRepository';
 
 const clock = { now: () => new Date() };
 const ids = { next: () => crypto.randomUUID() };
@@ -83,6 +85,7 @@ const executor = durableMode
 export { outboxDispatcher, durableMode, durableStore };
 
 export const contexts = new ContextUseCases(contextRepository, clock, ids);
+export const campaigns = new CampaignUseCases(new PrismaCampaignRepository(), projectRepository, audit, clock, ids);
 export const projects = new ProjectUseCases(projectRepository, contextRepository, clock, ids);
 export const briefs = new BriefUseCases(projectRepository, briefStore, clock, ids, audit);
 export const storyboards = new StoryboardUseCases(
