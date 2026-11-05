@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1024" viewBox="0 0 1440 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Vululu — plan de composition du Studio bleu</title>
+  <desc id="desc">Navigation globale à gauche, projet et contexte en haut, création centrale, unique bandeau de scènes sous l'aperçu, inspecteur contextuel à droite. Plan documentaire, pas une interface fonctionnelle.</desc>
+  <style>
+    text { font-family: "DM Sans", system-ui, sans-serif; fill: #172536; }
+    .body { font-size: 16px; }
+    .small { font-size: 14px; fill: #596579; }
+    .strong { font-weight: 700; }
+    .line { stroke: #D7DCE4; stroke-width: 1; }
+    .blue { fill: #2347BE; }
+  </style>
+  <rect width="1440" height="1024" fill="#F4F5F1"/>
+  <rect x="216" width="1224" height="1024" fill="#FFFFFF"/>
+  <text x="28" y="58" font-size="36" font-weight="700">vululu</text>
+  <path d="M28 72h62" stroke="#2347BE" stroke-width="4"/>
+  <path d="M216 0v1024" class="line"/>
+  <rect x="16" y="128" width="184" height="48" rx="8" fill="#EDF1FF"/>
+  <text x="32" y="158" class="body strong">Mes projets</text>
+  <text x="32" y="210" class="body">Marques et</text>
+  <text x="32" y="234" class="body">références</text>
+  <text x="32" y="286" class="body">Mes créations</text>
+  <text x="32" y="978" class="body">Aide</text>
+
+  <text x="248" y="44" class="body">Retour aux projets</text>
+  <text x="440" y="44" font-size="20" font-weight="700">Collection Terre</text>
+  <rect x="670" y="16" width="230" height="48" rx="8" fill="#FFFFFF" stroke="#7A8798"/>
+  <text x="686" y="46" class="body">Noma · Céramique</text>
+  <text x="944" y="44" class="small">Enregistré*</text>
+  <rect x="1066" y="16" width="128" height="48" rx="8" fill="#FFFFFF" stroke="#7A8798"/>
+  <text x="1094" y="46" class="body">Versions</text>
+  <rect x="1210" y="16" width="198" height="48" rx="8" fill="#2347BE"/>
+  <text x="1262" y="46" font-size="16" fill="#FFFFFF" style="fill:#FFFFFF;font-weight:600">Exporter*</text>
+  <path d="M216 80h1224" class="line"/>
+
+  <text x="248" y="122" class="body">1 · Brief</text>
+  <text x="454" y="122" class="body strong">2 · Création</text>
+  <path d="M454 136h100" stroke="#F5D867" stroke-width="4"/>
+  <text x="698" y="122" class="body">3 · Finalisation</text>
+  <text x="1206" y="122" class="body blue">Parcours de création</text>
+  <path d="M216 152h1224" class="line"/>
+
+  <text x="248" y="204" font-size="28" font-weight="700">Votre vidéo</text>
+  <text x="248" y="236" class="body">Destination · format · durée réels</text>
+  <path d="M1088 184v800" class="line"/>
+  <rect x="488" y="266" width="300" height="460" rx="6" fill="#F4F5F1" stroke="#7A8798"/>
+  <text x="535" y="466" font-size="20" font-weight="600">Aperçu du média</text>
+  <text x="520" y="498" class="small">Ratio conservé · source réelle</text>
+  <path d="M480 288v-30h30 M766 258h30v30 M480 704v30h30 M766 734h30v-30" fill="none" stroke="#2347BE" stroke-width="2"/>
+  <rect x="416" y="754" width="48" height="44" rx="6" fill="#FFFFFF" stroke="#7A8798"/>
+  <path d="m435 766 16 10-16 10Z" fill="#172536"/>
+  <text x="482" y="782" class="body">Lecture et durée</text>
+  <path d="M650 776h270" stroke="#D7DCE4" stroke-width="4"/>
+  <path d="M650 776h100" stroke="#2347BE" stroke-width="4"/>
+  <path d="M248 824h808" class="line"/>
+
+  <text x="248" y="858" class="body strong">Vos scènes — un seul bandeau</text>
+  <text x="850" y="858" class="small blue">Comparer les versions</text>
+  <rect x="248" y="880" width="240" height="80" rx="6" fill="#F4F5F1"/>
+  <rect x="512" y="880" width="240" height="80" rx="6" fill="#EDF1FF" stroke="#2347BE" stroke-width="2"/>
+  <rect x="776" y="880" width="240" height="80" rx="6" fill="#F4F5F1"/>
+  <text x="264" y="928" class="body">1 · Scène</text>
+  <text x="528" y="928" class="body strong">2 · Scène sélectionnée</text>
+  <text x="792" y="928" class="body">3 · Scène</text>
+
+  <text x="1120" y="204" font-size="20" font-weight="700">Élément sélectionné</text>
+  <rect x="1120" y="232" width="80" height="40" rx="6" fill="#EDF1FF"/>
+  <text x="1138" y="258" class="body strong">Texte</text>
+  <text x="1216" y="258" class="body">Visuel*</text>
+  <text x="1316" y="258" class="body">Audio*</text>
+  <text x="1120" y="316" class="body strong">Texte à l'écran</text>
+  <rect x="1120" y="336" width="288" height="104" rx="8" fill="#FFFFFF" stroke="#7A8798"/>
+  <text x="1136" y="370" class="body">Contenu modifiable</text>
+  <text x="1120" y="486" class="body strong">Durée</text>
+  <rect x="1280" y="458" width="128" height="48" rx="8" fill="#FFFFFF" stroke="#7A8798"/>
+  <text x="1296" y="488" class="body">Valeur réelle</text>
+  <rect x="1120" y="546" width="288" height="48" rx="8" fill="#FFFFFF" stroke="#2347BE"/>
+  <text x="1134" y="576" class="body blue">Appliquer à cette scène*</text>
+  <text x="1120" y="624" class="small">Portée et conséquences expliquées</text>
+  <path d="M1120 658h288" class="line"/>
+  <text x="1120" y="698" class="body">Réglages avancés*</text>
+  <path d="M1120 734h288" class="line"/>
+  <text x="1120" y="774" class="body strong">Autres destinations</text>
+  <text x="1120" y="814" class="body blue">Ajouter une déclinaison*</text>
+  <text x="248" y="1004" class="small">* Selon capacité réellement raccordée. Données d'exemple. Plan documentaire, pas capture de l'application.</text>
+</svg>
