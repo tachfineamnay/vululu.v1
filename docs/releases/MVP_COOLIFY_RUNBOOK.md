@@ -12,7 +12,9 @@ Dans un projet Coolify séparé, créer une application Git Docker Compose. Base
 | DEMO_MODE | 1 |
 | ORCHESTRATOR_MODE | local |
 | ARTIFACT_STORAGE_BACKEND | local |
-| VULULU_IMAGE_TAG | Commit construit ; conserver le même identifiant pour les services |
+| VULULU_IMAGE_TAG | Commit construit ; conserver le même identifiant pour les services. Il nomme l'image, il ne sélectionne pas le commit : Coolify importe la tête de branche et reconstruit |
+| RECETTE_ALLOW_SHORT_PASSWORDS | `1` si les valeurs demo/admin font moins de 12 caractères (ADR 0028), sinon `0` ; absent, `demo-seed` refuse le démarrage |
+| RECETTE_RESET_PASSWORDS | `1` le temps d'une seule synchronisation des deux comptes, puis `0` |
 | DEMO_EMAIL | demo@vululu.example par défaut |
 | ADMIN_EMAIL | admin@vululu.example par défaut |
 
