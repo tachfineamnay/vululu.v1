@@ -12,7 +12,7 @@
 | PRD-03/04 | F-020 | REAL | 6,7 | Profil versionné et compatibilités validés, Video au ratio du brief ; autres sorties à qualifier |
 | PRD-05 | F-021/022/023 | REAL + voix échantillons MOCK | 7 | Audio/mix absent ; licences et QA à vérifier |
 | PRD-03/06 | F-024 | REAL | 6 | Révisions et confirmation exacte, storyboard lié au brief ; conversation et estimation à compléter |
-| PRD-06 | F-030 | Plan déterministe MOCK | 6 | Storyboard fixe, dépendances à compléter |
+| PRD-06 | F-030 | Plan déterministe MOCK | 6 | Plan et dépendances exposés avant confirmation ; storyboard créatif encore fixe, invalidations à affiner avec les médias |
 | PRD-07/11 | F-031/032/033 | REAL + invocations MOCK | 6,10 | Registres/configs/catalogue et workflow figés au lancement ; promotion, droits, plafond et fallback testés ; parcours admin démo complet restant |
 | PRD-08 | F-040/041/042 | REAL | 3,7,8 | IDs/versions/correction présents ; nouveaux formats à tester |
 | PRD-09/13 | F-043 | REAL | 4,11,12 | Chemin durable codé ; preuve Linux/crash incomplète |
@@ -21,7 +21,7 @@
 | PRD-09/10 | F-051 | REAL | 8 | Approbation exacte présente ; reprise/concurrence à revalider |
 | PRD-10 | F-052 | MOCK | 8 | Pas de connexion Postiz ; acquittement démo récupérable requis |
 | PRD-11 | F-060 | REAL | 10 | Admin présente ; parcours complet démo à rejouer |
-| PRD-13 | F-061 | Règles REAL, montants MOCK | 6 | Budgets simulés ; pas de coût réel revendiqué |
+| PRD-13 | F-061 | Règles REAL, montants MOCK | 6 | Estimation indicative et plafond dans le brief ; refus de dépassement avant job/outbox et garde worker ; aucun coût réel revendiqué |
 | PRD-12 | F-070/071 | REAL | 9 | MCP absent ; IDE/cloud et sécurité à prouver |
 | PRD-04 | F-080 (P1) | Différé explicitement | Après P0 | Templates supplémentaires non nécessaires à la clôture P0 |
 | PRD-01/12 | N-001 | REAL | 2,5,9,12 | Tests IDOR/RBAC Web/MCP sur chaque ressource |
@@ -47,7 +47,7 @@
 | 2 | PARTIEL VÉRIFIÉ | 15 tests bootstrap/auth PASS, CLI/replay PASS, E2E formulaire/bannière PASS ; jeu démo complet et recette d’images restants |
 | 3/4 | NON CLOS | Stockage et durabilité conteneurisés non certifiés |
 | 5 | PARTIEL VÉRIFIÉ | Campagnes, actifs, relecture/révisions et proposition de contexte MOCK : API/UI, IDOR/CSRF, stockage local, snapshots et E2E production PASS ; S3 et compositing à qualifier |
-| 6 | PARTIEL VÉRIFIÉ | Tranches 6A/6B : profils/confirmation et dépendances, rendu 4:5, agents/catalogue/workflow figés ; régression fraîche 345 PASS / 2 S3 SKIP, 2 E2E production PASS ; plan/estimation avant confirmation, budget avant file et conversation restants |
+| 6 | PARTIEL VÉRIFIÉ | Tranches 6A/6B/6C : profils/confirmation, plan et plafond avant job, rendu 4:5, politique figée ; 6B complet 345 PASS / 2 S3 SKIP, 6C ciblé 204 PASS / 2 S3 SKIP et 2 E2E production PASS ; conversation et storyboard créatif restants |
 | 7–13 | NON CLOS | Aucun jalon final déclaré |
 
 Preuves détaillées : `docs/execution/V1_DEMO_00_02_PROGRESS.md`.
@@ -56,5 +56,6 @@ Preuves actifs : `docs/execution/V1_DEMO_05_ASSETS.md`.
 Preuves contextes : `docs/execution/V1_DEMO_05_CONTEXT_REVIEW.md`.
 Preuves brief/profils : `docs/execution/V1_DEMO_06A_BRIEF_PROFILES.md`.
 Preuves politique figée : `docs/execution/V1_DEMO_06B_FROZEN_POLICY.md`.
+Preuves plan/budget : `docs/execution/V1_DEMO_06C_PRODUCTION_PLAN.md`.
 
 La qualification fournisseurs IA/Postiz live reste NOT_RUN hors recette démo ; V2 reste OUT_OF_SCOPE_V2. Les états run/step/transfer de la section D et la campagne de recette section E sont vérifiés par les lots 4/8/12, pas déduits d’un simple test domaine.

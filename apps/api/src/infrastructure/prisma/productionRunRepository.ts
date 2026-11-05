@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import type { PrismaClient } from '@prisma/client';
 import { prisma } from '@vululu/db';
 import { contentChecksum, assertAssetUsage, normalizeProductionSettings, profileDimensions, type ProductionSettings, type Platform, type ProjectFormat, type AssetLicense, type PublicationUsage } from '@vululu/domain';
-import { ApplicationError, productionSourceChecksum } from '@vululu/application';
+import { ApplicationError, productionSourceChecksum, createProductionPlan } from '@vululu/application';
 import type {
   JobRunRecord,
   ProductionJobRecord,
@@ -175,12 +175,16 @@ export class PrismaProductionRunRepository implements ProductionRunRepository {
             assertAssetUsage(version.license as AssetLicense, project.usage as PublicationUsage);
           }
           const briefRevision = project.brief?.revisions[0] ?? null;
-          const settings = project.brief.settings ? normalizeProductionSettings(project.platform as Platform, project.format as ProjectFormat, project.brief.settings as unknown as ProductionSettings) : undefined;
+          const settings = normalizeProductionSettings(project.platform as Platform, project.format as ProjectFormat, (project.brief.settings as unknown as ProductionSettings | null) ?? { defaultSceneDurationSeconds: project.sceneDurationSeconds, maxMockCents: 100 });
           if (project.format !== 'Video') throw new ApplicationError('format_not_qualified', 'Ce format attend sa qualification média.', 409);
           if (settings?.audio.voiceVersionId || settings?.audio.musicVersionId) throw new ApplicationError('audio_not_qualified', 'Les fichiers et le mix audio attendent leur qualification média.', 409);
-          const dimensions = settings ? profileDimensions(settings.ratio) : { width: 1080, height: 1920 };
+          const dimensions = profileDimensions(settings.ratio);
+          const executionPolicy = await captureRunPolicy(tx, { steps: input.steps, durable: Boolean(input.outbox), usage: project.usage, maxMockCents: settings.maxMockCents });
+          const plan = createProductionPlan({ settings, format: project.format as ProjectFormat, briefVersion: project.brief.version, briefChecksum: currentBriefRevision.checksum, policy: executionPolicy, sceneDurationsSeconds: project.scenes.map((scene) => scene.durationSeconds) });
+          if (!plan.ready) throw new ApplicationError(plan.issues[0].code, plan.issues[0].message, 409);
           const snapshot: ReproducibilitySnapshot = {
-            executionPolicy: await captureRunPolicy(tx, { steps: input.steps, durable: Boolean(input.outbox), usage: project.usage, maxMockCents: settings?.maxMockCents ?? 100 }),
+            executionPolicy,
+            plan,
             schemaVersion: 1,
             capturedAt: new Date().toISOString(),
             project: {

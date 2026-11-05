@@ -11,6 +11,7 @@ vi.hoisted(() => {
 
 import { prisma } from '@vululu/db';
 import { env } from '../../apps/api/src/env';
+import { ensureMockSceneCatalog } from '../helpers/mockSceneCatalog';
 import { createSession, purgeSessions, revokeAllUserSessions } from '../../apps/api/src/security/session';
 import { isAllowedOrigin } from '../../apps/api/src/security/origin';
 import { consumeRateLimit } from '../../apps/api/src/infrastructure/security/rateLimiter';
@@ -28,6 +29,7 @@ beforeAll(async () => {
     env: { ...process.env, DATABASE_URL: TEST_DB_URL },
     stdio: 'pipe'
   });
+  await ensureMockSceneCatalog(prisma);
 });
 
 afterAll(async () => {

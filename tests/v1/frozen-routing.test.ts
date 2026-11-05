@@ -17,8 +17,8 @@ let userId: string; let providerId: string; let agentId: string; let configId: s
 beforeAll(async () => {
   userId = (await db.user.create({ data: { email: 'frozen-' + stamp + '@example.test', name: 'Fixture', passwordHash: 'fixture-only' } })).id;
   providerId = (await db.provider.create({ data: { key: 'frozen-' + stamp, name: 'MOCK fixture' } })).id;
-  modelId = (await db.model.create({ data: { providerId, modelKey: 'original-' + stamp, capabilityKeys: [capabilityKey], quality: 90, latencyMs: 5, costCentsPerUnit: 5, license: 'commercial', qualified: true } })).id;
-  agentId = (await db.agentDefinition.create({ data: { key: 'frozen-' + stamp, name: 'Directeur fixture', role: 'director', capabilityRequirements: [{ capabilityKey, minQuality: 80, allowedLicenses: ['commercial'] }] } })).id;
+  modelId = (await db.model.create({ data: { providerId, modelKey: 'original-' + stamp, capabilityKeys: [capabilityKey, 'scene.generate'], quality: 90, latencyMs: 5, costCentsPerUnit: 5, license: 'commercial', qualified: true } })).id;
+  agentId = (await db.agentDefinition.create({ data: { key: 'frozen-' + stamp, name: 'Directeur fixture', role: 'director', capabilityRequirements: [capabilityKey, 'scene.generate'].map((key) => ({ capabilityKey: key, minQuality: 80, allowedLicenses: ['commercial'] })) } })).id;
   const content = { soul: 'MOCK directeur initial', instructions: 'Instructions initiales', guardrails: ['Aucun appel externe'] };
   configChecksum = agentConfigChecksum(content);
   configId = (await db.agentConfigVersion.create({ data: { agentId, version: 1, ...content, checksum: configChecksum } })).id;
@@ -63,13 +63,19 @@ it('refuse une resolution sans politique historique et ne consulte pas le catalo
 });
 async function resetFixture() {
   process.env.DURABLE_AGENT_KEY = 'frozen-' + stamp;
-  await db.agentDefinition.update({ where: { id: agentId }, data: { activeConfigVersionId: configId, capabilityRequirements: [{ capabilityKey, minQuality: 80, allowedLicenses: ['internal', 'commercial'] }] } });
+  await db.agentDefinition.update({ where: { id: agentId }, data: { activeConfigVersionId: configId, capabilityRequirements: [capabilityKey, 'scene.generate'].map((key) => ({ capabilityKey: key, minQuality: 80, allowedLicenses: ['internal', 'commercial'] })) } });
   await db.model.update({ where: { id: modelId }, data: { active: true, costCentsPerUnit: 5, license: 'commercial' } });
 }
 it('ne permet pas d augmenter le plafond capture depuis le worker', async () => {
-  await resetFixture(); const { project, run } = await start('organic', 3); const invoke = vi.fn();
-  await expect(new DurableRoutingService(db, undefined, { invoke }).resolve({ jobRunId: run.id, projectId: project.id, capabilityKey, budgetCents: 1000, input: {}, idempotencyKey: 'budget:' + run.id })).rejects.toMatchObject({ code: 'no_route' });
-  expect(invoke).not.toHaveBeenCalled();
+  await resetFixture();
+  const expensive = await db.model.create({ data: { providerId, modelKey: 'expensive-' + stamp, capabilityKeys: [capabilityKey, 'scene.generate'], quality: 100, latencyMs: 1, costCentsPerUnit: 20, license: 'commercial', qualified: true } });
+  try {
+    const { project, run } = await start('organic', 5);
+    const invoke = vi.fn(async (input) => ({ output: {}, providerKey: input.providerKey, modelKey: input.modelKey, costCents: 5, latencyMs: 5, mock: true as const }));
+    const result = await new DurableRoutingService(db, undefined, { invoke }).resolve({ jobRunId: run.id, projectId: project.id, capabilityKey, budgetCents: 1000, input: {}, idempotencyKey: 'budget:' + run.id });
+    expect(result).toMatchObject({ modelId, actualCents: 5, policy: { budgetCents: 5 } });
+    expect(invoke).toHaveBeenCalledWith(expect.objectContaining({ modelKey: 'original-' + stamp }));
+  } finally { await db.model.update({ where: { id: expensive.id }, data: { active: false } }); }
 });
 it('ne lit pas une injection de panne ajoutee dans l environnement apres lancement', async () => {
   await resetFixture(); const previous = process.env.DURABLE_MOCK_FAIL_MODEL;
@@ -84,10 +90,10 @@ it('ne lit pas une injection de panne ajoutee dans l environnement apres lanceme
 it.each(['usage', 'agent'])('intersecte les droits du modele avec la contrainte $0', async (constraint) => {
   await resetFixture();
   if (constraint === 'usage') await db.model.update({ where: { id: modelId }, data: { license: 'internal' } });
-  else await db.agentDefinition.update({ where: { id: agentId }, data: { capabilityRequirements: [{ capabilityKey, allowedLicenses: ['internal'] }] } });
-  const { project, run } = await start(constraint === 'usage' ? 'sponsored' : 'organic'); const invoke = vi.fn();
-  await expect(new DurableRoutingService(db, undefined, { invoke }).resolve({ jobRunId: run.id, projectId: project.id, capabilityKey, budgetCents: 100, input: {}, idempotencyKey: 'rights:' + run.id })).rejects.toMatchObject({ code: 'no_route' });
-  expect(invoke).not.toHaveBeenCalled();
+  else await db.agentDefinition.update({ where: { id: agentId }, data: { capabilityRequirements: [capabilityKey, 'scene.generate'].map((key) => ({ capabilityKey: key, minQuality: 80, allowedLicenses: ['internal'] })) } });
+  const before = await db.jobRun.count({ where: { project: { userId } } });
+  await expect(start(constraint === 'usage' ? 'sponsored' : 'organic')).rejects.toMatchObject({ code: 'no_route' });
+  expect(await db.jobRun.count({ where: { project: { userId } } })).toBe(before);
 });
 it('verifie le projet et le checksum du run avant toute invocation', async () => {
   await resetFixture(); const a = await start(); const b = await start(); const invoke = vi.fn(); const routing = new DurableRoutingService(db, undefined, { invoke });

@@ -25,7 +25,11 @@ test('brief confirme : profil reel, revisions et storyboard perime', async ({ pa
   await page.getByLabel('Style de simulation', { exact: true }).selectOption('bold');
   await page.getByLabel('Direction artistique simulée', { exact: true }).fill('Plan produit');
   await page.getByLabel('Durée par défaut d’une scène (secondes)').fill('1');
+  await page.getByLabel('Plafond du run en centimes MOCK').fill('0');
   await page.getByTestId('brief-save').click();
+  await expect(page.getByTestId('production-plan')).toContainText('Plan et estimation MOCK');
+  await expect(page.getByTestId('plan-estimate')).toHaveText('Estimation indicative : 0 centimes MOCK. Plafond du brief : 0 centimes MOCK.');
+  expect((await page.getByRole('button', { name: 'Recalculer le plan', exact: true }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
   await expect(page.getByTestId('brief-confirm')).toBeEnabled();
   await expect(page.getByTestId('storyboard-generate')).toBeDisabled();
   await page.getByTestId('brief-confirm').click();

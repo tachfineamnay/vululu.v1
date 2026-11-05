@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, patchJson, postJson, MasterVersion, ProjectBundle } from '../lib/api';
+import { api, patchJson, postJson, MasterVersion, ProjectBundle, type ProductionPlanView } from '../lib/api';
 import StudioNav from './StudioNav';
 
 const statusLabels: Record<string, string> = {
@@ -19,6 +19,8 @@ const statusLabels: Record<string, string> = {
 };
 
 const stepLabels: Record<string, string> = {
+  snapshot: 'Capture des paramètres',
+  'correct-scene': 'Correction de la scène',
   'validate-snapshot': 'Validation du snapshot',
   'resolve-capabilities': 'Resolution des capacites',
   'render-scenes': 'Rendu des 5 scenes',
@@ -75,6 +77,10 @@ export default function ProjectStudio({ id }: { id: string }) {
   const [briefTone, setBriefTone] = useState('');
   const [briefCta, setBriefCta] = useState('');
   const [productionSettings, setProductionSettings] = useState<import('@vululu/contracts').ProductionSettings | null>(null);
+  const [plan, setPlan] = useState<ProductionPlanView | null>(null);
+  const [planError, setPlanError] = useState('');
+  const planBriefVersion = bundle?.brief?.version;
+  const planDurationKey = bundle?.scenes.map((scene) => scene.durationSeconds).join(',');
   const settingsLoaded = useRef(false);
   const briefLoaded = useRef(false);
   const bundleRef = useRef<ProjectBundle | null>(null);
@@ -82,6 +88,16 @@ export default function ProjectStudio({ id }: { id: string }) {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const correctionRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!planBriefVersion) return;
+    let cancelled = false;
+    setPlan(null); setPlanError('');
+    void api<{ plan: ProductionPlanView }>('/api/projects/' + id + '/production-plan').then((result) => {
+      if (!cancelled) setPlan(result.plan);
+    }).catch((err: unknown) => { if (!cancelled) setPlanError(err instanceof Error ? err.message : 'Plan indisponible.'); });
+    return () => { cancelled = true; };
+  }, [id, planBriefVersion, planDurationKey]);
 
   function notify(message: string, tone: 'success' | 'error' = 'success'): void {
     setToast({ id: Date.now(), message, tone });
@@ -179,11 +195,21 @@ export default function ProjectStudio({ id }: { id: string }) {
     if (!bundle?.brief) return;
     const revision = bundle.brief.revisions.find((value) => value.version === bundle.brief!.version);
     if (!revision) return;
-    await runAction('brief-confirm', () => postJson('/api/projects/' + id + '/brief/confirm', { version: revision.version, checksum: revision.checksum }), 'Version exacte du brief confirmée.');
+    await runAction('brief-confirm', async () => {
+      await reviewCurrentPlan();
+      return postJson('/api/projects/' + id + '/brief/confirm', { version: revision.version, checksum: revision.checksum });
+    }, 'Version exacte du brief confirmée.');
+  }
+
+  async function reviewCurrentPlan() {
+    const result = await api<{ plan: ProductionPlanView }>('/api/projects/' + id + '/production-plan');
+    setPlan(result.plan); setPlanError('');
+    if (!result.plan.ready) throw new Error(result.plan.issues[0]?.message ?? 'Ce plan ne peut pas être lancé.');
+    if (!plan || result.plan.checksum !== plan.checksum) throw new Error('Le plan a évolué. Relisez-le avant de confirmer ou de lancer la production.');
   }
 
   async function produce() {
-    await runAction('produce', () => postJson('/api/projects/' + id + '/produce', {}), 'Production lancee. Suivez les etapes ci-dessous.');
+    await runAction('produce', async () => { await reviewCurrentPlan(); return postJson('/api/projects/' + id + '/produce', {}); }, 'Production lancee. Suivez les etapes ci-dessous.');
   }
 
   async function correctScene() {
@@ -243,7 +269,8 @@ export default function ProjectStudio({ id }: { id: string }) {
   const briefConfirmed = Boolean(bundle.brief && bundle.brief.confirmedVersion === bundle.brief.version && bundle.brief.confirmedChecksum === bundle.brief.revisions.find((value) => value.version === bundle.brief!.version)?.checksum);
   const canonical = (value: unknown) => JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.keys(item).sort().map((key) => [key, item[key]])) : item);
   const briefDirty = Boolean(bundle.brief && (briefObjective !== bundle.brief.objective || briefAudience !== bundle.brief.audience || briefTone !== bundle.brief.tone || briefCta !== bundle.brief.cta || canonical(productionSettings) !== canonical(bundle.brief.settings)));
-  const canProduce = bundle.scenes.length === 5 && briefConfirmed && bundle.project.storyboardBriefVersion === bundle.brief?.version && !briefDirty && !busy;
+  const planReady = plan?.ready && plan.briefVersion === bundle.brief?.version;
+  const canProduce = bundle.scenes.length === 5 && briefConfirmed && bundle.project.storyboardBriefVersion === bundle.brief?.version && planReady && !briefDirty && !busy;
   const job = bundle.job;
   const jobRun = bundle.jobRun;
   const checks = qaChecks(activeMaster);
@@ -344,13 +371,28 @@ export default function ProjectStudio({ id }: { id: string }) {
                 <label className="label">Direction artistique simulée<textarea aria-label="Direction artistique simulée" className="input" value={productionSettings.direction} maxLength={1000} disabled={Boolean(busy)} onChange={(e) => setProductionSettings({ ...productionSettings, direction: e.target.value })} /></label>
                 <p className="hint">La direction fait varier le décor de façon déterministe. Aucun modèle IA n’interprète le texte.</p>
                 <label className="label">Durée par défaut d’une scène (secondes)<input className="input" type="number" min={1} max={15} value={productionSettings.defaultSceneDurationSeconds} disabled={Boolean(busy)} onChange={(e) => setProductionSettings({ ...productionSettings, defaultSceneDurationSeconds: Number(e.target.value) })} /></label>
+                <label className="label">Plafond du run en centimes MOCK<input className="input" type="number" min={0} max={100000} step={1} value={productionSettings.maxMockCents} disabled={Boolean(busy)} onChange={(e) => setProductionSettings({ ...productionSettings, maxMockCents: Number(e.target.value) })} /></label>
                 <p className="hint">Voix et musique : fichiers et mix en cours de qualification. Cette tranche produit une piste silencieuse.</p>
               </fieldset> : null}
               <button className="btn btn-secondary" data-testid="brief-save" type="submit" disabled={Boolean(busy)}>
                 {bundle.brief ? 'Enregistrer une nouvelle révision' : 'Enregistrer le brouillon du brief'}
               </button>
             </form>
-            {bundle.brief ? <div className="stack"><p className="hint">{briefConfirmed ? 'Version exacte confirmée.' : 'Relisez cette version puis confirmez-la avant le lancement.'}{briefDirty ? ' Enregistrez d’abord vos modifications.' : ''}</p><button type="button" className="btn btn-secondary" data-testid="brief-confirm" disabled={briefConfirmed || briefDirty || Boolean(busy) || !bundle.brief.revisions.length} onClick={confirmBrief}>Confirmer la version {bundle.brief.version} du brief</button></div> : null}
+            {bundle.brief ? <section className="production-plan stack" aria-labelledby="production-plan-heading" data-testid="production-plan">
+              <h3 id="production-plan-heading">Plan et estimation MOCK</h3>
+              <button className="btn btn-ghost btn-small" type="button" disabled={Boolean(busy)} onClick={() => runAction('plan', async () => {
+                const result = await api<{ plan: ProductionPlanView }>('/api/projects/' + id + '/production-plan'); setPlan(result.plan); setPlanError('');
+              })}>Recalculer le plan</button>
+              {briefDirty ? <p className="hint">Enregistrez vos modifications pour actualiser ce plan.</p> : null}
+              {planError ? <p className="error" role="alert">{planError}</p> : plan ? <>
+                <p>{plan.sceneCount} scènes · {plan.durationSeconds} s · {plan.ratio}</p>
+                <p data-testid="plan-estimate">Estimation indicative : {plan.pricing.estimatedCents} centimes MOCK. Plafond du brief : {plan.pricing.ceilingCents} centimes MOCK.</p>
+                <p className="hint">{plan.executionMode === 'local' ? 'Rendu local sans invocation fournisseur.' : 'Routage simulé avec fallback admissible. Maximum du scénario : ' + plan.pricing.maxPossibleCents + ' centimes MOCK.'} Aucun paiement réel.</p>
+                <ol>{plan.steps.map((step) => <li key={step.key}>{stepLabel(step.key)}<span className="hint">{step.dependsOn.length ? ' — après ' + step.dependsOn.map(stepLabel).join(', ') : ' — début du plan'}</span></li>)}</ol>
+                {!plan.ready ? <ul role="alert">{plan.issues.map((issue) => <li key={issue.code}>{issue.message}</li>)}</ul> : null}
+              </> : <p role="status">Calcul du plan…</p>}
+            </section> : null}
+            {bundle.brief ? <div className="stack"><p className="hint">{briefConfirmed ? 'Version exacte confirmée.' : 'Relisez le plan et cette version puis confirmez le brief et son plafond avant le lancement.'}{briefDirty ? ' Enregistrez d’abord vos modifications.' : ''}</p><button type="button" className="btn btn-secondary" data-testid="brief-confirm" disabled={briefConfirmed || briefDirty || Boolean(busy) || !planReady || !bundle.brief.revisions.length} onClick={confirmBrief}>Confirmer la version {bundle.brief.version} du brief</button></div> : null}
             {bundle.brief && bundle.brief.revisions.length > 0 ? (
               <details className="history-details">
                 <summary>Historique des revisions ({bundle.brief.revisions.length})</summary>

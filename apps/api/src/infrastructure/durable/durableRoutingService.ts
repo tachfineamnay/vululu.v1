@@ -3,10 +3,8 @@ import { prisma } from '@vululu/db';
 import {
   routeCapability,
   contentChecksum,
-  type CapabilityRequirement,
-  type LicenseType
 } from '@vululu/domain';
-import { ApplicationError } from '@vululu/application';
+import { ApplicationError, frozenRouteInputs } from '@vululu/application';
 import type {
   CapabilityProviderPort,
   DurableRoutingPort,
@@ -47,18 +45,8 @@ export class DurableRoutingService implements DurableRoutingPort {
     const policy = snapshot?.executionPolicy;
     if (!policy) throw new ApplicationError('routing_snapshot_required', 'La politique historique manque ; créez un nouveau run après relecture.', 409);
     if (!run?.snapshotChecksum || contentChecksum(snapshot) !== run.snapshotChecksum) throw new ApplicationError('snapshot_invalid', 'Snapshot de routage altéré.', 409);
-    if (!Number.isInteger(input.budgetCents) || input.budgetCents < 0) throw new ApplicationError('invalid_budget', 'Plafond MOCK invalide.', 400);
     const config = policy.agent.config;
-    const configured = policy.agent.capabilityRequirements.find((value) => value.capabilityKey === input.capabilityKey);
-    if (policy.agent.definitionId && !configured) throw new ApplicationError('capability_not_allowed', 'Capacité absente de la politique de cet agent.', 409);
-    const usageLicenses: LicenseType[] = policy.usage === 'sponsored' ? ['commercial'] : ['internal', 'commercial'];
-    const requirement: CapabilityRequirement = {
-      ...configured,
-      capabilityKey: input.capabilityKey,
-      allowedLicenses: usageLicenses.filter((license) => !configured?.allowedLicenses || configured.allowedLicenses.includes(license))
-    };
-    const models = policy.models.filter((model) => model.capabilityKeys.includes(input.capabilityKey));
-    const budgetCents = Math.min(input.budgetCents, policy.maxMockCents);
+    const { models, requirement, budgetCents } = frozenRouteInputs(policy, input.capabilityKey, input.budgetCents);
     const provider = this.provider ?? new MockCapabilityProvider(this.failedModelKeys ?? new Set(policy.mockFailedModelKeys));
     const invocationInput = { ...input.input, agentConfig: config, mock: true };
     if (models.length === 0) {

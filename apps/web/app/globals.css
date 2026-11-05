@@ -612,6 +612,11 @@ select {
 
 .qa-list .list-row > :last-child { grid-column: 2; }
 .production-profile { min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+.production-plan { min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-block: 14px; }
+.production-plan h3, .production-plan p { margin: 0; }
+.production-plan ol { padding-left: 20px; margin: 0; }
+.production-plan li { margin-block: 8px; overflow-wrap: anywhere; }
+.production-plan .btn { min-height: 44px; }
 
 .dot {
   width: 9px;

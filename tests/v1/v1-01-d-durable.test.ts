@@ -23,6 +23,7 @@ import {
   DURABLE_PRODUCTION_STEPS
 } from '@vululu/application';
 import { env } from '../../apps/api/src/env';
+import { ensureMockSceneCatalog } from '../helpers/mockSceneCatalog';
 import {
   DurableRoutingService,
   OutboxDispatcher,
@@ -212,6 +213,7 @@ beforeAll(async () => {
     }
   });
   userId = user.id;
+  await ensureMockSceneCatalog(prisma);
   const project = await createProject('Projet D ' + RUN_ID);
   projectId = project.id;
 });

@@ -11,6 +11,7 @@ import {
   BriefConfirmationUseCases,
   MessageUseCases,
   ProductionUseCases,
+  ProductionPlanningUseCases,
   ProjectBundleUseCases,
   ProjectUseCases,
   ProviderCatalogUseCases,
@@ -53,6 +54,7 @@ import {
 } from '../infrastructure';
 import { PrismaCampaignRepository } from '../infrastructure/prisma/campaignRepository';
 import { PrismaAssetRepository } from '../infrastructure/prisma/assetRepository';
+import { PrismaProductionPlanning } from '../infrastructure/prisma/productionPlanning';
 import { inspectAsset } from '@vululu/media';
 import { PrismaContextReviewStore } from '../infrastructure/prisma/contextReviewStore';
 import { DeterministicContextAnalyzer } from '../infrastructure/providers/deterministicContextAnalyzer';
@@ -98,6 +100,7 @@ export const assets = new AssetUseCases(new PrismaAssetRepository(), contextRepo
 export const projects = new ProjectUseCases(projectRepository, contextRepository, clock, ids);
 export const briefs = new BriefUseCases(projectRepository, briefStore, clock, ids, audit);
 export const briefConfirmations = new BriefConfirmationUseCases(projectRepository, briefStore, audit, clock);
+export const productionPlanning = new ProductionPlanningUseCases(projectRepository, new PrismaProductionPlanning());
 export const storyboards = new StoryboardUseCases(
   projectRepository,
   briefStore,

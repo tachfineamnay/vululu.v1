@@ -1,4 +1,11 @@
 import type { ProductionSettings } from '@vululu/contracts';
+export type ProductionPlanView = {
+  mode: 'MOCK'; executionMode: 'local' | 'hatchet'; briefVersion: number; checksum: string;
+  ready: boolean; sceneCount: number; durationSeconds: number; ratio: string;
+  pricing: { estimatedCents: number; maxPossibleCents: number; ceilingCents: number };
+  steps: Array<{ key: string; dependsOn: string[]; capability: string }>;
+  issues: Array<{ code: string; message: string }>;
+};
 export type SessionUser = {
   id: string;
   email: string;

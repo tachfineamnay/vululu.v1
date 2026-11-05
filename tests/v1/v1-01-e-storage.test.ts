@@ -13,6 +13,7 @@ vi.hoisted(() => {
 
 import { prisma } from '@vululu/db';
 import { env } from '../../apps/api/src/env';
+import { ensureMockSceneCatalog } from '../helpers/mockSceneCatalog';
 import type {
   DurableRoutingPort,
   MasterRenderRequest,
@@ -149,6 +150,7 @@ beforeAll(async () => {
     stdio: 'pipe'
   });
   await prisma.$executeRawUnsafe('SELECT 1');
+  await ensureMockSceneCatalog(prisma);
 });
 
 afterAll(async () => {

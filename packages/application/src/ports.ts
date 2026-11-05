@@ -287,6 +287,7 @@ export type BriefInput = {
 };
 
 export type ReproducibilitySnapshot = {
+  plan?: ProductionPlan;
   executionPolicy?: RunExecutionPolicy;
   schemaVersion: 1;
   capturedAt: string;
@@ -751,6 +752,17 @@ export type RunExecutionPolicy = {
   agent: { definitionId: string | null; key: string; config: Omit<AgentConfigVersionRecord, 'createdAt'> | null; capabilityRequirements: AgentCapabilityRequirementRecord[] };
   models: Array<Omit<ModelRecord, 'createdAt'>>;
 };
+
+export type ProductionPlan = {
+  schemaVersion: 1; mode: 'MOCK'; executionMode: 'local' | 'hatchet'; workflowVersion: string;
+  briefVersion: number; format: string; ratio: string; sceneCount: number; durationSeconds: number;
+  steps: Array<{ key: string; dependsOn: string[]; capability: string }>;
+  pricing: { estimatedCents: number; maxPossibleCents: number; ceilingCents: number };
+  ready: boolean; issues: Array<{ code: string; message: string }>; checksum: string;
+};
+export interface ProductionPlanningPort {
+  previewOwned(userId: string, projectId: string): Promise<ProductionPlan>;
+}
 
 export type RouteDecisionRecord = {
   id: string;

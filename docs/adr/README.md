@@ -42,6 +42,7 @@ Chaque décision suit [template.md](template.md) :
 | [0019](0019-brief-confirme-et-profils-demo.md) | Brief confirmé et profils de production démo | Acceptée pour mise en œuvre lot 6 ; qualification média au lot 7 | 2026-11-04 |
 | [0020](0020-dependances-brief-storyboard-master.md) | Dépendances exactes brief, storyboard et master | Acceptée pour le lot 6 | 2026-11-04 |
 | [0021](0021-politique-execution-figee-au-lancement.md) | Politique d’exécution figée au lancement | Acceptée pour la tranche 6B | 2026-11-04 |
+| [0022](0022-plan-et-plafond-mock-avant-run.md) | Plan indicatif et plafond MOCK avant run | Acceptée pour la tranche 6C | 2026-11-05 |
 
 ## Décisions encore ouvertes
 

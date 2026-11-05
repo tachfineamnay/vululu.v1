@@ -59,7 +59,7 @@ export class BriefUseCases {
     if (input.platform !== project.platform || input.format !== project.format) throw new ApplicationError('brief_project_mismatch', 'Le réseau et le format doivent correspondre au projet.', 400);
     const existing = await this.briefs.findWithRevisions(projectId);
     const { settings: incomingSettings, ...fields } = input;
-    const settings = incomingSettings === undefined ? existing?.settings : normalizeProductionSettings(input.platform, input.format, incomingSettings);
+    const settings = incomingSettings === undefined ? existing?.settings ?? normalizeProductionSettings(input.platform, input.format, { defaultSceneDurationSeconds: project.sceneDurationSeconds }) : normalizeProductionSettings(input.platform, input.format, incomingSettings);
     const content = snapshotBriefContent({ ...fields, ...(settings ? { settings } : {}) }) as BriefContentRecord;
     const createdAt = this.clock.now().toISOString();
     let briefId: string;
