@@ -153,6 +153,13 @@ test('verticale Studio V1 complete (deterministe, correction ciblee, MOCK)', asy
   });
   expect(videoDuration).toBeGreaterThanOrEqual(9);
   expect(videoDuration).toBeLessThanOrEqual(11);
+  const masterUrl = await masterVideo.evaluate((element) => (element as HTMLVideoElement).currentSrc);
+  const range = await page.request.get(masterUrl, { headers: { Range: 'bytes=0-31' } });
+  expect(range.status()).toBe(206);
+  expect(range.headers()['content-range']).toMatch(/^bytes 0-31\/\d+$/);
+  expect((await range.body()).length).toBe(32);
+  const byteLength = Number(range.headers()['content-range'].split('/')[1]);
+  expect((await page.request.get(masterUrl, { headers: { Range: `bytes=${byteLength}-` } })).status()).toBe(416);
 
   await page.locator('[data-testid=approve]').click();
   await expect(page.locator('[data-testid=approval-status]')).toBeVisible();

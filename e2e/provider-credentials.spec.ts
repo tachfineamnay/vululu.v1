@@ -9,7 +9,7 @@ test('admin : ajouter, remplacer et supprimer une cle IA ; demo sans acces', asy
   await login(process.env.ADMIN_EMAIL!, process.env.ADMIN_PASSWORD!);
   if (process.env.E2E_EXPECT_SECURE === '1') {
     const cookies = await page.context().cookies();
-    expect(cookies.find((cookie) => cookie.name === 'vululu_session')).toMatchObject({ secure: true, httpOnly: true, sameSite: 'Lax' });
+    expect(cookies.find((cookie) => cookie.name === 'session')).toMatchObject({ secure: true, httpOnly: true, sameSite: 'Lax' });
   }
   const csrf = await page.evaluate(() => decodeURIComponent(document.cookie.split('; ').find((part) => part.startsWith('vululu_csrf='))?.split('=')[1] ?? ''));
   const headers = { 'x-csrf-token': csrf }; const providerKey = 'e2e-credentials-' + Date.now();
