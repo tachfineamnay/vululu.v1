@@ -1,9 +1,11 @@
 import {
   routeCapability,
+  DomainError,
   type ModelDefinition as DomainModel,
   type RouteDecision
 } from '@vululu/domain';
 import { ApplicationError } from '../errors';
+import { invokeCapability } from '../invokeCapability';
 import type {
   Actor,
   AuditPort,
@@ -126,28 +128,25 @@ export class RoutingUseCases {
     let model = selected;
     let usedFallback = false;
     let result: CapabilityResult;
+    const invoke = async (candidate: ModelRecord) => {
+      const value = await invokeCapability(this.provider, { providerKey: candidate.providerKey, modelKey: candidate.modelKey, capabilityKey: requirement.capabilityKey, input });
+      if (options.budgetCents !== undefined && value.costCents > options.budgetCents) throw new ApplicationError('budget_exceeded', 'Le coût MOCK reçu dépasse le plafond.', 409);
+      return value;
+    };
     try {
-      result = await this.provider.invoke({
-        providerKey: model.providerKey,
-        modelKey: model.modelKey,
-        capabilityKey: requirement.capabilityKey,
-        input
-      });
+      result = await invoke(model);
     } catch (primaryError) {
       usedFallback = true;
-      const retry = await this.decide(actor, requirement, options.budgetCents, [model.id]);
+      let retry: Awaited<ReturnType<RoutingUseCases['decide']>>;
+      try { retry = await this.decide(actor, requirement, options.budgetCents, [model.id]); }
+      catch (error) { if (error instanceof DomainError && error.code === 'no_route') throw primaryError; throw error; }
       const fallback = retry.models.find((item) => item.id === retry.record.selectedModelId);
       if (!fallback) {
         throw primaryError;
       }
       decision = retry.record;
       model = fallback;
-      result = await this.provider.invoke({
-        providerKey: model.providerKey,
-        modelKey: model.modelKey,
-        capabilityKey: requirement.capabilityKey,
-        input
-      });
+      result = await invoke(model);
     }
     await this.costs.record({
       projectId: options.projectId ?? null,

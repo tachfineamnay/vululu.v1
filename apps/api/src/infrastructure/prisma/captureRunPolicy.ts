@@ -1,6 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import { agentConfigChecksum, assertLicenseType } from '@vululu/domain';
-import { ApplicationError, type RunExecutionPolicy } from '@vululu/application';
+import { ApplicationError, DEFAULT_INVOCATION_TIMEOUT_MS, type RunExecutionPolicy } from '@vululu/application';
 
 /** Appelée dans la transaction sérialisable de lancement, jamais par le worker. */
 export async function captureRunPolicy(tx: Prisma.TransactionClient, input: { steps: string[]; durable: boolean; usage: string; maxMockCents: number }): Promise<RunExecutionPolicy> {
@@ -13,6 +13,9 @@ export async function captureRunPolicy(tx: Prisma.TransactionClient, input: { st
   return {
     schemaVersion: 1, mode: 'MOCK',
     mockFailedModelKeys: (process.env.DURABLE_MOCK_FAIL_MODEL || '').split(',').map((value) => value.trim()).filter(Boolean),
+    mockTimeoutModelKeys: (process.env.DURABLE_MOCK_TIMEOUT_MODEL || '').split(',').map((value) => value.trim()).filter(Boolean),
+    mockInvalidModelKeys: (process.env.DURABLE_MOCK_INVALID_MODEL || '').split(',').map((value) => value.trim()).filter(Boolean),
+    invocationTimeoutMs: DEFAULT_INVOCATION_TIMEOUT_MS,
     workflow: { version: 'v1-demo-workflow-2026-11-04', engine: input.durable ? 'hatchet' : 'local', steps: input.steps.map((step, index) => ({ key: step, dependsOn: index ? [input.steps[index - 1]] : [] })) },
     usage: input.usage === 'sponsored' ? 'sponsored' : 'organic', maxMockCents: input.maxMockCents,
     agent: { definitionId: definition?.id ?? null, key,

@@ -75,25 +75,21 @@ export async function buildServer() {
   await registerAuth(app);
 
   app.setErrorHandler((error, request, reply) => {
-    logEvent('error', 'http.request.failed', {
-      requestId: request.requestId,
-      traceId: request.traceId,
-      method: request.method,
-      route: request.routeOptions?.url ?? request.url,
-      statusCode: (error as { statusCode?: number }).statusCode ?? 500,
-      errorCode: (error as { code?: string }).code ?? 'internal_error'
-    });
+    const respond = (statusCode: number, body: { error: string; message: string; issues?: unknown }) => {
+      logEvent('error', 'http.request.failed', { requestId: request.requestId, traceId: request.traceId, method: request.method, route: request.routeOptions?.url ?? request.url, statusCode, errorCode: body.error });
+      return reply.code(statusCode).send(body);
+    };
     if (error instanceof HttpError) {
-      return reply.code(error.statusCode).send({ error: error.code, message: error.message });
+      return respond(error.statusCode, { error: error.code, message: error.message });
     }
     if (error instanceof ApplicationError) {
-      return reply.code(error.statusCode).send({ error: error.code, message: error.message });
+      return respond(error.statusCode, { error: error.code, message: error.message });
     }
     if (error instanceof DomainError) {
-      return reply.code(400).send({ error: 'domain_validation', message: error.message });
+      return respond(400, { error: 'domain_validation', message: error.message });
     }
     if (error instanceof z.ZodError) {
-      return reply.code(400).send({
+      return respond(400, {
         error: 'validation_error',
         message: 'Donnees invalides.',
         issues: error.issues
@@ -102,13 +98,13 @@ export async function buildServer() {
     const fastifyError = error as { statusCode?: number; code?: string };
     const statusCode = typeof fastifyError.statusCode === 'number' ? fastifyError.statusCode : 500;
     if (statusCode >= 400 && statusCode < 500) {
-      return reply.code(statusCode).send({
+      return respond(statusCode, {
         error: fastifyError.code || 'request_error',
         message: statusCode === 400 ? 'Requete invalide.' : 'Requete refusee.'
       });
     }
     request.log.error(error);
-    return reply.code(500).send({ error: 'internal_error', message: 'Erreur interne.' });
+    return respond(500, { error: 'internal_error', message: 'Erreur interne.' });
   });
 
   await app.register(authRoutes);

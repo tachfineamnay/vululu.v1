@@ -3,8 +3,9 @@ import { prisma } from '@vululu/db';
 import {
   routeCapability,
   contentChecksum,
+  DomainError,
 } from '@vululu/domain';
-import { ApplicationError, frozenRouteInputs } from '@vululu/application';
+import { ApplicationError, frozenRouteInputs, invokeCapability } from '@vululu/application';
 import type {
   CapabilityProviderPort,
   DurableRoutingPort,
@@ -47,7 +48,7 @@ export class DurableRoutingService implements DurableRoutingPort {
     if (!run?.snapshotChecksum || contentChecksum(snapshot) !== run.snapshotChecksum) throw new ApplicationError('snapshot_invalid', 'Snapshot de routage altéré.', 409);
     const config = policy.agent.config;
     const { models, requirement, budgetCents } = frozenRouteInputs(policy, input.capabilityKey, input.budgetCents);
-    const provider = this.provider ?? new MockCapabilityProvider(this.failedModelKeys ?? new Set(policy.mockFailedModelKeys));
+    const provider = this.provider ?? new MockCapabilityProvider(this.failedModelKeys ?? new Set(policy.mockFailedModelKeys), new Set(policy.mockTimeoutModelKeys ?? []), new Set(policy.mockInvalidModelKeys ?? []));
     const invocationInput = { ...input.input, agentConfig: config, mock: true };
     if (models.length === 0) {
       throw new ApplicationError('no_route', 'Aucun modele pour la capacite ' + input.capabilityKey + '.', 409);
@@ -63,33 +64,34 @@ export class DurableRoutingService implements DurableRoutingPort {
     let selected = models.find((model) => model.id === decision.selectedModelId);
     if (!selected) throw new ApplicationError('no_route', 'Modele selectionne introuvable.', 500);
     let usedFallback = false;
+    let primaryFailureCode: string | null = null;
     let result: { providerKey: string; modelKey: string; costCents: number };
     try {
-      result = await provider.invoke({
+      result = await invokeCapability(provider, {
         providerKey: selected.providerKey,
         modelKey: selected.modelKey,
         capabilityKey: input.capabilityKey,
         input: invocationInput
-      });
+      }, policy.invocationTimeoutMs);
     } catch (primaryError) {
       usedFallback = true;
+      primaryFailureCode = primaryError instanceof ApplicationError ? primaryError.code : 'invocation_failed';
       failed.push(selected.id);
-      decision = routeCapability({
-        models,
-        requirement,
-        budgetCents,
-        failedModelIds: failed,
-        decidedAt: new Date().toISOString()
-      });
+      try {
+        decision = routeCapability({ models, requirement, budgetCents, failedModelIds: failed, decidedAt: new Date().toISOString() });
+      } catch (error) {
+        if (error instanceof DomainError && error.code === 'no_route') throw primaryError;
+        throw error;
+      }
       const fallback = models.find((model) => model.id === decision.selectedModelId);
       if (!fallback) throw primaryError;
       selected = fallback;
-      result = await provider.invoke({
+      result = await invokeCapability(provider, {
         providerKey: selected.providerKey,
         modelKey: selected.modelKey,
         capabilityKey: input.capabilityKey,
         input: invocationInput
-      });
+      }, policy.invocationTimeoutMs);
     }
     const saved = await this.routes.saveDecision({
       capabilityKey: decision.capabilityKey,
@@ -114,6 +116,7 @@ export class DurableRoutingService implements DurableRoutingPort {
         catalogueSize: models.length,
         failedModelIds: failed,
         usedFallback,
+        primaryFailureCode,
         budgetCents,
         priceSource: 'frozen-catalogue-MOCK',
         workflowVersion: policy.workflow.version,

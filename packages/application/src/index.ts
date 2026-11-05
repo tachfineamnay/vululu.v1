@@ -2,6 +2,7 @@ export * from './ports';
 export * from './errors';
 export * from './productionSource';
 export * from './productionPlanning';
+export * from './invokeCapability';
 export * from './use-cases/productionPlanning';
 export * from './use-cases/contexts';
 export * from './use-cases/campaigns';

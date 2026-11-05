@@ -78,14 +78,26 @@ it('ne permet pas d augmenter le plafond capture depuis le worker', async () => 
   } finally { await db.model.update({ where: { id: expensive.id }, data: { active: false } }); }
 });
 it('ne lit pas une injection de panne ajoutee dans l environnement apres lancement', async () => {
-  await resetFixture(); const previous = process.env.DURABLE_MOCK_FAIL_MODEL;
+  await resetFixture(); const keys = ['DURABLE_MOCK_FAIL_MODEL', 'DURABLE_MOCK_TIMEOUT_MODEL', 'DURABLE_MOCK_INVALID_MODEL']; const previous = keys.map((key) => process.env[key]);
   try {
-    delete process.env.DURABLE_MOCK_FAIL_MODEL;
+    for (const key of keys) delete process.env[key];
     const { project, run } = await start();
-    process.env.DURABLE_MOCK_FAIL_MODEL = 'original-' + stamp;
+    for (const key of keys) process.env[key] = 'original-' + stamp;
     const result = await new DurableRoutingService(db).resolve({ jobRunId: run.id, projectId: project.id, capabilityKey, budgetCents: 10, input: {}, idempotencyKey: 'env:' + run.id });
     expect(result).toMatchObject({ modelId, usedFallback: false });
-  } finally { if (previous === undefined) delete process.env.DURABLE_MOCK_FAIL_MODEL; else process.env.DURABLE_MOCK_FAIL_MODEL = previous; }
+  } finally { keys.forEach((key, index) => { if (previous[index] === undefined) delete process.env[key]; else process.env[key] = previous[index]; }); }
+});
+it.each(['timeout', 'invalid'])('capture le scenario %s et son delai avant la mise en file puis journalise le fallback', async (scenario) => {
+  await resetFixture(); const key = scenario === 'timeout' ? 'DURABLE_MOCK_TIMEOUT_MODEL' : 'DURABLE_MOCK_INVALID_MODEL'; const previous = process.env[key];
+  const fallback = await db.model.create({ data: { providerId, modelKey: 'fallback-' + scenario + stamp, capabilityKeys: [capabilityKey, 'scene.generate'], quality: 85, latencyMs: 5, costCentsPerUnit: 3, license: 'commercial', qualified: true } });
+  try {
+    process.env[key] = 'original-' + stamp;
+    const { project, run } = await start(); delete process.env[key];
+    expect(run.snapshot).toMatchObject({ executionPolicy: { invocationTimeoutMs: 5000, [scenario === 'timeout' ? 'mockTimeoutModelKeys' : 'mockInvalidModelKeys']: ['original-' + stamp] } });
+    const routed = await new DurableRoutingService(db).resolve({ jobRunId: run.id, projectId: project.id, capabilityKey, budgetCents: 1000, input: {}, idempotencyKey: scenario + ':' + run.id });
+    expect(routed).toMatchObject({ modelId: fallback.id, actualCents: 3, usedFallback: true, policy: { primaryFailureCode: scenario === 'timeout' ? 'invocation_timeout' : 'invocation_invalid_result', priceSource: 'frozen-catalogue-MOCK' } });
+    expect(await db.jobRun.findUniqueOrThrow({ where: { id: run.id } })).toMatchObject({ snapshot: run.snapshot, snapshotChecksum: run.snapshotChecksum });
+  } finally { if (previous === undefined) delete process.env[key]; else process.env[key] = previous; await db.model.update({ where: { id: fallback.id }, data: { active: false } }); }
 });
 it.each(['usage', 'agent'])('intersecte les droits du modele avec la contrainte $0', async (constraint) => {
   await resetFixture();

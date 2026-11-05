@@ -757,6 +757,9 @@ export type RunExecutionPolicy = {
   schemaVersion: 1;
   mode: 'MOCK';
   mockFailedModelKeys: string[];
+  mockTimeoutModelKeys?: string[];
+  mockInvalidModelKeys?: string[];
+  invocationTimeoutMs?: number;
   workflow: { version: 'v1-demo-workflow-2026-11-04'; engine: 'local' | 'hatchet'; steps: Array<{ key: string; dependsOn: string[] }> };
   usage: 'organic' | 'sponsored';
   maxMockCents: number;
@@ -787,6 +790,7 @@ export type RouteDecisionRecord = {
 };
 
 export type CapabilityInvocation = {
+  signal?: AbortSignal;
   providerKey: string;
   modelKey: string;
   capabilityKey: string;
