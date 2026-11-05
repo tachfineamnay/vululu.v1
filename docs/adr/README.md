@@ -60,3 +60,5 @@ Le registre d’inauguration reste historique. La stack présente est décrite d
 - [Architecture V1](../03_ARCHITECTURE_V1.md)
 - [PRD V1.2](../01_PRD_V1.md)
 - [Cahier des charges V1.2](../02_CAHIER_DES_CHARGES_V1.md)
+
+- [ADR 0028 — Mots de passe de recette](0028-mots-de-passe-de-recette.md)

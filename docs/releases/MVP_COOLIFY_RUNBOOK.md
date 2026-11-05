@@ -53,3 +53,7 @@ En cas de crash pendant une production locale, diagnostiquer le run avant toute 
 Rollback : rétablir le commit/image précédent après arrêt des productions, conserver les volumes et migrations additives. Aucun `down -v`, reset de base ou migration inverse. Une ancienne image peut ignorer les credentials et les nouveaux audits : rétablir le candidat corrigé avant de modifier ces fonctions.
 
 Les résultats exécutés, l’URL et les limites figurent dans [MVP_COOLIFY_ACCEPTANCE.md](MVP_COOLIFY_ACCEPTANCE.md). MCP, IA réelle, Postiz réel, formats supplémentaires et mix audio suivent ce MVP. Le choix des échantillons de voix sous licence libre est conservé.
+
+## Synchroniser les mots de passe de recette
+
+Sur instruction explicite utilisateur (ADR 0028), `RECETTE_ALLOW_SHORT_PASSWORDS=1` autorise des valeurs non vides de 72 octets maximum pour cette recette. Le minimum de 12 caractères reste le défaut des autres amorçages démo. Après modification des deux variables Coolify, activer `RECETTE_RESET_PASSWORDS=1` et déployer le candidat qui contient le service ponctuel `recette-password-reset`. Il vérifie les deux identités, met à jour uniquement leurs hash et révoque leurs sessions. Après succès et vérification des connexions, remettre le drapeau à 0 et remasquer les deux variables. Aucun secret dans les commandes, les logs ou le rapport.

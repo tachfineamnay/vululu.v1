@@ -86,6 +86,7 @@ services:
       <<: *api-env
       DEMO_EMAIL: ${DEMO_EMAIL:-demo@vululu.example}
       DEMO_PASSWORD: ${SERVICE_PASSWORD_64_DEMO}
+      RECETTE_ALLOW_SHORT_PASSWORDS: ${RECETTE_ALLOW_SHORT_PASSWORDS:-0}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -104,6 +105,29 @@ services:
       V1_BOOTSTRAP_PASSWORD: ${SERVICE_PASSWORD_64_ADMIN}
     depends_on:
       migrate:
+        condition: service_completed_successfully
+    networks:
+      - internal
+
+  # Operation ponctuelle : aucun effet lorsque le drapeau vaut 0.
+  recette-password-reset:
+    image: vululu-api:${VULULU_IMAGE_TAG:-latest}
+    restart: "no"
+    command: ["node_modules/.bin/tsx", "scripts/coolify/reset-recette-passwords.ts"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-vululu}:${SERVICE_PASSWORD_64_POSTGRES}@db:5432/${POSTGRES_DB:-vululu}?schema=public
+      ALLOW_NON_LOCAL_DATABASE: "1"
+      DEMO_MODE: ${DEMO_MODE:-0}
+      RECETTE_RESET_PASSWORDS: ${RECETTE_RESET_PASSWORDS:-0}
+      RECETTE_ALLOW_SHORT_PASSWORDS: ${RECETTE_ALLOW_SHORT_PASSWORDS:-0}
+      V1_BOOTSTRAP_EMAIL: ${ADMIN_EMAIL:-admin@vululu.example}
+      V1_BOOTSTRAP_PASSWORD: ${SERVICE_PASSWORD_64_ADMIN}
+      DEMO_EMAIL: ${DEMO_EMAIL:-demo@vululu.example}
+      DEMO_PASSWORD: ${SERVICE_PASSWORD_64_DEMO}
+    depends_on:
+      admin-seed:
+        condition: service_completed_successfully
+      demo-seed:
         condition: service_completed_successfully
     networks:
       - internal
@@ -133,6 +157,8 @@ services:
     volumes:
       - artifacts:/data/artifacts
     depends_on:
+      recette-password-reset:
+        condition: service_completed_successfully
       demo-seed:
         condition: service_completed_successfully
       admin-seed:

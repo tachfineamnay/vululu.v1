@@ -19,7 +19,8 @@ export async function bootstrapDemo(
   if (config.DEMO_MODE !== '1') throw new Error('demo_mode_required');
   const email = (config.DEMO_EMAIL ?? '').trim().toLowerCase();
   const password = config.DEMO_PASSWORD ?? '';
-  if (!z.email().safeParse(email).success || password.length < 12 || Buffer.byteLength(password, 'utf8') > 72) {
+  const minimum = config.RECETTE_ALLOW_SHORT_PASSWORDS === '1' ? 1 : 12;
+  if (!z.email().safeParse(email).success || password.length < minimum || Buffer.byteLength(password, 'utf8') > 72) {
     throw new Error('demo_credentials_invalid');
   }
 

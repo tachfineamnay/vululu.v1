@@ -35,6 +35,12 @@ beforeEach(cleanFixtures);
 afterAll(async () => { await cleanFixtures(); await db.$disconnect(); });
 
 describe('Bootstrap demo isole et non destructif', () => {
+  it('autorise un mot de passe court uniquement sur choix explicite de recette', async () => {
+    const short = 'fixture';
+    await expect(bootstrapDemo(db, { ...env, DEMO_PASSWORD: short })).rejects.toThrow('demo_credentials_invalid');
+    const result = await bootstrapDemo(db, { ...env, DEMO_PASSWORD: short, RECETTE_ALLOW_SHORT_PASSWORDS: '1' });
+    expect(await bcrypt.compare(short, (await db.user.findUniqueOrThrow({ where: { id: result.userId } })).passwordHash)).toBe(true);
+  });
   it('ajoute la campagne fictive sans ecraser une affectation existante au replay', async () => {
     const result = await bootstrapDemo(db, env);
     const initial = await db.project.findUniqueOrThrow({ where: { id: result.projectId } });

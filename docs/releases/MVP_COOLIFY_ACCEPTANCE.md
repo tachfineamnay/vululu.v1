@@ -49,3 +49,7 @@ Compte démo ordinaire : `demo@vululu.example`. Compte admin séparé : `admin@v
 - Docker local s’est arrêté pendant sa propre recette. La qualification Linux a été réalisée sur Coolify. Le premier build distant a révélé le contexte relatif erroné, corrigé dans `b47fece`.
 
 Installation, sauvegarde et rollback : [MVP_COOLIFY_RUNBOOK.md](MVP_COOLIFY_RUNBOOK.md). Rollback de code sans suppression de volume ni migration inverse. Rapports fonctionnels : `docs/execution/MVP_01_LAYOUT.md` et `MVP_02_PROVIDER_CREDENTIALS.md`.
+
+## Changement des mots de passe demandé par l’opérateur
+
+L’utilisateur a remplacé les deux variables dans Coolify et confirmé vouloir conserver des valeurs courtes. ADR 0028 : exception explicite limitée à la recette, reset ponctuel des deux identités amorcées et révocation de leurs sessions. Tests de reset/amorcage : **27 PASS**, 3 fichiers, 75,78 s ; typage et lint ciblé PASS. Le bootstrap normal ne réinitialise toujours aucun compte. Déploiement de synchronisation et vérification des nouvelles connexions : EN COURS.
