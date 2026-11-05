@@ -429,6 +429,8 @@ select {
 }
 
 .message {
+  min-width: 0;
+  overflow-wrap: anywhere;
   max-width: 88%;
   padding: 11px 13px;
   border-radius: 14px;
@@ -617,6 +619,17 @@ select {
 .production-plan ol { padding-left: 20px; margin: 0; }
 .production-plan li { margin-block: 8px; overflow-wrap: anywhere; }
 .production-plan .btn { min-height: 44px; }
+.conversation-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 10px; }
+.conversation-actions .btn, .message-proposal .btn { min-height: 44px; }
+.composer textarea { min-height: 100px; resize: vertical; }
+.message-proposal { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 10px; overflow-wrap: anywhere; }
+.message-proposal dl { margin: 0; }
+.message-proposal dl > div { margin-bottom: 12px; }
+.message-proposal dt { font-weight: 700; }
+.message-proposal dd { margin: 3px 0 0; white-space: pre-wrap; }
+.message-proposal blockquote { margin-inline: 0; white-space: pre-wrap; }
+.message.user p { white-space: pre-wrap; }
+.message-proposal .btn { max-width: 100%; width: 100%; white-space: normal; }
 
 .dot {
   width: 9px;

@@ -3,8 +3,9 @@
 import Link from 'next/link';
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, patchJson, postJson, MasterVersion, ProjectBundle, type ProductionPlanView } from '../lib/api';
+import { api, patchJson, postJson, MasterVersion, ProjectBundle, type ProductionPlanView, type MessageProposal } from '../lib/api';
 import StudioNav from './StudioNav';
+import ConversationProposalCard from './ConversationProposalCard';
 
 const statusLabels: Record<string, string> = {
   draft: 'Brouillon',
@@ -88,6 +89,13 @@ export default function ProjectStudio({ id }: { id: string }) {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const correctionRef = useRef<HTMLInputElement | null>(null);
+  const briefObjectiveRef = useRef<HTMLInputElement | null>(null);
+  const messagesRef = useRef<HTMLDivElement | null>(null);
+  const messageCount = bundle?.messages.length ?? 0;
+
+  useEffect(() => {
+    if (messagesRef.current) messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
+  }, [messageCount]);
 
   useEffect(() => {
     if (!planBriefVersion) return;
@@ -166,8 +174,7 @@ export default function ProjectStudio({ id }: { id: string }) {
     event.preventDefault();
     if (!chatInput.trim()) return;
     const content = chatInput.trim();
-    setChatInput('');
-    await runAction('chat', () => postJson('/api/projects/' + id + '/messages', { content }), 'Message envoye a Vululu.');
+    await runAction('chat', async () => { await postJson('/api/projects/' + id + '/messages', { content }); setChatInput(''); }, 'Message envoye a Vululu.');
   }
 
   async function saveBrief(event: FormEvent) {
@@ -269,6 +276,36 @@ export default function ProjectStudio({ id }: { id: string }) {
   const briefConfirmed = Boolean(bundle.brief && bundle.brief.confirmedVersion === bundle.brief.version && bundle.brief.confirmedChecksum === bundle.brief.revisions.find((value) => value.version === bundle.brief!.version)?.checksum);
   const canonical = (value: unknown) => JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.keys(item).sort().map((key) => [key, item[key]])) : item);
   const briefDirty = Boolean(bundle.brief && (briefObjective !== bundle.brief.objective || briefAudience !== bundle.brief.audience || briefTone !== bundle.brief.tone || briefCta !== bundle.brief.cta || canonical(productionSettings) !== canonical(bundle.brief.settings)));
+  const hasUnsavedBrief = bundle.brief ? briefDirty : Boolean(briefObjective || briefAudience || briefTone || briefCta);
+  const draftValues = { objective: briefObjective, audience: briefAudience, tone: briefTone, cta: briefCta };
+  function proposalIsCurrent(proposal: MessageProposal) {
+    if (!bundle || proposal.schemaVersion !== 1 || proposal.mode !== 'MOCK' || proposal.baseBriefVersion !== (bundle.brief?.version ?? null)) return false;
+    if (proposal.kind === 'brief') {
+      const revision = bundle.brief?.revisions.find((value) => value.version === bundle.brief?.version);
+      return proposal.baseBriefChecksum === (revision?.checksum ?? null)
+        && (proposal.sources.objective !== 'project' || proposal.fields.objective === bundle.project.objective.trim())
+        && (['audience', 'tone'] as const).every((field) => proposal.sources[field] !== 'context' || proposal.fields[field] === bundle.context[field]?.trim());
+    }
+    const version = bundle.scenes.find((scene) => scene.sceneKey === proposal.sceneKey)?.versions[0];
+    return version?.version === proposal.sceneVersion && version?.checksum === proposal.sceneChecksum && bundle.master?.version === proposal.masterVersion && bundle.master?.checksum === proposal.masterChecksum;
+  }
+  function proposalBlockedReason(proposal: MessageProposal) {
+    if (!proposalIsCurrent(proposal)) return 'Proposition ancienne : demandez-en une nouvelle après relecture.';
+    if (hasUnsavedBrief && proposal.kind === 'correction') return 'Enregistrez votre brouillon avant de préparer une correction.';
+    if (proposal.kind === 'brief' && !(['objective', 'audience', 'tone', 'cta'] as const).some((field) => (!hasUnsavedBrief || proposal.sources[field] === 'user' || !draftValues[field].trim()) && draftValues[field] !== proposal.fields[field])) return 'Le brouillon reprend déjà ces valeurs.';
+    if (bundle?.project.status === 'producing') return 'Une production est en cours. Reprenez cette proposition après sa fin.';
+    return busy ? 'Une action est en cours.' : undefined;
+  }
+  function applyProposal(proposal: MessageProposal) {
+    const blocked = proposalBlockedReason(proposal); if (blocked) { notify(blocked, 'error'); return; }
+    if (proposal.kind === 'brief') {
+      const take = (field: keyof typeof draftValues, value: string) => !hasUnsavedBrief || proposal.sources[field] === 'user' || !value.trim() ? proposal.fields[field] : value;
+      setBriefObjective((value) => take('objective', value)); setBriefAudience((value) => take('audience', value)); setBriefTone((value) => take('tone', value)); setBriefCta((value) => take('cta', value));
+      briefObjectiveRef.current?.focus(); notify('Proposition reprise dans le brouillon. Relisez et enregistrez cette version.');
+    } else {
+      setCorrectionScene(proposal.sceneKey); setCorrection(proposal.instruction); correctionRef.current?.focus(); notify('Correction préremplie. Relisez la scène et le master avant le lancement.');
+    }
+  }
   const planReady = plan?.ready && plan.briefVersion === bundle.brief?.version;
   const canProduce = bundle.scenes.length === 5 && briefConfirmed && bundle.project.storyboardBriefVersion === bundle.brief?.version && planReady && !briefDirty && !busy;
   const job = bundle.job;
@@ -325,26 +362,32 @@ export default function ProjectStudio({ id }: { id: string }) {
           <section className="card chat-card" aria-labelledby="chat-heading">
             <div className="section-head">
               <h2 id="chat-heading">Conversation avec Vululu</h2>
-              <span className="pill">Reponses deterministes</span>
+              <span className="pill">Simulation MOCK</span>
             </div>
-            <div className="messages">
+            <div className="messages" ref={messagesRef}>
               {bundle.messages.length === 0 ? (
                 <div className="message assistant">
                   <span className="message-role">Vululu</span>
-                  <p>Bonjour. Je peux preparer le brief, produire cinq scenes deterministes et corriger n importe quelle scene. Commence par le brief ci-dessous, ou ecris-moi.</p>
+                  <p>Simulation MOCK : je peux proposer un brief à relire ou préparer une correction par Scene ID. Commencez par une proposition ou déclarez Objectif:, Audience:, Ton: et CTA: dans le message.</p>
                 </div>
               ) : bundle.messages.map((message) => (
                 <div className={'message ' + message.role} key={message.id}>
                   <span className="message-role">{message.role === 'assistant' ? 'Vululu' : 'Toi'}</span>
                   <p>{message.content}</p>
+                  {message.proposal ? <ConversationProposalCard messageId={message.id} proposal={message.proposal} blockedReason={proposalBlockedReason(message.proposal)} preserveDraft={hasUnsavedBrief} onApply={applyProposal} /> : null}
                 </div>
               ))}
             </div>
+            <div className="conversation-actions">
+              <button type="button" className="btn btn-ghost" disabled={Boolean(busy)} onClick={() => runAction('chat', () => postJson('/api/projects/' + id + '/messages', { content: '/brief' }))}>Proposer un brief MOCK</button>
+              <button type="button" className="btn btn-ghost" disabled={Boolean(busy)} onClick={() => runAction('chat', () => postJson('/api/projects/' + id + '/messages', { content: '/aide' }))}>Aide à la conversation</button>
+            </div>
             <form className="composer" onSubmit={sendMessage}>
               <label className="label sr-only" htmlFor="chat-input-field">Message a Vululu</label>
-              <input id="chat-input-field" className="input" data-testid="chat-input" value={chatInput} onChange={(event) => setChatInput(event.target.value)} placeholder="Ecris a Vululu..." />
+              <textarea id="chat-input-field" className="input" data-testid="chat-input" aria-describedby="chat-format-help" maxLength={2000} rows={3} value={chatInput} onChange={(event) => setChatInput(event.target.value)} placeholder={'Objectif: …\nAudience: …\nTon: …\nCTA: …'} />
               <button className="btn btn-secondary" data-testid="chat-send" type="submit" disabled={busy === 'chat'}>Envoyer</button>
             </form>
+            <p className="hint" id="chat-format-help">Scénarios MOCK : /brief, /aide ou SCENE-003: votre instruction. Les propositions préremplissent les formulaires après votre clic.</p>
           </section>
 
           <section className="card" aria-labelledby="brief-heading">
@@ -354,7 +397,7 @@ export default function ProjectStudio({ id }: { id: string }) {
             </div>
             <form className="stack" onSubmit={saveBrief}>
               <label className="label">Objectif
-                <input className="input" data-testid="brief-objective" value={briefObjective} onChange={(event) => setBriefObjective(event.target.value)} placeholder="Faire connaitre l offre" required />
+                <input ref={briefObjectiveRef} className="input" data-testid="brief-objective" value={briefObjective} onChange={(event) => setBriefObjective(event.target.value)} placeholder="Faire connaitre l offre" required />
               </label>
               <label className="label">Audience
                 <input className="input" data-testid="brief-audience" value={briefAudience} onChange={(event) => setBriefAudience(event.target.value)} placeholder="Createurs, jeunes actifs..." required />
@@ -417,6 +460,7 @@ export default function ProjectStudio({ id }: { id: string }) {
             <h2 id="storyboard-heading">Storyboard et production</h2>
             <span className="muted small">{bundle.scenes.length} / 5 scenes</span>
           </div>
+          <p className="hint">Script de démonstration MOCK issu du brief confirmé, à relire avant production.</p>
           {bundle.scenes.length === 0 ? (
             <p className="muted">Le storyboard apparaitra apres la preparation du brief.</p>
           ) : (

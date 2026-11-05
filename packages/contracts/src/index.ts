@@ -70,8 +70,8 @@ export const briefInputSchema = z.object({
 });
 
 export const messageInputSchema = z.object({
-  content: z.string().min(1).max(2000)
-});
+  content: z.string().trim().min(1).max(2000)
+}).strict();
 
 export const correctionInputSchema = z.object({
   instruction: z.string().min(3).max(500)

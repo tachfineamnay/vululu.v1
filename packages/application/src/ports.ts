@@ -377,11 +377,20 @@ export type BriefWithRevisions = BriefRecord & {
   revisions: BriefRevisionRecord[];
 };
 
+export type BriefProposalFields = Pick<BriefInput, 'objective' | 'audience' | 'tone' | 'cta'>;
+export type MessageProposal = {
+  schemaVersion: 1; mode: 'MOCK'; kind: 'brief'; baseBriefVersion: number | null; baseBriefChecksum: string | null;
+  fields: BriefProposalFields; sources: Record<keyof BriefProposalFields, 'user' | 'brief' | 'context' | 'project' | 'example'>; hypotheses: Array<keyof BriefProposalFields>;
+} | {
+  schemaVersion: 1; mode: 'MOCK'; kind: 'correction'; baseBriefVersion: number | null;
+  sceneKey: string; sceneVersion: number; sceneChecksum: string; masterVersion: number; masterChecksum: string; instruction: string;
+};
 export type MessageRecord = {
   id: string;
   projectId: string;
   role: 'user' | 'assistant';
   content: string;
+  proposal?: MessageProposal;
   createdAt: Date;
 };
 
@@ -564,6 +573,7 @@ export interface MessageStore {
     projectId: string;
     userContent: string;
     assistantContent: string;
+    assistantProposal?: MessageProposal;
   }): Promise<{ userMessage: MessageRecord; assistantMessage: MessageRecord }>;
 }
 

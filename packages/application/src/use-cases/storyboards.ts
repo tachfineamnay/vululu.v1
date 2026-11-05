@@ -3,6 +3,8 @@ import {
   characterContentChecksum,
   createCharacter,
   createStoryboard,
+  assertProjectFormat,
+  plannedSceneCount,
   type Character,
   type CharacterVersion
 } from '@vululu/domain';
@@ -11,6 +13,7 @@ import type {
   Actor,
   AuditPort,
   BriefStore,
+  BriefWithRevisions,
   Clock,
   IdGenerator,
   ProjectBundleQueryPort,
@@ -21,13 +24,18 @@ import type {
   StoryboardStore
 } from '../ports';
 
-const SCENE_TEMPLATES = [
-  { title: 'Accroche', description: 'Une accroche visuelle forte qui capte l attention en moins de deux secondes.' },
-  { title: 'Probleme', description: 'Le probleme concret du client, montre avec un detail credible.' },
-  { title: 'Revelation produit', description: 'Le produit ou service au centre du plan, avec la promesse principale.' },
-  { title: 'Preuve et benefices', description: 'Un benefice mesurable, une preuve ou un detail de confiance.' },
-  { title: 'Appel a action', description: 'Une invitation claire a passer a l action, adaptee au reseau.' }
-] as const;
+function templatesForBrief(brief: BriefWithRevisions) {
+  if (plannedSceneCount(assertProjectFormat(brief.format)) === 1) return [{ title: brief.cta, description: brief.objective + '\n' + brief.cta }];
+  const tone = brief.tone.toLocaleLowerCase('fr');
+  const invitation = tone.includes('chaleureux') ? 'Bienvenue, prenons le temps de découvrir ce projet.' : tone.includes('premium') ? 'Une invitation à prendre le temps de découvrir.' : tone.includes('direct') ? 'Découvrez ce projet dès maintenant.' : 'Un projet à découvrir.';
+  return [
+    { title: 'Accroche', description: brief.objective },
+    { title: 'Pour vous', description: 'Pour ' + brief.audience + '.' },
+    { title: 'Notre projet', description: brief.objective },
+    { title: 'Invitation', description: invitation },
+    { title: 'Appel à action', description: brief.cta }
+  ];
+}
 
 const CHARACTER_KEY = 'CHAR-001';
 const CHARACTER_NAME = 'Personnage A';
@@ -72,7 +80,7 @@ export class StoryboardUseCases {
     const existingByKey = new Map(existingScenes.map((scene) => [scene.sceneKey, scene]));
     const created = createStoryboard({
       projectId,
-      templates: SCENE_TEMPLATES.map((template) => ({
+      templates: templatesForBrief(brief).map((template) => ({
         ...template,
         durationSeconds: brief.settings?.defaultSceneDurationSeconds ?? project.sceneDurationSeconds,
         characterKey: CHARACTER_KEY

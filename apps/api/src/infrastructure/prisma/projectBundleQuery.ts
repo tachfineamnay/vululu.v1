@@ -7,6 +7,7 @@ import type {
   CharacterRecord,
   MasterVersionView,
   MessageRecord,
+  MessageProposal,
   ProjectBundleQueryPort,
   ProjectBundleRecord,
   SceneWithVersionsRecord
@@ -28,7 +29,7 @@ export class PrismaProjectBundleQuery implements ProjectBundleQueryPort {
       include: {
         context: true,
         brief: { include: { revisions: { orderBy: { version: 'asc' } } } },
-        messages: { orderBy: { createdAt: 'asc' } },
+        messages: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
         scenes: {
           orderBy: { position: 'asc' },
           include: { versions: { orderBy: { version: 'desc' } } }
@@ -129,6 +130,7 @@ export class PrismaProjectBundleQuery implements ProjectBundleQueryPort {
       projectId: message.projectId,
       role: message.role === 'assistant' ? 'assistant' : 'user',
       content: message.content,
+      ...(message.proposal ? { proposal: message.proposal as unknown as MessageProposal } : {}),
       createdAt: message.createdAt
     }));
 

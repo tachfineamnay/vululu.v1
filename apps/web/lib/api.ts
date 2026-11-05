@@ -1,4 +1,6 @@
 import type { ProductionSettings } from '@vululu/contracts';
+import type { MessageProposal } from '@vululu/application';
+export type { MessageProposal } from '@vululu/application';
 export type ProductionPlanView = {
   mode: 'MOCK'; executionMode: 'local' | 'hatchet'; briefVersion: number; checksum: string;
   ready: boolean; sceneCount: number; durationSeconds: number; ratio: string;
@@ -61,6 +63,7 @@ export type Message = {
   id: string;
   role: string;
   content: string;
+  proposal?: MessageProposal;
   createdAt: string;
 };
 
