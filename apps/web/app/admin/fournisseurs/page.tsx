@@ -7,6 +7,7 @@ import FlagBadge from '../../../components/admin/FlagBadge';
 import LoadingState from '../../../components/admin/LoadingState';
 import PageHeader from '../../../components/admin/PageHeader';
 import SectionCard from '../../../components/admin/SectionCard';
+import ProviderCredentialForm from '../../../components/admin/ProviderCredentialForm';
 import StatusBadge from '../../../components/admin/StatusBadge';
 import { useAdminResource } from '../../../components/admin/useAdminResource';
 import {
@@ -463,6 +464,11 @@ export default function AdminProvidersPage() {
               </button>
             </div>
           </form>
+        </SectionCard>
+
+        <SectionCard title="Clés API IA" description="Facultatives pour la démo. Enregistrer une clé ne lance aucun appel IA.">
+          <div className="admin-credential-grid">{providerItems.map((provider) => <ProviderCredentialForm key={provider.id} provider={provider} onChanged={providers.reload} />)}</div>
+          {!providerItems.length ? <p className="admin-empty">Ajoutez un fournisseur pour enregistrer sa clé API.</p> : null}
         </SectionCard>
 
         <SectionCard

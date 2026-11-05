@@ -1,5 +1,7 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { prisma } from '@vululu/db';
+import { COMPOSITION_VERSION } from '@vululu/media';
+import { readSceneTextLayout } from '../prisma/mappers';
 import { contentChecksum, normalizeProductionSettings, type ProductionSettings, type Platform, type ProjectFormat } from '@vululu/domain';
 import { ApplicationError, productionSourceChecksum } from '@vululu/application';
 import type {
@@ -18,6 +20,7 @@ function mapSceneSceneVersion(row: {
   imagePath: string;
   prompt: string;
   checksum: string;
+  manifest?: unknown;
 }): SceneVersionRecord {
   return {
     id: row.id,
@@ -25,7 +28,8 @@ function mapSceneSceneVersion(row: {
     version: row.version,
     imagePath: row.imagePath,
     prompt: row.prompt,
-    checksum: row.checksum
+    checksum: row.checksum,
+    textLayout: readSceneTextLayout(row.manifest)
   };
 }
 
@@ -82,6 +86,7 @@ export class PrismaProductionExecutionStore implements ProductionExecutionStore 
       const run = await this.db.jobRun.findFirst({ where: { id: jobRunId, projectId } });
       const snapshot = run?.snapshot as ReproducibilitySnapshot | null;
       if (!snapshot || !run?.snapshotChecksum || contentChecksum(snapshot) !== run.snapshotChecksum) throw new ApplicationError('snapshot_invalid', 'Snapshot de production absent ou altéré.', 409);
+      if (snapshot.render.compositionVersion !== COMPOSITION_VERSION) throw new ApplicationError('composition_version_unsupported', 'Ce run exige une autre version du moteur de composition. Créez un nouveau run après relecture.', 409);
       const context = snapshot.context.data;
       if (typeof context.name !== 'string' || typeof context.colorPrimary !== 'string' || typeof context.colorSecondary !== 'string') throw new ApplicationError('snapshot_invalid', 'Contexte figé incomplet.', 409);
       const settings = snapshot.brief.data.settings ? normalizeProductionSettings(snapshot.project.platform as Platform, snapshot.project.format as ProjectFormat, snapshot.brief.data.settings as ProductionSettings) : undefined;
@@ -156,7 +161,8 @@ export class PrismaProductionExecutionStore implements ProductionExecutionStore 
               version: scene.version,
               imagePath: scene.imagePath,
               prompt: scene.prompt,
-              checksum: scene.checksum
+              checksum: scene.checksum,
+              manifest: { ...input.manifest, textLayout: scene.textLayout ?? null } as unknown as Prisma.InputJsonValue
             }
           });
         }

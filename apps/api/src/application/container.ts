@@ -1,4 +1,6 @@
 import crypto from 'node:crypto';
+import { PrismaProviderCredentialStore } from '../infrastructure/prisma/providerCredentialStore';
+import { AesProviderCredentialCipher } from '../infrastructure/security/providerCredentialCipher';
 import {
   AdminQueryUseCases,
   AgentConfigUseCases,
@@ -15,6 +17,7 @@ import {
   ProjectBundleUseCases,
   ProjectUseCases,
   ProviderCatalogUseCases,
+  ProviderCredentialUseCases,
   RoutingUseCases,
   SceneUseCases,
   StoryboardUseCases,
@@ -150,6 +153,7 @@ export const adminQueries = new AdminQueryUseCases(adminQueryPort);
 
 export const agentConfigs = new AgentConfigUseCases(agentRepository, clock, ids, audit);
 export const providerCatalog = new ProviderCatalogUseCases(providerCatalogRepository, audit);
+export const providerCredentials = new ProviderCredentialUseCases(new PrismaProviderCredentialStore(), new AesProviderCredentialCipher(), audit);
 export const routing = new RoutingUseCases(
   providerCatalogRepository,
   routingRepository,

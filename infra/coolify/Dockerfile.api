@@ -2,6 +2,8 @@
 # Image API + worker Vululu V1 — production/preproduction Coolify.
 # Base identique builder/runner (glibc) pour Prisma et Sharp.
 FROM node:24-bookworm-slim AS builder
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 RUN corepack enable && corepack prepare pnpm@10.6.1 --activate
@@ -16,7 +18,7 @@ RUN pnpm db:generate
 
 FROM node:24-bookworm-slim AS runner
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg ca-certificates openssl tini \
+    && apt-get install -y --no-install-recommends ffmpeg ca-certificates openssl tini fontconfig fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 RUN groupadd --gid 10001 vululu \
     && useradd --uid 10001 --gid vululu --create-home --shell /usr/sbin/nologin vululu \

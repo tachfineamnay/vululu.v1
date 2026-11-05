@@ -19,6 +19,7 @@ import type {
   ProjectRecord,
   SceneRecord,
   SceneVersionRecord,
+  SceneTextLayout,
   TransferRecord
 } from '@vululu/application';
 
@@ -99,8 +100,13 @@ export function toSceneVersionRecord(row: PrismaSceneVersion): SceneVersionRecor
     version: row.version,
     imagePath: row.imagePath,
     prompt: row.prompt,
-    checksum: row.checksum
+    checksum: row.checksum,
+    textLayout: readSceneTextLayout(row.manifest)
   };
+}
+
+export function readSceneTextLayout(manifest: unknown): SceneTextLayout | undefined {
+  return manifest && typeof manifest === 'object' && 'textLayout' in manifest && manifest.textLayout ? manifest.textLayout as SceneTextLayout : undefined;
 }
 
 export function toArtifactVersionRecord(row: PrismaArtifactVersion): ArtifactVersionRecord {

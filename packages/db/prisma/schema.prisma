@@ -466,6 +466,7 @@ model AgentConfigVersion {
 }
 
 model Provider {
+  credential ProviderCredential?
   id        String   @id @default(cuid())
   key       String   @unique
   name      String
@@ -473,6 +474,14 @@ model Provider {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   models    Model[]
+}
+
+model ProviderCredential {
+  providerId     String   @id
+  encryptedValue String
+  updatedBy      String
+  updatedAt      DateTime @updatedAt
+  provider       Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
 }
 
 model Model {

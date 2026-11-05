@@ -225,6 +225,7 @@ export class PrismaDurableProductionStore implements DurableProductionStore {
                   imagePath: scene.imagePath,
                   prompt: scene.prompt,
                   checksum: scene.checksum,
+                  manifest: json({ ...input.manifest, textLayout: scene.textLayout ?? null }),
                   ...(scene.storage
                     ? {
                         storageKey: scene.storage.key,
@@ -232,8 +233,7 @@ export class PrismaDurableProductionStore implements DurableProductionStore {
                         mimeType: scene.storage.contentType,
                         sizeBytes: BigInt(scene.storage.sizeBytes),
                         sha256: scene.storage.sha256,
-                        finalizationState: 'ready',
-                        manifest: json(input.manifest ?? {})
+                        finalizationState: 'ready'
                       }
                     : {})
                 }

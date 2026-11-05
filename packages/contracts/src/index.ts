@@ -97,3 +97,4 @@ export type SessionUser = {
 };
 
 export * from './admin';
+export const providerCredentialInputSchema = z.object({ apiKey: z.string().max(4096) }).strict();

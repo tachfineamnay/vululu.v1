@@ -3,6 +3,8 @@ export * from './errors';
 export * from './productionSource';
 export * from './productionPlanning';
 export * from './invokeCapability';
+export * from './providerCredentialPorts';
+export * from './use-cases/provider-credentials';
 export * from './use-cases/productionPlanning';
 export * from './use-cases/contexts';
 export * from './use-cases/campaigns';

@@ -12,18 +12,19 @@ async function main() {
   }
   const passwordHash = await bcrypt.hash(password, 10);
 
-  await prisma.user.upsert({
+  const user = await prisma.user.upsert({
     where: { email },
-    update: { passwordHash, name: 'Bootstrap Super Admin', role: 'super_admin' },
+    update: {},
     create: { email, passwordHash, name: 'Bootstrap Super Admin', role: 'super_admin' }
   });
 
-  console.log('Seeded bootstrap super_admin: ' + email);
+  if (user.role !== 'super_admin') throw new Error('Le compte existant ne peut pas être élevé par bootstrap.');
+  console.log('Bootstrap super_admin disponible ; comptes existants inchangés.');
 }
 
 main()
-  .catch((error) => {
-    console.error(error);
+  .catch(() => {
+    console.error('Bootstrap administrateur impossible : vérifier la configuration et le rôle du compte existant.');
     process.exit(1);
   })
   .finally(async () => {

@@ -631,6 +631,11 @@ select {
 .message.user p { white-space: pre-wrap; }
 .message-proposal .btn { max-width: 100%; width: 100%; white-space: normal; }
 
+.admin-credential-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 20px; }
+.admin-credential-form { min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 12px; overflow-wrap: anywhere; }
+.admin-credential-form .admin-actions { flex-wrap: wrap; }
+.admin-credential-form .btn { min-height: 44px; }
+
 .dot {
   width: 9px;
   height: 9px;

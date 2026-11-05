@@ -120,6 +120,7 @@ export type AdminAgentConfig = {
 };
 
 export type AdminProvider = {
+  credentials?: { configured: boolean; updatedAt: string | null; writable: boolean };
   id: string;
   key: string;
   name: string;
@@ -439,6 +440,8 @@ export const adminApi = {
     ),
 
   providers: () => api<{ items: AdminProvider[] }>('/api/admin/providers'),
+  saveProviderCredentials: (key: string, apiKey: string) => api<{ credentials: NonNullable<AdminProvider['credentials']> }>('/api/admin/providers/' + encodeURIComponent(key) + '/credentials', { method: 'PUT', body: JSON.stringify({ apiKey }) }),
+  removeProviderCredentials: (key: string) => deleteAdmin<{ credentials: NonNullable<AdminProvider['credentials']> }>('/api/admin/providers/' + encodeURIComponent(key) + '/credentials'),
 
   createProvider: (input: { key: string; name: string }) =>
     postJsonAdmin<{ provider: AdminProvider }>('/api/admin/providers', input),

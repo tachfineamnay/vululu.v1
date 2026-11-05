@@ -139,7 +139,8 @@ export class LocalProductionExecutor implements ProductionExecutorPort {
         version: item.version,
         imagePath: item.imagePath,
         prompt: item.prompt,
-        checksum: item.checksum
+        checksum: item.checksum,
+        textLayout: item.result.textLayout
       })),
       manifest: { sourceBriefVersion: project.briefVersion ?? null, sourceInputChecksum: project.sourceInputChecksum ?? null },
       outputs: {
@@ -201,6 +202,7 @@ export class LocalProductionExecutor implements ProductionExecutorPort {
         relativePath: scene.latestVersion.imagePath,
         absolutePath: this.storage.resolve(scene.latestVersion.imagePath),
         checksum: scene.latestVersion.checksum,
+        textLayout: scene.latestVersion.textLayout,
         width: 0,
         height: 0
       };
@@ -244,7 +246,8 @@ export class LocalProductionExecutor implements ProductionExecutorPort {
           version,
           imagePath: targetResult.relativePath,
           prompt: 'Correction: ' + (input.instruction ?? ''),
-          checksum: targetResult.checksum
+          checksum: targetResult.checksum,
+          textLayout: targetResult.textLayout
         }
       ],
       manifest: { sourceBriefVersion: project.briefVersion ?? null, sourceInputChecksum: project.sourceInputChecksum ?? null },

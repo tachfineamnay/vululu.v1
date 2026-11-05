@@ -46,6 +46,8 @@ Chaque décision suit [template.md](template.md) :
 | [0023](0023-propositions-conversation-demo-et-storyboard.md) | Propositions de conversation MOCK et storyboard issu du brief | Acceptée pour la tranche 6D | 2026-11-05 |
 | [0024](0024-origine-explicite-durees-scenes.md) | Origine explicite des durées de scène | Acceptée pour la tranche 6E | 2026-11-05 |
 | [0025](0025-invocations-mock-bornees-et-validees.md) | Invocations MOCK bornées et validées | Acceptée pour la tranche 6F | 2026-11-05 |
+| [0026](0026-composition-native-et-texte-integral.md) | Composition native et texte intégral | Acceptée pour la tranche 7A / MVP 01 | 2026-11-05 |
+| [0027](0027-mvp-coolify-et-cles-ia.md) | MVP Coolify et clés IA optionnelles | Acceptée pour mise en œuvre du MVP | 2026-11-05 |
 
 ## Décisions encore ouvertes
 

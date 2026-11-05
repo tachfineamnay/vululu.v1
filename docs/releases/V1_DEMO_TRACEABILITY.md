@@ -1,5 +1,7 @@
 # V1-DEMO — Traçabilité et état courant
 
+> **Recadrage du 2026-11-05 :** priorité au [MVP Coolify et clés IA](../superpowers/plans/2026-11-05-mvp-coolify-cles-ia.md). MCP reporté après le MVP ; ajout/remplacement/suppression sécurisés des clés requis pour le MVP, non encore implémentés. Les preuves historiques ci-dessous restent valables dans leur périmètre et ne constituent pas une certification du nouveau jalon.
+
 - Date : 2026-11-04 ; source : CDC V1.2 et plan V1-DEMO autorisé.
 - Les lots ci-dessous sont ceux du plan démo, distincts des anciens lots P0-A/F.
 - État initial : présent = inspecté dans le code, pas une certification ; chaque preuve de livraison sera ajoutée par le lot.

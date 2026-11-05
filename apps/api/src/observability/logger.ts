@@ -11,11 +11,12 @@ const REDACTED_KEYS = new Set([
   'password',
   'secret',
   'csrf',
-  'csrfToken',
+  'csrftoken',
   'presignedUrl',
   'signedUrl',
   'session',
-  'credentials'
+  'credentials',
+  'apikey', 'encryptedvalue', 'ciphertext', 'provider_credentials_encryption_key'
 ]);
 
 function redact(value: unknown): unknown {

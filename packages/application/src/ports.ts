@@ -99,6 +99,7 @@ export type SceneRecord = {
 };
 
 export type SceneVersionRecord = {
+  textLayout?: SceneTextLayout;
   id: string;
   sceneId: string;
   version: number;
@@ -165,7 +166,12 @@ export type SceneRenderRequest = {
   direction?: string;
 };
 
+export type SceneTextLayout = {
+  compositionVersion: string; complete: boolean; artifactSha256: string; width: number; height: number;
+  boxes: Array<{ field: 'brand' | 'title' | 'description' | 'label'; contentSha256: string; x: number; y: number; width: number; height: number; fontSize: number; minFontSize: number }>;
+};
 export type SceneRenderResult = {
+  textLayout?: SceneTextLayout;
   relativePath: string;
   absolutePath: string;
   checksum: string;
@@ -337,6 +343,7 @@ export type ReproducibilitySnapshot = {
     deterministic: boolean;
   };
   render: {
+    compositionVersion?: string;
     width: number;
     height: number;
     fps: number;
@@ -644,6 +651,7 @@ export type ProductionFinalization = {
     prompt: string;
     checksum: string;
     storage?: ArtifactStorageMetadata;
+    textLayout?: SceneTextLayout;
   }>;
   outputs: Record<string, unknown>;
   manifest?: Record<string, unknown>;
@@ -888,6 +896,7 @@ export type DurableRunRecord = {
 };
 
 export type RenderedScene = {
+  textLayout?: SceneTextLayout;
   sceneId: string;
   sceneKey: string;
   position: number;

@@ -202,6 +202,7 @@ export class DurableProductionUseCases {
           absolutePath: this.storage.resolve(scene.latestVersion.imagePath),
           prompt: scene.latestVersion.prompt,
           checksum: scene.latestVersion.checksum,
+          textLayout: scene.latestVersion.textLayout,
           width: 0,
           height: 0
         };
@@ -237,6 +238,7 @@ export class DurableProductionUseCases {
           ? 'Correction: ' + (run.snapshot?.correction?.instruction ?? '')
           : scene.sceneKey + ' - ' + scene.title,
         checksum: result.checksum,
+        textLayout: result.textLayout,
         width: result.width,
         height: result.height
       };
@@ -311,6 +313,7 @@ export class DurableProductionUseCases {
         absolutePath: scene.absolutePath,
         checksum: scene.checksum,
         width: scene.width,
+        textLayout: scene.textLayout,
         height: scene.height
       })),
       master.master,
@@ -393,6 +396,7 @@ export class DurableProductionUseCases {
     const manifest = {
       schemaVersion: 1,
       sourceBriefVersion: run.snapshot?.brief.version ?? null,
+      compositionVersion: run.snapshot?.render.compositionVersion ?? null,
       sourceInputChecksum: run.snapshot ? productionSourceChecksum(run.snapshot) : null,
       createdAt,
       jobRunId,
@@ -431,6 +435,7 @@ export class DurableProductionUseCases {
       imagePath: scene.imagePath,
       prompt: scene.prompt,
       checksum: scene.checksum,
+      textLayout: scene.textLayout,
       ...(sceneStorage.get(scene.sceneKey)
         ? { storage: sceneStorage.get(scene.sceneKey) as ArtifactStorageMetadata }
         : {})

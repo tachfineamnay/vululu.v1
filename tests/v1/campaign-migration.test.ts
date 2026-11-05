@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { PrismaClient } from '@vululu/db';
 import { expect, it } from 'vitest';
 
-it.each([{ migration: '20261104174000_v1_demo_campaigns', count: 12 }, { migration: '20261104190000_v1_demo_assets', count: 13 }, { migration: '20261104214500_v1_demo_brief_profiles', count: 14 }, { migration: '20261104221500_v1_demo_storyboard_binding', count: 15 }, { migration: '20261105094500_v1_demo_conversation_proposals', count: 16 }, { migration: '20261105101500_v1_demo_scene_duration_origin', count: 17 }])('migre les $count versions precedentes sans perdre projet ni snapshot existants', async ({ migration, count }) => {
+it.each([{ migration: '20261104174000_v1_demo_campaigns', count: 12 }, { migration: '20261104190000_v1_demo_assets', count: 13 }, { migration: '20261104214500_v1_demo_brief_profiles', count: 14 }, { migration: '20261104221500_v1_demo_storyboard_binding', count: 15 }, { migration: '20261105094500_v1_demo_conversation_proposals', count: 16 }, { migration: '20261105101500_v1_demo_scene_duration_origin', count: 17 }, { migration: '20261105113000_mvp_provider_credentials', count: 18 }])('migre les $count versions precedentes sans perdre projet ni snapshot existants', async ({ migration, count }) => {
   const name = 'vululu_campaign_upgrade_' + crypto.randomBytes(6).toString('hex');
   const url = `postgresql://vululu@127.0.0.1:55432/${name}?schema=public`;
   const admin = new PrismaClient({ datasourceUrl: 'postgresql://vululu@127.0.0.1:55432/postgres?schema=public' });
@@ -39,6 +39,7 @@ it.each([{ migration: '20261104174000_v1_demo_campaigns', count: 12 }, { migrati
     const previousBrief = await client.$queryRaw<object[]>`SELECT * FROM "BriefRevision" WHERE id = 'upgrade-brief-revision'`;
     await client.$executeRaw`INSERT INTO "Message" (id,"projectId",role,content) VALUES ('upgrade-message','upgrade-project','assistant','Message historique de fixture')`;
     const previousMessage = await client.$queryRaw<object[]>`SELECT * FROM "Message" WHERE id = 'upgrade-message'`;
+    await client.$executeRaw`INSERT INTO "Provider" (id,key,name,"updatedAt") VALUES ('upgrade-provider','upgrade-mock-provider','Fournisseur historique',NOW())`;
     await client.$executeRaw`INSERT INTO "Scene" (id,"projectId","sceneKey",position,title,description,"durationSeconds") VALUES ('upgrade-scene','upgrade-project','SCENE-003',3,'Historique','Valeur à conserver',7)`;
     const previousScene = await client.$queryRaw<object[]>`SELECT * FROM "Scene" WHERE id = 'upgrade-scene'`;
     const snapshot = JSON.stringify({ fixture: 'before-campaign' });
@@ -51,6 +52,7 @@ it.each([{ migration: '20261104174000_v1_demo_campaigns', count: 12 }, { migrati
     expect(await client.briefRevision.findUniqueOrThrow({ where: { id: 'upgrade-brief-revision' } })).toMatchObject(previousBrief[0]);
     expect(await client.brief.findUniqueOrThrow({ where: { id: 'upgrade-brief' } })).toMatchObject({ version: 3, settings: null, confirmedVersion: null, confirmedChecksum: null });
     expect(await client.message.findUniqueOrThrow({ where: { id: 'upgrade-message' } })).toMatchObject({ ...previousMessage[0], proposal: null });
+    expect(await client.provider.findUniqueOrThrow({ where: { id: 'upgrade-provider' }, include: { credential: true } })).toMatchObject({ key: 'upgrade-mock-provider', credential: null });
     expect(await client.scene.findUniqueOrThrow({ where: { id: 'upgrade-scene' } })).toMatchObject({ ...previousScene[0], durationSeconds: 7, usesBriefDuration: null });
     expect(await client.jobRun.findUniqueOrThrow({ where: { id: 'upgrade-run' } })).toMatchObject(before[0]);
     expect(await client.campaign.count()).toBe(0);

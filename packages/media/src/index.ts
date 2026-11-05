@@ -4,6 +4,9 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import sharp from 'sharp';
+import { composeScene } from './sceneComposition';
+import { COMPOSITION_VERSION, validTextLayout, type SceneTextLayout } from './textLayout';
+export { COMPOSITION_VERSION, type SceneTextLayout } from './textLayout';
 export { inspectAsset, type AssetInspection } from './assetInspection';
 
 export type SceneRenderInput = {
@@ -25,6 +28,7 @@ export type SceneRenderInput = {
 };
 
 export type SceneRenderOutput = {
+  textLayout?: SceneTextLayout;
   relativePath: string;
   absolutePath: string;
   checksum: string;
@@ -79,78 +83,6 @@ function toPosix(value: string): string {
   return value.split(path.sep).join('/');
 }
 
-function escapeXml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-}
-
-function wrap(value: string, maxChars: number): string[] {
-  const words = value.split(' ');
-  const lines: string[] = [];
-  let current = '';
-  for (const word of words) {
-    if ((current + ' ' + word).trim().length > maxChars && current.length > 0) {
-      lines.push(current.trim());
-      current = word;
-    } else {
-      current = (current + ' ' + word).trim();
-    }
-  }
-  if (current.length > 0) {
-    lines.push(current.trim());
-  }
-  return lines.slice(0, 4);
-}
-
-function normalizeColor(value: string, fallback: string): string {
-  if (/^#(?:[a-f0-9]{3}|[a-f0-9]{6})$/i.test(value)) {
-    return value;
-  }
-  return fallback;
-}
-
-function svgForScene(input: SceneRenderInput): string {
-  const primary = normalizeColor(input.colorPrimary, '#6C5CE7');
-  const secondary = normalizeColor(input.colorSecondary, '#00D2FF');
-  const accent = input.version > 1 ? secondary : primary;
-  const directionOffset = input.direction ? parseInt(crypto.createHash('sha256').update(input.direction).digest('hex').slice(0, 4), 16) % 200 : 0;
-  const opacity = input.visualStyle === 'minimal' ? '0.68' : input.visualStyle === 'bold' ? '1' : '0.92';
-  const weight = input.visualStyle === 'minimal' ? '500' : input.visualStyle === 'bold' ? '900' : '700';
-  const titleLines = wrap(input.title, 22);
-  const descLines = wrap(input.description, 34);
-  const parts: string[] = [];
-  parts.push('<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">');
-  parts.push('<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="' + primary + '"/><stop offset="100%" stop-color="' + secondary + '"/></linearGradient></defs>');
-  parts.push('<rect width="1080" height="1920" fill="#0B1020"/>');
-  parts.push('<rect x="0" y="0" width="1080" height="1920" fill="url(#bg)" opacity="' + opacity + '"/>');
-  parts.push('<circle cx="' + ((input.version > 1 ? 860 : 180) + directionOffset) + '" cy="260" r="300" fill="' + accent + '" opacity="' + (input.visualStyle === 'minimal' ? '0' : '0.22') + '"/>');
-  parts.push('<circle cx="760" cy="1560" r="420" fill="#ffffff" opacity="0.06"/>');
-  parts.push('<rect x="72" y="72" width="936" height="1776" rx="40" fill="none" stroke="#ffffff" stroke-opacity="0.25" stroke-width="2"/>');
-  parts.push('<text x="112" y="180" fill="#ffffff" font-family="Arial, sans-serif" font-size="32" letter-spacing="6">' + escapeXml(input.brandName.toUpperCase()) + '</text>');
-  parts.push('<text x="112" y="250" fill="#ffffff" fill-opacity="0.7" font-family="Arial, sans-serif" font-size="26">' + escapeXml(input.sceneKey) + ' / SCENE ' + input.position + '</text>');
-  let titleY = 760;
-  for (const line of titleLines) {
-    parts.push('<text x="112" y="' + titleY + '" fill="#ffffff" font-family="Arial, sans-serif" font-size="86" font-weight="' + weight + '">' + escapeXml(line) + '</text>');
-    titleY += 104;
-  }
-  let descY = titleY + 40;
-  for (const line of descLines) {
-    parts.push('<text x="112" y="' + descY + '" fill="#ffffff" fill-opacity="0.86" font-family="Arial, sans-serif" font-size="34">' + escapeXml(line) + '</text>');
-    descY += 48;
-  }
-  parts.push('<rect x="112" y="1620" width="' + (input.version > 1 ? '420' : '320') + '" height="8" rx="4" fill="#ffffff" fill-opacity="0.8"/>');
-  parts.push('<text x="112" y="1710" fill="#ffffff" fill-opacity="0.75" font-family="Arial, sans-serif" font-size="28">VULULU AI — V0</text>');
-  if (input.version > 1) {
-    parts.push('<text x="112" y="1760" fill="#ffffff" font-family="Arial, sans-serif" font-size="26">VERSION ' + input.version + '</text>');
-  }
-  parts.push('</svg>');
-  return parts.join('');
-}
-
 function run(exe: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(exe, args, { windowsHide: true });
@@ -194,19 +126,18 @@ function runCapture(exe: string, args: string[]): Promise<{ stdout: string; stde
 export async function renderScene(input: SceneRenderInput): Promise<SceneRenderOutput> {
   const width = input.width ?? 1080; const height = input.height ?? 1920;
   if (![width, height].every((n) => Number.isInteger(n) && n >= 64 && n <= 4096 && n % 2 === 0) || width * height > 16_000_000) throw new Error('Dimensions de rendu invalides.');
+  const { background, blocks } = await composeScene(input, width, height);
+  const pixels = await sharp(background).composite(blocks.map(({ input: data, left, top }) => ({ input: data, left, top }))).png().toBuffer();
+  const checksum = crypto.createHash('sha256').update(pixels).digest('hex');
   const projectDir = path.join(input.artifactRoot, input.projectId, 'scenes', input.sceneKey);
   await fsp.mkdir(projectDir, { recursive: true });
   const file = path.join(projectDir, 'v' + input.version + '.png');
-  const svg = svgForScene(input);
-  await sharp(Buffer.from(svg)).resize(width, height, { fit: 'contain', background: normalizeColor(input.colorPrimary, '#6C5CE7') }).png().toFile(file);
-  const metadata = await sharp(file).metadata();
-  return {
-    relativePath: toPosix(path.relative(input.artifactRoot, file)),
-    absolutePath: file,
-    checksum: sha256File(file),
-    width: metadata.width || 0,
-    height: metadata.height || 0
-  };
+  try { await fsp.writeFile(file, pixels, { flag: 'wx' }); }
+  catch (error) {
+    if (!(error && typeof error === 'object' && 'code' in error && error.code === 'EEXIST') || sha256File(file) !== checksum) throw new Error('Conflit de fichier immuable de scène.', { cause: error });
+  }
+  return { relativePath: toPosix(path.relative(input.artifactRoot, file)), absolutePath: file, checksum, width, height,
+    textLayout: { compositionVersion: COMPOSITION_VERSION, complete: true, artifactSha256: checksum, width, height, boxes: blocks.map((block) => block.box) } };
 }
 
 async function probe(file: string): Promise<{ duration: number; videoCodec: string; audioCodec: string; width: number; height: number }> {
@@ -307,6 +238,7 @@ export async function runQa(scenes: SceneRenderOutput[], master: MasterOutput, e
     }
     const dimensionsOk = width === expectedDimensions.width && height === expectedDimensions.height;
     const checksumOk = readError === '' && scene.checksum !== '' && checksum === scene.checksum;
+    checks.push({ name: 'text layout ' + scene.relativePath, status: checksumOk && validTextLayout(scene.textLayout, checksum, width, height) ? 'PASS' : 'FAIL', detail: 'Composition complète, zones lisibles et provenance du PNG.' });
     checks.push({
       name: 'png ' + scene.relativePath,
       status: dimensionsOk && checksumOk ? 'PASS' : 'FAIL',

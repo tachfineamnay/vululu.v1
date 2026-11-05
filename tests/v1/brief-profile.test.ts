@@ -57,7 +57,7 @@ it('refuse le lancement sans confirmation exacte, puis capture ses parametres', 
   expect((await confirm(value.projectId, value.brief.version, checksum)).statusCode).toBe(200);
   expect((await confirm(value.projectId, value.brief.version, checksum)).statusCode).toBe(200);
   const run = await start(value.projectId);
-  expect(run.jobRun.snapshot).toMatchObject({ render: { width: 1080, height: 1350 }, brief: { version: value.brief.version, checksum, data: { settings: { ratio: '4:5', visualStyle: 'bold' } } } });
+  expect(run.jobRun.snapshot).toMatchObject({ render: { width: 1080, height: 1350, compositionVersion: 'v1-demo-layout-2026-11-05' }, brief: { version: value.brief.version, checksum, data: { settings: { ratio: '4:5', visualStyle: 'bold' } } } });
 });
 it('invalide la confirmation lors d une nouvelle revision sans toucher a l ancienne', async () => {
   const value = await draft(); const first = await db.briefRevision.findFirstOrThrow({ where: { briefId: value.brief.id } });

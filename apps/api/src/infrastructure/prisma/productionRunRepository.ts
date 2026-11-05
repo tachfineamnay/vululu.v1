@@ -10,6 +10,7 @@ import type {
   ReproducibilitySnapshot
 } from '@vululu/application';
 import { captureRunPolicy } from './captureRunPolicy';
+import { COMPOSITION_VERSION } from '@vululu/media';
 
 function snapshotChecksum(snapshot: ReproducibilitySnapshot): string {
   return contentChecksum(snapshot);
@@ -256,6 +257,7 @@ export class PrismaProductionRunRepository implements ProductionRunRepository {
               deterministic: true
             },
             render: {
+              compositionVersion: COMPOSITION_VERSION,
               width: dimensions.width,
               height: dimensions.height,
               fps: 30,

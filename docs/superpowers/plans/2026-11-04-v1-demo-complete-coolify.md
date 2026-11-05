@@ -1,5 +1,7 @@
 # Vululu AI V1 démo complète sur Coolify — Implementation Plan
 
+> **Priorité révisée le 2026-11-05 :** le [plan MVP court](2026-11-05-mvp-coolify-cles-ia.md) guide désormais l’exécution : MCP après MVP, gestion sécurisée des clés IA incluse avant livraison. Le présent document conserve le plan historique de V1 complète ; ses lots ne sont plus tous bloquants pour le MVP.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
 > Note d’exécution : ces deux sous-compétences ne figurent pas dans le catalogue de cette session. Le plan reste exécutable lot par lot avec les outils disponibles ; leur absence ne doit pas conduire à inventer une compétence ou à lancer une délégation implicite.
