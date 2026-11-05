@@ -61,7 +61,7 @@ services:
   # L'echec de migration bloque le demarrage de l'API (service_completed_successfully).
   migrate:
     build:
-      context: ../..
+      context: .
       dockerfile: infra/coolify/Dockerfile.api
     image: vululu-api:${VULULU_IMAGE_TAG:-latest}
     restart: "no"
@@ -77,7 +77,7 @@ services:
   # Bootstrap explicite : utilisateur ordinaire, sans reinitialisation au redéploiement.
   demo-seed:
     build:
-      context: ../..
+      context: .
       dockerfile: infra/coolify/Dockerfile.api
     image: vululu-api:${VULULU_IMAGE_TAG:-latest}
     restart: "no"
@@ -120,7 +120,7 @@ services:
 
   api:
     build:
-      context: ../..
+      context: .
       dockerfile: infra/coolify/Dockerfile.api
     image: vululu-api:${VULULU_IMAGE_TAG:-latest}
     restart: unless-stopped
@@ -154,7 +154,7 @@ services:
 
   web:
     build:
-      context: ../..
+      context: .
       dockerfile: infra/coolify/Dockerfile.web
     image: vululu-web:${VULULU_IMAGE_TAG:-latest}
     restart: unless-stopped
