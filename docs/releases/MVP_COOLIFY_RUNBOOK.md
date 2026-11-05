@@ -57,3 +57,19 @@ Les résultats exécutés, l’URL et les limites figurent dans [MVP_COOLIFY_ACC
 ## Synchroniser les mots de passe de recette
 
 Sur instruction explicite utilisateur (ADR 0028), `RECETTE_ALLOW_SHORT_PASSWORDS=1` autorise des valeurs non vides de 72 octets maximum pour cette recette. Le minimum de 12 caractères reste le défaut des autres amorçages démo. Après modification des deux variables Coolify, activer `RECETTE_RESET_PASSWORDS=1` et déployer le candidat qui contient le service ponctuel `recette-password-reset`. Il vérifie les deux identités, met à jour uniquement leurs hash et révoque leurs sessions. Après succès et vérification des connexions, remettre le drapeau à 0 et remasquer les deux variables. Aucun secret dans les commandes, les logs ou le rapport.
+
+## Dépannage : `service "demo-seed" didn't complete successfully: exit 1`
+
+Le démarrage échoue avant l'API lorsque l'amorçage démo refuse sa configuration : `migrate` passe, `admin-seed` passe, puis `demo-seed` sort en code 1 et Coolify interrompt le déploiement. Le journal du service `demo-seed` (Coolify → Logs) donne la cause ; le code seul ne suffit pas à corriger la configuration.
+
+| Ligne du journal | Cause | Correction |
+|---|---|---|
+| `DEMO_BOOTSTRAP_FAIL: demo_mode_required` | `DEMO_MODE` absent ou différent de `1` | Définir `DEMO_MODE=1` sur la ressource, puis redéployer |
+| `DEMO_BOOTSTRAP_HINT: DEMO_PASSWORD est vide` | `SERVICE_PASSWORD_64_DEMO` non générée ou variable remplacée par une valeur vide | Régénérer la variable runtime, puis redéployer |
+| `DEMO_BOOTSTRAP_HINT: DEMO_PASSWORD est plus court que le minimum de 12` | Mot de passe court sans exception de recette (ADR 0028) | Définir `RECETTE_ALLOW_SHORT_PASSWORDS=1`, puis redéployer |
+| `DEMO_BOOTSTRAP_FAIL: demo_account_collision` / `demo_resource_collision` | Un compte ou un exemple appartient déjà à une autre identité | Ne pas forcer ; inspecter la base, aucune donnée n'a été écrite |
+| `DEMO_BOOTSTRAP_HINT: Echec inattendu` | PostgreSQL, `DATABASE_URL` ou migration | Vérifier `db` (saine) et `migrate` (exit 0) avant de rejouer |
+
+Le diagnostic n'imprime que des noms de variables, des règles et des longueurs : jamais une valeur, un hash ou un secret. Un déploiement refusé n'écrit rien : `bootstrapDemo` valide avant toute transaction.
+
+Ordre attendu d'un redéploiement qui change les mots de passe : `db` saine → `migrate` exit 0 → `artifacts-init` → `demo-seed` et `admin-seed` exit 0 → `recette-password-reset` exit 0 → `api` saine → `web` saine.

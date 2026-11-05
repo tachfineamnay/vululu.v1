@@ -1,8 +1,8 @@
 import type { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
-import { z } from 'zod';
 import { createBrandContext, createContextRevision, createCampaign } from '@vululu/domain';
 import { toJsonInput } from '../prisma/mappers';
+import { demoEmail, diagnoseDemoConfig } from './demoCredentialPolicy';
 
 const identity = {
   userId: 'v1-demo-user',
@@ -16,13 +16,11 @@ export async function bootstrapDemo(
   db: PrismaClient,
   config: Record<string, string | undefined>
 ): Promise<{ userId: string; contextId: string; projectId: string }> {
-  if (config.DEMO_MODE !== '1') throw new Error('demo_mode_required');
-  const email = (config.DEMO_EMAIL ?? '').trim().toLowerCase();
+  const issues = diagnoseDemoConfig(config);
+  if (issues.some((issue) => issue.code === 'demo_mode_required')) throw new Error('demo_mode_required');
+  if (issues.length > 0) throw new Error('demo_credentials_invalid');
+  const email = demoEmail(config);
   const password = config.DEMO_PASSWORD ?? '';
-  const minimum = config.RECETTE_ALLOW_SHORT_PASSWORDS === '1' ? 1 : 12;
-  if (!z.email().safeParse(email).success || password.length < minimum || Buffer.byteLength(password, 'utf8') > 72) {
-    throw new Error('demo_credentials_invalid');
-  }
 
   return db.$transaction(async (tx) => {
     const existing = await tx.user.findFirst({ where: { OR: [{ id: identity.userId }, { email }] } });
