@@ -1,42 +1,51 @@
-# MVP Coolify — État de recette
+# MVP Coolify — Recette de livraison
 
-Date : 2026-11-05. Branche : `codex/v1-demo-coolify` ; base committée : `ef3ef15`. Les ajouts MVP décrits ici sont dans l'arbre de travail, pas encore un candidat de release committé.
+Date : 2026-11-05. Branche : `codex/v1-demo-coolify`. Candidat source `f170d95` (fonctionnalités `c77d763`, correctif Compose `b47fece`, tests de recette `f170d95`). Ressource dédiée : **Vululu MVP - Recette / vululu-mvp-recette**.
 
-**État : fonctionnalités implémentées et tests ciblés verts ; qualification Linux incomplète. Aucun GO de mise en service.**
+URL : https://vululu-recette.148.230.113.74.sslip.io
 
-| Contrôle | Résultat observé |
+**MVP déployé et redéploiement vérifié ; remise des accès en attente.** Cette recette ne certifie pas toute la V1 historique.
+
+## Preuves exécutées
+
+| Contrôle | Résultat |
 |---|---|
-| Rendu complet, snapshot et pipelines | 30 PASS / 2 S3 SKIP |
-| Vidéo → correction → QA → approbation → Postiz MOCK, navigateur Windows | 1 PASS |
-| Credentials, chiffrement, sécurité et lectures admin | 46 PASS |
-| Migration 19 préservant un fournisseur existant | 1 PASS / 6 tests filtrés |
-| Bootstrap admin sans élévation ni réinitialisation | 3 PASS |
-| Typage et build API/Web | PASS |
-| Lint strict après correction de la cause d’erreur | PASS |
-| Secrets, frontières d'architecture, 9 documents fondateurs | PASS |
-| Build images Linux amd64, Node 24 | PASS ; dépendances natives et polices installées |
-| Démarrage de la stack Linux vierge | FAIL environnement : arrêt du moteur Docker pendant l'extraction PostgreSQL ; `unexpected EOF`, pipe Docker disparu |
-| 4 parcours E2E sur Linux/HTTPS, dont formulaire admin 390 px | NOT_RUN : démarrage interrompu avant ces étapes |
-| Persistance après redémarrage et restauration DB/médias/credentials | NOT_RUN sur Linux |
-| Domaine, TLS public et serveur Coolify de l'utilisateur | NOT_RUN ; aucun déploiement distant effectué |
+| Composition, snapshot et pipelines | 30 PASS / 2 S3 SKIP |
+| Credentials, chiffrement, auth et lectures admin | 46 PASS |
+| Migration additive préservant un fournisseur existant | 1 PASS / 6 tests filtrés |
+| Bootstrap sans promotion ni réinitialisation | 3 PASS |
+| Typage, build API/Web et lint strict | PASS |
+| Secrets, frontières et 9 documents fondateurs | PASS |
+| Images Linux / installation vierge Coolify | PASS |
+| 19 migrations PostgreSQL | Appliquées ; schéma à jour |
+| HTTPS public | 200, certificat validé sans contournement |
+| Parcours brief et conversation MOCK | 2 PASS sur la cible |
+| Vidéo, correction, QA, approbation, Postiz MOCK | PASS, 32,6 s |
+| Gestion admin des clés et refus démo | PASS après correction du test, 11,1 s ; rejeu clavier 10,7 s |
+| Cookie session | Secure / HttpOnly / SameSite=Lax |
+| Interface des clés à 390 px | PASS ; champ masqué/effacé, confirmations, aucun débordement, boutons ≥44 px ; capture inspectée ; focus, Tab et Entrée vérifiés |
+| Lecture vidéo via le proxy, Range valide/invalide | 206 / 416 PASS ; verticale rejouée, 32,8 s |
+| Redémarrage contrôlé | PASS ; API authentifiée, médias et credential conservés |
+| Sauvegarde PostgreSQL et restauration dans une autre base | PASS : `pg_dump -Fc`, `createdb`, `pg_restore --exit-on-error` |
+| Archive média restaurée dans un autre répertoire + DB restaurée | PASS : 5 masters, 17 scènes, 1 credential, FFprobe, SHA-256 et master relu via API |
+| Redéploiement avec données existantes | PASS ; avant/après : 7 masters, 23 scènes, 1 credential ; HTTPS 200, 19 migrations à jour |
 
-Les images ont été construites depuis l'arbre de travail, avant la dernière correction lint ajoutant la cause d'une erreur de fichier immuable. Elles ne sont donc pas un binaire final publiable. Identifiants locaux de preuve, sans publication registre :
+La première commande E2E a donné 3 PASS / 1 FAIL : le nouveau test utilisait un mauvais nom de cookie (`vululu_session` au lieu de `session`). Le test corrigé passe sans changement du serveur ; les quatre parcours sont ainsi validés. Les vérifications Range ont ensuite été ajoutées et exécutées. Journaux locaux ignorés : `.v1/mvp-coolify-e2e.log`, `mvp-coolify-credentials.log`, `mvp-coolify-range.log`.
 
-- API : `vululu-api:vululu-mvp-6e8262b8`, index `sha256:212a320d7958ed8c4d0649517a7bec3b413e823b74f59e4eff38ba6116bf6061`.
-- Web : `vululu-web:vululu-mvp-6e8262b8`, index `sha256:ff17d354d699cf131a1726a37d5e300f2ab5fc27c9cdbdf662c39cc47391a777`.
+La restauration a porté sur une copie isolée, sans écraser la base source ni le volume média. Elle a été vérifiée avant le dernier rejeu vidéo, qui explique le passage de 5/17 à 7/23 sur la source. Ce test ne constitue pas une sauvegarde hors serveur. Les tâches de recette sont désactivées : aucune planification automatique n’a été activée. Le dump et l’archive de preuve sous `/tmp` ne sont pas une politique de rétention ; voir le runbook pour la sauvegarde durable.
 
-Le contexte de build API est passé de plus de 130 Mo à 944,42 ko après exclusion des caches/dépendances imbriqués. Les deux conteneurs Docker préexistants n'ont fait l'objet d'aucune modification demandée par la recette. Les éventuels volumes du projet de preuve sont conservés ; aucun `down -v` n'a été lancé.
+## Sécurité et accès
 
-## Accès de recette
+Autorisation explicite de préparation/déploiement reçue le 2026-11-05. Aucune autre application du serveur n’a été modifiée. PostgreSQL et API n’exposent aucun port hôte ; deux volumes persistants sont attachés. Les cinq secrets générés par Coolify sont runtime uniquement et protégés ; le build confirme l’absence de variables à ajouter aux Dockerfiles. Aucune clé IA réelle n’a été saisie.
 
-Autorisation explicite reçue le 2026-11-05 pour préparer et déployer la recette sur Coolify. Un projet et une application Vululu séparés sont créés ; le déploiement n’a pas encore démarré. Le Compose de recette amorce les comptes et utilise les secrets générés nativement par Coolify. Sa syntaxe a été validée hors moteur. Aucune application préexistante n’est modifiée.
+Compte démo ordinaire : `demo@vululu.example`. Compte admin séparé : `admin@vululu.example`. Les mots de passe sont temporairement consultables dans cette ressource Coolify, après autorisation explicite de l’utilisateur. La confirmation de récupération puis leur remasquage restent attendus. Les secrets PostgreSQL, session et chiffrement demeurent masqués. Aucune valeur dans Git, ce rapport ou le chat. Le rejeu clavier passe (10,7 s) et ajoute une seconde fixture de credential synthétique. Conserver les secrets de session et de chiffrement entre les versions.
 
-## Prochaine étape unique
+## Limites et suite
 
-Effectuer la recette sur le serveur de l'utilisateur, conformément au choix de déploiement direct : suivre `MVP_COOLIFY_RUNBOOK.md`, puis exécuter les quatre parcours `brief-profile`, `conversation-demo`, `v0` et `provider-credentials` via `playwright.external.config.ts`. Vérifier ensuite la persistance et la restauration sur une cible distincte avec `scripts/coolify/verify-media.ts --require-credentials`. Ne jamais imprimer les variables de connexion.
+- IA et Postiz : MOCK explicite ; enregistrer une clé ne teste pas le fournisseur.
+- MCP après le MVP. Formats supplémentaires et mix audio à venir ; le choix des échantillons de voix sous licence libre est conservé.
+- Instance unique, stockage local persistant ; S3/Hatchet non qualifiés. Reprise automatique d’un run interrompu non qualifiée : terminer les productions avant maintenance.
+- Sauvegarde hors VPS et rétention à mettre en place selon le runbook. Aucune nouvelle dépendance payante.
+- Docker local s’est arrêté pendant sa propre recette. La qualification Linux a été réalisée sur Coolify. Le premier build distant a révélé le contexte relatif erroné, corrigé dans `b47fece`.
 
-Le domaine public utilise une validation TLS normale. Le drapeau de certificat autosigné est limité à localhost. Les sessions doivent être Secure/HttpOnly ; conserver les mêmes secrets serveur pour la restauration. Aucun appel IA réel ni publication Postiz n'entre dans cette recette.
-
-La reprise automatique d'un run local interrompu reste non qualifiée ; terminer les productions avant redémarrage et ne pas annoncer une reprise après crash. MCP est après le MVP. Le contrôle S3 est SKIP et ne certifie pas un stockage externe. Les preuves de credentials utilisent uniquement des fixtures synthétiques.
-
-Les rapports de lots `docs/execution/MVP_01_LAYOUT.md` et `MVP_02_PROVIDER_CREDENTIALS.md` détaillent les preuves fonctionnelles. Le plan `docs/superpowers/plans/2026-11-05-mvp-coolify-cles-ia.md` fait foi pour les cases restantes. Rollback : image précédente, volumes et migrations additives conservés ; procédure dans le runbook.
+Installation, sauvegarde et rollback : [MVP_COOLIFY_RUNBOOK.md](MVP_COOLIFY_RUNBOOK.md). Rollback de code sans suppression de volume ni migration inverse. Rapports fonctionnels : `docs/execution/MVP_01_LAYOUT.md` et `MVP_02_PROVIDER_CREDENTIALS.md`.

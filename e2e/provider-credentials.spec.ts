@@ -18,7 +18,9 @@ test('admin : ajouter, remplacer et supprimer une cle IA ; demo sans acces', asy
   const form = page.getByTestId('provider-credentials-' + providerKey); const field = form.getByLabel('Clé API', { exact: true });
   await expect(field).toHaveAttribute('type', 'password'); await expect(field).toBeEnabled();
   const first = 'fixture-e2e-key-first-' + Date.now(); const second = 'fixture-e2e-key-second-' + Date.now();
-  await field.fill(first); await form.getByRole('button', { name: 'Enregistrer la clé', exact: true }).click();
+  await field.fill(first); await expect(field).toBeFocused(); await field.press('Tab');
+  const saveButton = form.getByRole('button', { name: 'Enregistrer la clé', exact: true });
+  await expect(saveButton).toBeFocused(); await saveButton.press('Enter');
   await expect(form.getByTestId('credential-status')).toContainText('Clé enregistrée'); await expect(field).toHaveValue('');
   const response = await page.request.get('/api/admin/providers'); expect(await response.text()).not.toContain(first);
   expect(await page.evaluate((secret) => Object.values(localStorage).every((value) => !value.includes(secret)), first)).toBe(true);

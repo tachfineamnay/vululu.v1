@@ -1,84 +1,55 @@
-# MVP — Installation Coolify et exploitation
+# MVP — Exploitation de la recette Coolify
 
-Date : 2026-11-05. Périmètre : compte démo, vidéo, correction/QA/approbation, clés IA administrables. MCP, fournisseurs IA réels et Postiz réel restent hors de ce jalon. Voir ADR 0027 et le plan MVP du 2026-11-05.
+Date : 2026-11-05. Cible qualifiée : `infra/coolify/docker-compose.recette.yml`, branche `codex/v1-demo-coolify`, commit applicatif `f170d95`. Le Compose historique `docker-compose.yml` n’est pas la configuration qualifiée par ce guide.
 
-## 1. Préparer la ressource
+## Configuration
 
-### Variante de recette autorisée le 2026-11-05
+Dans un projet Coolify séparé, créer une application Git Docker Compose. Base Directory : `/` ; Docker Compose Location : `/infra/coolify/docker-compose.recette.yml`. Le contexte `build.context: .` est relatif au répertoire de projet Coolify. Affecter le domaine HTTPS au service **web**, port interne **3100**. Aucun port hôte PostgreSQL/API.
 
-La ressource de recette utilise `infra/coolify/docker-compose.recette.yml`. Ce fichier reprend les services MVP et exclut les profils optionnels. Coolify génère les secrets `SERVICE_PASSWORD_64_POSTGRES`, `SERVICE_HEX_64_SESSION`, `SERVICE_REALBASE64_32_CREDENTIALS`, `SERVICE_PASSWORD_64_DEMO` et `SERVICE_PASSWORD_64_ADMIN`. Les comptes admin et démo sont amorcés par deux services éphémères idempotents avant le démarrage API. Aucune valeur secrète n'est inscrite dans Git ; les variables sont à conserver dans Coolify entre les redéploiements.
-
-Cette variante exige `APP_ORIGIN`, `WEB_ORIGIN`, `DEMO_MODE=1` et un tag de candidat. `ADMIN_EMAIL` et `DEMO_EMAIL` peuvent être configurés ; leurs valeurs par défaut sont des adresses fictives. Les mots de passe initiaux se consultent dans les variables protégées de cette ressource Coolify, jamais dans un rapport. La commande `docker compose config --quiet` valide la syntaxe hors moteur ; les avertissements de variables générées absentes sont attendus hors Coolify. Le contexte `build.context: .` est relatif au répertoire de projet imposé par Coolify ; hors Coolify, utiliser `docker compose --project-directory . -f infra/coolify/docker-compose.recette.yml ...`. Les variables secrètes générées doivent avoir `is_buildtime=false`, `is_runtime=true` et être protégées dans Coolify avant le build. La recette distante reste obligatoire.
-
-Le mécanisme de génération et le routage par port interne sont documentés dans la [documentation officielle Docker Compose de Coolify](https://coolify.io/docs/applications/builds/docker-compose). Le guide générique ci-dessous conserve le Compose avec secrets fournis manuellement.
-
-Après revue et publication du commit dans votre dépôt Git, créer une application **Docker Compose** dans un projet Coolify Vululu distinct. Répertoire de base : racine du dépôt ; fichier Compose : `infra/coolify/docker-compose.yml`.
-
-Conserver une seule instance API. Affecter le domaine HTTPS au service `web`, port interne **3100**. Ne publier aucun port PostgreSQL/API et ne pas ajouter de port hôte à la configuration de production. Les ports de recette locale ne figurent pas dans le Compose livré.
-
-| Variable Coolify | Valeur à fournir |
+| Variable | Réglage |
 |---|---|
-| APP_ORIGIN, WEB_ORIGIN | Même URL HTTPS, sans chemin ni slash final |
+| APP_ORIGIN, WEB_ORIGIN | Même URL HTTPS, sans port, chemin ni slash final |
 | DEMO_MODE | 1 |
 | ORCHESTRATOR_MODE | local |
 | ARTIFACT_STORAGE_BACKEND | local |
-| VULULU_IMAGE_TAG | Identifiant du commit qualifié |
-| POSTGRES_USER, POSTGRES_DB | Conserver les valeurs par défaut pour le premier essai |
-| POSTGRES_PASSWORD | Secret aléatoire hexadécimal ; évite les caractères réservés dans DATABASE_URL |
-| SESSION_SECRET | Secret aléatoire distinct, au moins 32 caractères |
-| PROVIDER_CREDENTIALS_ENCRYPTION_KEY | 32 octets aléatoires encodés en base64 ; obligatoire pour enregistrer les clés IA |
-| DEMO_EMAIL, DEMO_PASSWORD | Compte ordinaire dédié ; mot de passe robuste |
+| VULULU_IMAGE_TAG | Commit construit ; conserver le même identifiant pour les services |
+| DEMO_EMAIL | demo@vululu.example par défaut |
+| ADMIN_EMAIL | admin@vululu.example par défaut |
 
-Générer les secrets hors Git et les saisir dans Coolify. `openssl rand -hex 32` convient aux secrets hexadécimaux ; `openssl rand -base64 32` convient à la clé de chiffrement. Ne copier aucune sortie dans un rapport ou dans le chat. Garder la clé de chiffrement stable entre les déploiements et une copie séparée sécurisée ; sa perte empêche la lecture des credentials.
+Charger le Compose dans Coolify avant le premier build. Coolify génère cinq secrets : `SERVICE_PASSWORD_64_POSTGRES`, `SERVICE_HEX_64_SESSION`, `SERVICE_REALBASE64_32_CREDENTIALS`, `SERVICE_PASSWORD_64_DEMO` et `SERVICE_PASSWORD_64_ADMIN`. Tous doivent être **runtime uniquement** (`is_buildtime=false`, `is_runtime=true`). Garder le masquage de toutes les valeurs d’environnement dans les logs activée. Ne saisir aucune valeur dans Git, un argument de build, le service Web ou une variable NEXT_PUBLIC.
 
-Le Compose injecte la clé de chiffrement dans l’API uniquement. Ne pas la placer dans une variable NEXT_PUBLIC, un argument de build ou le service Web. La démo peut démarrer sans cette clé, mais l’enregistrement des clés IA restera bloqué et le jalon « clés prêtes » ne passe pas.
+Les secrets PostgreSQL, session et chiffrement restent stables entre les déploiements. Le Compose mappe le secret de chiffrement vers `PROVIDER_CREDENTIALS_ENCRYPTION_KEY` dans l’API ; il contient 32 octets aléatoires en base64. Prévoir sa conservation séparée et sécurisée avec l’opérateur : sa perte rend les credentials illisibles. Ne pas le remplacer sans migration.
 
-## 2. Démarrer et amorcer
+Le mécanisme de génération et le routage par port interne sont décrits dans la [documentation officielle Coolify](https://coolify.io/docs/applications/builds/docker-compose). Hors Coolify, les variables générées doivent déjà être fournies et la commande doit inclure `--project-directory .`.
 
-Construire/démarrer depuis Coolify. Vérifier `migrate` terminé avec succès avant API/Web ; `artifacts-init` initialise les permissions du volume. Les images API et Web partagent une base Debian/Node 24 ; l’API contient OpenSSL, FFmpeg/FFprobe et les polices du rendu. Ne pas activer les profils Hatchet/S3/worker pour ce MVP.
+## Démarrage et comptes
 
-Les commandes suivantes s’exécutent sur le serveur, dans le contexte Compose de cette application avec les variables injectées. En terminal Coolify du conteneur API, omettre le préfixe `docker compose exec -T api`.
+Le démarrage exécute les migrations et initialise les droits du volume média, puis amorce séparément les comptes admin et démo avant l’API/Web. Les amorçages sont idempotents : aucun mot de passe existant n’est remplacé et aucun compte ordinaire n’est promu. L’API contient OpenSSL, FFmpeg/FFprobe et les polices nécessaires. Ne pas activer Hatchet/S3 pour cette recette.
 
-```sh
-docker compose -f infra/coolify/docker-compose.yml exec -T api node_modules/.bin/tsx scripts/coolify/check-env.ts --require-credentials
-```
+La remise des mots de passe initiaux à l’opérateur reste une étape distincte. Après accord explicite, la remise en cours utilise une visibilité temporaire dans Coolify ; les deux valeurs seront remasquées après confirmation de récupération. Une modification de la variable de bootstrap seule ne réinitialise pas un compte existant.
 
-Amorcer l’admin séparément : fournir temporairement `V1_BOOTSTRAP_EMAIL` et `V1_BOOTSTRAP_PASSWORD` dans l’environnement de la commande, puis lancer :
+Après connexion admin : **Fournisseurs → Clés API IA**. Ajouter un fournisseur au catalogue si nécessaire puis enregistrer sa clé. L’état attendu est « enregistrée, connexion non testée ». Le compte démo est ordinaire et la démo fonctionne sans clé IA. Aucun appel fournisseur n’est déclenché par l’enregistrement.
 
-```sh
-docker compose -f infra/coolify/docker-compose.yml exec -T -e V1_BOOTSTRAP_EMAIL -e V1_BOOTSTRAP_PASSWORD api node_modules/.bin/tsx packages/db/prisma/seed.ts
-docker compose -f infra/coolify/docker-compose.yml --profile demo-bootstrap run --rm demo-seed
-```
+## Vérifications et maintenance
 
-L’admin bootstrap ne réinitialise pas un admin existant et refuse d’élever un compte ordinaire. Le bootstrap démo conserve aussi les comptes/données existants ; il n’est pas un reset. Retirer les secrets d’amorçage temporaires après exécution. Se connecter comme admin, ouvrir **Fournisseurs → Clés API IA**, ajouter un fournisseur au catalogue si nécessaire et enregistrer sa clé. « Enregistrée, connexion non testée » est l’état attendu : aucun fournisseur n’est appelé par cette action.
-
-## 3. Recette d’ouverture
-
-- [ ] Connexion du compte démo ; panneau des clés inaccessible à ce compte.
-- [ ] Brief → confirmation → storyboard → vidéo réelle → correction d’une scène → QA PASS → approbation exacte et téléchargement.
-- [ ] Ajout/remplacement/suppression d’une clé depuis l’admin ; saisie masquée, aucune restitution du secret.
-- [ ] Cookies Secure et HttpOnly sur le domaine HTTPS réel ; accès inter-utilisateur refusé.
-- [ ] Arrêt des nouveaux lancements, fin des runs en cours puis redémarrage : données et médias conservés.
-- [ ] Sauvegarde/restauration vérifiée sur une cible distincte ; rétention des volumes et espace disque surveillés.
-
-La recette automatisée utilise `playwright.external.config.ts` et une URL explicitement fournie. Le drapeau `E2E_LOCAL_SELF_SIGNED` est réservé au certificat de recette localhost ; le laisser désactivé sur le domaine Coolify réel. Traces réseau désactivées pour ne pas enregistrer les credentials.
-
-## 4. Sauvegarde et retour arrière
-
-Avant une sauvegarde cohérente, arrêter les nouveaux lancements, attendre la fin des productions et suspendre les écritures API/Web. Conserver PostgreSQL actif pendant le dump. Sauvegarder **ensemble** la base et le volume `artifacts`, puis redémarrer l’application. Stocker une copie chiffrée hors du VPS ; protéger et conserver la clé de chiffrement séparément.
-
-Pour une restauration : nouvelle base, nouveau volume, même version d’image et clé de chiffrement correspondante. Ne jamais restaurer par écrasement de la source. Lire un master depuis l’application restaurée et vérifier ses checksums, puis tester la lecture des credentials côté serveur sans les afficher. Le vérificateur inclus contrôle les fichiers, FFprobe, le déchiffrement et une lecture authentifiée via l’API :
+Dans le terminal API Coolify, exécuter sans afficher les variables :
 
 ```sh
+node_modules/.bin/prisma migrate status --schema packages/db/prisma/schema.prisma
+node_modules/.bin/tsx scripts/coolify/check-env.ts --require-credentials
 node_modules/.bin/tsx scripts/coolify/verify-media.ts --require-credentials
 ```
 
-Cette commande exige au moins un média produit et `DEMO_EMAIL`/`DEMO_PASSWORD` fournis à la commande, pas au Web. Le drapeau exige aussi un credential chiffré présent ; l’omettre uniquement si aucun fournisseur n’a de clé. Elle crée une session de vérification et ne restitue aucun secret.
+Le dernier contrôle exige un média produit et un credential présent ; il lit les fichiers, FFprobe, les checksums et le secret chiffré puis authentifie le compte démo pour lire un master via l’API. Il ne restitue aucun secret.
 
-En cas de crash pendant une production locale, diagnostiquer le run avant toute relance : les versions déjà finalisées restent la référence. Le rapport `scripts/runtime-reconcile.ts` est en lecture seule par défaut ; son mode `--apply` concerne le moteur durable et ne constitue pas une reprise locale. La reprise automatique d’une production en cours n’est pas qualifiée pour ce MVP. Ne pas présenter un redémarrage entre deux productions comme cette preuve.
+Les trois tâches de recette sont désactivées : contrôle environnement/médias, restauration DB isolée et restauration média. Les tâches de restauration sont des preuves ponctuelles avec garde contre l’écrasement, pas un système de sauvegarde récurrent.
 
-Pour revenir à l’image précédente : suspendre les écritures et conserver les volumes. Les migrations 18/19 sont additives ; ne pas supprimer leurs colonnes/tables pour un rollback de code. Un ancien candidat ignore les nouveaux audits et les credentials : rétablir le candidat corrigé avant de modifier ces fonctions. Aucune suppression de volume, commande `down -v` ou réinitialisation de base ne fait partie de cette procédure.
+Avant mise à jour ou sauvegarde, arrêter les nouveaux lancements et attendre la fin des productions. Conserver PostgreSQL et le volume `artifacts`. Sauvegarder la base (`pg_dump -Fc`) et archiver les médias, puis stocker une copie chiffrée hors du VPS et la clé de chiffrement séparément. Restaurer sur une nouvelle base et un nouveau volume/répertoire, jamais par écrasement de la source. Vérifier un master via l’API restaurée et le déchiffrement sans afficher de valeur.
 
-## 5. Preuves
+Les preuves de recette ont utilisé une base isolée `mvp_restore` et une archive média extraite dans un autre répertoire. Les fichiers sous `/tmp` ne sont pas une rétention durable et peuvent disparaître lors d’une recréation de conteneur. La sauvegarde hors serveur reste à configurer.
 
-L’état réellement exécuté et les limites figurent dans `MVP_COOLIFY_ACCEPTANCE.md`. La recette Docker locale utilise un projet au nom unique et un proxy HTTPS localhost ; elle ne certifie pas le DNS, le certificat public ni le serveur Coolify de l’utilisateur. Une image construite n’est pas à elle seule un GO d’ouverture.
+En cas de crash pendant une production locale, diagnostiquer le run avant toute relance. `scripts/runtime-reconcile.ts` est en lecture seule par défaut ; `--apply` concerne le moteur durable, pas une reprise locale. La reprise automatique d’un run interrompu n’est pas qualifiée.
+
+Rollback : rétablir le commit/image précédent après arrêt des productions, conserver les volumes et migrations additives. Aucun `down -v`, reset de base ou migration inverse. Une ancienne image peut ignorer les credentials et les nouveaux audits : rétablir le candidat corrigé avant de modifier ces fonctions.
+
+Les résultats exécutés, l’URL et les limites figurent dans [MVP_COOLIFY_ACCEPTANCE.md](MVP_COOLIFY_ACCEPTANCE.md). MCP, IA réelle, Postiz réel, formats supplémentaires et mix audio suivent ce MVP. Le choix des échantillons de voix sous licence libre est conservé.

@@ -25,7 +25,7 @@
 |---|---|
 | Connexion, bootstrap démo et données fictives utiles | MCP authentifié |
 | Contexte, brief confirmé, storyboard, plan et plafond MOCK | Qualification de fournisseurs IA réels et leurs tarifs |
-| Vidéo, prévisualisation, téléchargement, correction et historique | Formats supplémentaires et mix audio complet |
+| Vidéo, prévisualisation, téléchargement, correction et historique | Formats supplémentaires et mix audio complet, avec les échantillons de voix libres déjà choisis |
 | QA et approbation exacte ; Postiz explicitement MOCK | Postiz réel, sans publication automatique |
 | Ajout, remplacement et suppression des clés IA dans l’admin | Refonte visuelle globale et fonctions avancées |
 | Packaging, persistance, recette Linux et sauvegarde minimale | Qualification complète Hatchet/S3 et exploitation avancée |
@@ -49,7 +49,7 @@ Cadrage réalisé avec les workflows **Product Design / index, user-context, get
 - [x] Terminer le lot 7A commencé : figer la version de composition, conserver l’audit de texte dans SceneVersion.manifest et le reprendre lors d’une correction.
 - [x] Vérifier texte long, dépassement refusé, snapshot figé et QA PASS après correction ; conserver les anciennes versions lisibles.
 - [x] Rejouer la verticale navigateur vidéo/correction/approbation, pertinente pour ce changement. Les trois parcours communs seront rejoués au jalon final pour éviter les répétitions.
-- [ ] Enregistrer un commit local réversible après contrôles. Aucun nouveau format dans cette étape.
+- [x] Enregistrer un commit local réversible après contrôles. Aucun nouveau format dans cette étape.
 
 **Livrable :** parcours vidéo stable, sans travail partiellement raccordé dans le candidat.
 
@@ -79,18 +79,18 @@ GET    /api/admin/providers                   ajoute credentials: { configured, 
 
 **Fichiers :** `infra/coolify/Dockerfile.api`, `Dockerfile.web`, `docker-compose.yml`, exemple de variables, `scripts/coolify/{check-env.ts,seed-demo.ts}` et nouveau guide `docs/releases/MVP_COOLIFY_RUNBOOK.md`.
 
-- [ ] Vérifier les dépendances natives Linux et polices nécessaires au rendu ; supprimer les dépendances à un chemin Windows dans la cible.
-- [ ] Injecter la variable de chiffrement uniquement côté API ; ne pas la transmettre au Web ni au build. Vérifier migrations, healthchecks, HTTPS, ports privés et volumes persistants.
-- [ ] Documenter bootstrap admin puis démo, démarrage sans clé IA, sauvegarde PostgreSQL + médias et restauration sur cible isolée ; inclure la conservation sécurisée de la clé de chiffrement et la réconciliation des runs interrompus.
-- [ ] Construire et tester sur Linux : installation vierge, mise à jour conservant les données, redémarrage, médias/Range et restauration. Docker local fonctionne désormais : les images Linux sont construites ; recette HTTPS et restauration en cours. Le serveur distant reste NOT_RUN.
+- [x] Vérifier les dépendances natives Linux et polices nécessaires au rendu ; supprimer les dépendances à un chemin Windows dans la cible.
+- [x] Injecter la variable de chiffrement uniquement côté API ; ne pas la transmettre au Web ni au build. Vérifier migrations, healthchecks, HTTPS, ports privés et volumes persistants.
+- [x] Documenter bootstrap admin puis démo, démarrage sans clé IA, sauvegarde PostgreSQL + médias et restauration sur cible isolée ; inclure la conservation sécurisée de la clé de chiffrement et la réconciliation des runs interrompus.
+- [x] Construire et tester sur Linux : installation vierge, mise à jour conservant les données, redémarrage, médias/Range et restauration. Docker local a ensuite échoué ; la recette Linux complète a été exécutée sur le serveur Coolify autorisé.
 
-**Livrable :** un guide court et un candidat identifié par commit, installable par l’utilisateur sur son serveur.
+**Livrable :** un guide court et un candidat identifié par commit, installable sur le serveur de l’utilisateur. Déploiement de recette explicitement autorisé ensuite.
 
 ### Étape 4 — Recette et première livraison
 
-- [ ] Exécuter typage, lint strict, contrôles secrets/frontières/documents, migrations et tests concernés.
-- [ ] Exécuter les E2E sur le build de production : connexion démo, projet → vidéo → correction → QA → approbation, gestion des clés admin et refus du compte démo.
-- [ ] Vérifier la cible HTTPS après déploiement utilisateur, la persistance après redémarrage et la restauration ; consigner résultat, commit, limites et rollback dans `docs/releases/MVP_COOLIFY_ACCEPTANCE.md`.
+- [x] Exécuter typage, lint strict, contrôles secrets/frontières/documents, migrations et tests concernés.
+- [x] Exécuter les E2E sur le build de production : connexion démo, projet → vidéo → correction → QA → approbation, gestion des clés admin et refus du compte démo.
+- [x] Vérifier la cible HTTPS après déploiement autorisé, la persistance après redémarrage et la restauration ; consigner résultat, commit, limites et rollback dans `docs/releases/MVP_COOLIFY_ACCEPTANCE.md`.
 - [ ] Livrer ce MVP, puis choisir une seule amélioration suivante à partir des retours d’usage.
 
 **Commandes locales communes :**
@@ -115,6 +115,10 @@ Dernier candidat committé : `ef3ef15`. Régression complète antérieure : 364 
 
 Une étape, un résultat utilisable, un rapport bref : **changement, preuve, limite, suite**. Réutiliser les composants ; ne pas refaire l’application, générer plusieurs directions visuelles ou répéter une suite complète sans modification qui le justifie. Aucun déploiement automatique. MCP ne bloque pas le MVP ; les clés IA le bloquent tant que l’étape 2 ne passe pas.
 
-## 5. Point de reprise — 2026-11-05
+## 5. État de livraison — 2026-11-05
 
-Gestion des clés implémentée : 46 tests PASS ; bootstrap admin : 3 PASS. Build Linux API/Web PASS. Le moteur Docker local s’est arrêté pendant le démarrage PostgreSQL : recette Linux HTTPS, interface admin mobile et restauration **NOT_RUN**. Aucun candidat final committé ni déploiement distant. Voir `docs/releases/MVP_COOLIFY_ACCEPTANCE.md`. Prochaine action : recette sur le serveur de l’utilisateur selon le runbook, sans nouvelle fonctionnalité ni MCP.
+Candidat `f170d95` publié sur la branche dédiée et épinglé dans Coolify. Application saine : https://vululu-recette.148.230.113.74.sslip.io . Quatre parcours fonctionnels validés ; clavier et 390 px validés ; HTTP 206/416, 19 migrations, redémarrage, restauration isolée et redéploiement vérifiés. Après redéploiement : 7 masters, 23 scènes et 1 credential, checksums valides. Le dernier rejeu clavier ajoute une seconde fixture de credential synthétique.
+
+L’utilisateur a autorisé le déploiement puis la visibilité temporaire des mots de passe démo/admin dans Coolify. Remise des accès en cours ; remasquage après confirmation. Les secrets PostgreSQL, session et chiffrement restent masqués, tous sont réservés au runtime. Aucun secret dans Git ou le rapport.
+
+Preuves et limites : `docs/releases/MVP_COOLIFY_ACCEPTANCE.md`. Prochaine amélioration proposée après livraison : voix de démonstration avec les échantillons libres déjà choisis. MCP reste après le MVP. Ce jalon ne certifie pas toute la V1 historique.
