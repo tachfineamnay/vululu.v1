@@ -475,12 +475,12 @@ describe('Repositories Prisma (integration base de test)', () => {
     expect(afterUpsert[0].id).toBe(scenes[0].id);
     expect(afterUpsert[0].title).toBe('Accroche modifiee');
 
-    const updated = await sceneRepo.updateDuration(project.id, 'SCENE-003', 5);
+    const updated = await sceneRepo.updateDuration(project.id, 'SCENE-003', 5, userA.id);
     expect(updated.durationSeconds).toBe(5);
     expect((await sceneRepo.findOwned(project.id, 'SCENE-003', userA.id))?.durationSeconds).toBe(5);
-    await sceneRepo.updateDuration(project.id, 'SCENE-003', 2);
+    await sceneRepo.updateDuration(project.id, 'SCENE-003', 2, userA.id);
 
-    await expect(sceneRepo.updateDuration(project.id, 'SCENE-999', 2)).rejects.toThrow(/scene_introuvable/);
+    await expect(sceneRepo.updateDuration(project.id, 'SCENE-999', 2, userA.id)).rejects.toThrow(/scene_introuvable/);
   });
 
   it('ProductionRepository : versions de scene, master, QA et approbation exacte', async () => {

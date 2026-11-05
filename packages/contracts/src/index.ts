@@ -77,9 +77,10 @@ export const correctionInputSchema = z.object({
   instruction: z.string().min(3).max(500)
 });
 
-export const sceneDurationInputSchema = z.object({
-  durationSeconds: sceneDurationSchema
-});
+export const sceneDurationInputSchema = z.union([
+  z.object({ durationSeconds: sceneDurationSchema }).strict(),
+  z.object({ useBriefDuration: z.literal(true) }).strict()
+]);
 
 export const approvalInputSchema = z.object({
   artifactVersionId: z.string().min(1),

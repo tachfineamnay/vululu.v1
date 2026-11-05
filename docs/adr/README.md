@@ -44,6 +44,7 @@ Chaque décision suit [template.md](template.md) :
 | [0021](0021-politique-execution-figee-au-lancement.md) | Politique d’exécution figée au lancement | Acceptée pour la tranche 6B | 2026-11-04 |
 | [0022](0022-plan-et-plafond-mock-avant-run.md) | Plan indicatif et plafond MOCK avant run | Acceptée pour la tranche 6C | 2026-11-05 |
 | [0023](0023-propositions-conversation-demo-et-storyboard.md) | Propositions de conversation MOCK et storyboard issu du brief | Acceptée pour la tranche 6D | 2026-11-05 |
+| [0024](0024-origine-explicite-durees-scenes.md) | Origine explicite des durées de scène | Acceptée pour la tranche 6E | 2026-11-05 |
 
 ## Décisions encore ouvertes
 

@@ -14,6 +14,7 @@ const fixture = vi.hoisted(() => {
 import { PrismaClient, prisma as db } from '@vululu/db';
 import { buildServer } from '../../apps/api/src/server';
 import { PrismaProductionRunRepository } from '../../apps/api/src/infrastructure/prisma/productionRunRepository';
+import { PrismaSceneRepository } from '../../apps/api/src/infrastructure/prisma/sceneRepository';
 
 let app: Awaited<ReturnType<typeof buildServer>>; let userId: string; let auth: Record<string, string>; let foreign: Record<string, string>;
 beforeAll(async () => {
@@ -80,11 +81,56 @@ it('canonicalise le profil des nouveaux briefs meme si le client omet les parame
   const value = await draft(10, 'LinkedIn', true);
   expect(value.brief.settings).toMatchObject({ ratio: '1:1', defaultSceneDurationSeconds: 10, profileVersion: 'v1-demo-2026-11-04' });
 });
-it('estime la nouvelle duree du brief sans reutiliser un storyboard devenu obsolete', async () => {
+async function reviseDuration(projectId: string, seconds = 3) {
+  const updated = await app.inject({ method: 'PATCH', url: `/api/projects/${projectId}/brief`, headers: auth, payload: { objective: 'Présenter la marque fictive', audience: 'Audience fictive', tone: 'Direct', cta: 'Découvrir', platform: 'Instagram', format: 'Video', settings: { defaultSceneDurationSeconds: seconds, maxMockCents: 10 } } });
+  expect(updated.statusCode).toBe(200); return updated.json().brief;
+}
+async function regenerate(projectId: string, brief: { version: number; revisions: { checksum: string }[] }) {
+  expect((await app.inject({ method: 'POST', url: `/api/projects/${projectId}/brief/confirm`, headers: auth, payload: { version: brief.version, checksum: brief.revisions.at(-1)!.checksum } })).statusCode).toBe(200);
+  const response = await app.inject({ method: 'POST', url: `/api/projects/${projectId}/storyboard`, headers: auth, payload: {} });
+  expect(response.statusCode).toBe(200); return response.json();
+}
+it('regenere la duree prevue tout en conservant la scene personnalisee et les identifiants', async () => {
   const value = await confirmed(10);
-  const updated = await app.inject({ method: 'PATCH', url: `/api/projects/${value.projectId}/brief`, headers: auth, payload: { objective: 'Présenter la marque fictive', audience: 'Audience fictive', tone: 'Direct', cta: 'Découvrir', platform: 'Instagram', format: 'Video', settings: { defaultSceneDurationSeconds: 3, maxMockCents: 10 } } });
-  expect(updated.statusCode).toBe(200);
+  const initial = await db.scene.findMany({ where: { projectId: value.projectId }, orderBy: { position: 'asc' } });
+  expect((await app.inject({ method: 'PATCH', url: `/api/projects/${value.projectId}/scenes/SCENE-003`, headers: auth, payload: { durationSeconds: 5 } })).statusCode).toBe(200);
+  const brief = await reviseDuration(value.projectId);
   const response = await app.inject({ method: 'GET', url: `/api/projects/${value.projectId}/production-plan`, headers: auth });
   expect(response.statusCode).toBe(200);
-  expect(response.json().plan).toMatchObject({ briefVersion: 2, durationSeconds: 15 });
+  expect(response.json().plan).toMatchObject({ briefVersion: 2, durationSeconds: 17 });
+  const bundle = await regenerate(value.projectId, brief);
+  expect(bundle.scenes.map((s: { id: string }) => s.id)).toEqual(initial.map((s) => s.id));
+  expect(bundle.scenes.map((s: { durationSeconds: number }) => s.durationSeconds)).toEqual([3, 3, 5, 3, 3]);
+  expect(bundle.scenes.map((s: { usesBriefDuration: boolean }) => s.usesBriefDuration)).toEqual([true, true, false, true, true]);
+  expect((await app.inject({ method: 'GET', url: `/api/projects/${value.projectId}/production-plan`, headers: auth })).json().plan.durationSeconds).toBe(17);
+});
+it('permet de reprendre explicitement la duree du brief apres une personnalisation', async () => {
+  const value = await confirmed(10);
+  await app.inject({ method: 'PATCH', url: `/api/projects/${value.projectId}/scenes/SCENE-003`, headers: auth, payload: { durationSeconds: 5 } });
+  const reset = await app.inject({ method: 'PATCH', url: `/api/projects/${value.projectId}/scenes/SCENE-003`, headers: auth, payload: { useBriefDuration: true } });
+  expect(reset.statusCode).toBe(200); expect(reset.json().scene).toMatchObject({ durationSeconds: 2, usesBriefDuration: true });
+  const brief = await reviseDuration(value.projectId);
+  const bundle = await regenerate(value.projectId, brief);
+  expect(bundle.scenes.every((s: { durationSeconds: number }) => s.durationSeconds === 3)).toBe(true);
+});
+it('preserve les durees historiques sans inventer leur origine', async () => {
+  const value = await confirmed(10);
+  // Une ligne sans origine explicite représente un ancien enregistrement.
+  await db.scene.deleteMany({ where: { projectId: value.projectId, sceneKey: 'SCENE-003' } });
+  const legacy = await db.scene.create({ data: { projectId: value.projectId, sceneKey: 'SCENE-003', position: 3, title: 'Historique', description: 'Durée historique', durationSeconds: 7 } });
+  const brief = await reviseDuration(value.projectId);
+  expect((await app.inject({ method: 'GET', url: `/api/projects/${value.projectId}/production-plan`, headers: auth })).json().plan.durationSeconds).toBe(19);
+  const bundle = await regenerate(value.projectId, brief);
+  expect(bundle.scenes[2]).toMatchObject({ id: legacy.id, durationSeconds: 7, usesBriefDuration: null });
+});
+it('isole les modes de duree et refuse toute modification pendant une production', async () => {
+  const value = await confirmed(10); const url = `/api/projects/${value.projectId}/scenes/SCENE-003`;
+  expect((await app.inject({ method: 'PATCH', url, headers: foreign, payload: { useBriefDuration: true } })).statusCode).toBe(404);
+  expect((await app.inject({ method: 'PATCH', url, headers: { cookie: auth.cookie }, payload: { useBriefDuration: true } })).statusCode).toBe(403);
+  for (const payload of [{ useBriefDuration: false }, { useBriefDuration: true, durationSeconds: 5 }, { durationSeconds: 0 }, { durationSeconds: 16 }, { durationSeconds: 3, usesBriefDuration: true }]) expect((await app.inject({ method: 'PATCH', url, headers: auth, payload })).statusCode).toBe(400);
+  const run = await start(value.projectId); const snapshot = run.jobRun.snapshot;
+  for (const payload of [{ useBriefDuration: true }, { durationSeconds: 5 }]) expect((await app.inject({ method: 'PATCH', url, headers: auth, payload })).statusCode).toBe(409);
+  await expect(new PrismaSceneRepository(db).updateDuration(value.projectId, 'SCENE-003', null, userId)).rejects.toMatchObject({ code: 'project_busy' });
+  expect((await db.jobRun.findUniqueOrThrow({ where: { id: run.jobRun.id } })).snapshot).toEqual(snapshot);
+  expect((await db.scene.findFirstOrThrow({ where: { projectId: value.projectId, sceneKey: 'SCENE-003' } })).durationSeconds).toBe(2);
 });

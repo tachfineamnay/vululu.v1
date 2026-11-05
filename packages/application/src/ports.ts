@@ -93,6 +93,7 @@ export type SceneRecord = {
   title: string;
   description: string;
   durationSeconds: number;
+  usesBriefDuration?: boolean | null;
   characterKey: string | null;
   createdAt?: Date;
 };
@@ -225,7 +226,7 @@ export interface SceneRepository {
   listByProject(projectId: string): Promise<SceneRecord[]>;
   findOwned(projectId: string, sceneKey: string, userId: string): Promise<SceneRecord | null>;
   upsertMany(projectId: string, scenes: Array<Omit<SceneRecord, 'id' | 'projectId'>>): Promise<SceneRecord[]>;
-  updateDuration(projectId: string, sceneKey: string, durationSeconds: number): Promise<SceneRecord>;
+  updateDuration(projectId: string, sceneKey: string, durationSeconds: number | null, userId: string): Promise<SceneRecord>;
 }
 
 export interface MasterRepository {

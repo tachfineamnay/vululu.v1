@@ -57,7 +57,7 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
       actorOf(request.currentUser),
       params.id,
       params.sceneKey,
-      input.durationSeconds
+      'durationSeconds' in input ? input.durationSeconds : null
     );
     return { scene };
   });

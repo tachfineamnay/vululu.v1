@@ -190,6 +190,7 @@ model Scene {
   title        String
   description  String
   durationSeconds Int @default(2)
+  usesBriefDuration Boolean?
   characterKey String?
   createdAt    DateTime       @default(now())
   project      Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)

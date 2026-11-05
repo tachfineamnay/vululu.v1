@@ -175,7 +175,7 @@ export class PrismaStoryboardStore implements StoryboardStore {
             where: {
               projectId_sceneKey: { projectId: input.projectId, sceneKey: scene.sceneKey }
             },
-            select: { id: true }
+            select: { id: true, usesBriefDuration: true }
           });
           if (existing) {
             await tx.scene.update({
@@ -184,7 +184,7 @@ export class PrismaStoryboardStore implements StoryboardStore {
                 position: scene.position,
                 title: scene.title,
                 description: scene.description,
-                // Une duree personnalisee existante est preservee.
+                ...(existing.usesBriefDuration === true ? { durationSeconds: scene.durationSeconds } : {}),
                 characterKey: scene.characterKey
               }
             });
@@ -198,6 +198,7 @@ export class PrismaStoryboardStore implements StoryboardStore {
                 title: scene.title,
                 description: scene.description,
                 durationSeconds: scene.durationSeconds,
+                usesBriefDuration: true,
                 characterKey: scene.characterKey
               }
             });

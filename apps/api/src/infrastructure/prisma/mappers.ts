@@ -86,6 +86,7 @@ export function toSceneRecord(row: PrismaScene): SceneRecord {
     title: row.title,
     description: row.description,
     durationSeconds: row.durationSeconds,
+    usesBriefDuration: row.usesBriefDuration,
     characterKey: row.characterKey,
     createdAt: row.createdAt
   };

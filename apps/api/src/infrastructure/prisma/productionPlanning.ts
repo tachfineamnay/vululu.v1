@@ -1,6 +1,6 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { prisma } from '@vululu/db';
-import { normalizeProductionSettings, type Platform, type ProjectFormat, type ProductionSettings } from '@vululu/domain';
+import { normalizeProductionSettings, plannedSceneCount, type Platform, type ProjectFormat, type ProductionSettings } from '@vululu/domain';
 import { ApplicationError, createProductionPlan, DURABLE_PRODUCTION_STEPS, type ProductionPlanningPort } from '@vululu/application';
 import { env } from '../../env';
 import { captureRunPolicy } from './captureRunPolicy';
@@ -16,7 +16,11 @@ export class PrismaProductionPlanning implements ProductionPlanningPort {
       const settings = normalizeProductionSettings(project.platform as Platform, project.format as ProjectFormat, (brief.settings as unknown as ProductionSettings | null) ?? { defaultSceneDurationSeconds: project.sceneDurationSeconds, maxMockCents: 100 });
       const durable = env.orchestratorMode === 'hatchet';
       const policy = await captureRunPolicy(tx, { steps: durable ? [...DURABLE_PRODUCTION_STEPS] : ['snapshot', 'render-scenes', 'assemble-master', 'qa'], durable, usage: project.usage, maxMockCents: settings.maxMockCents });
-      return createProductionPlan({ settings, format: project.format as ProjectFormat, briefVersion: brief.version, briefChecksum: revision.checksum, policy, ...(project.scenes.length && project.storyboardBriefVersion === brief.version ? { sceneDurationsSeconds: project.scenes.map((scene) => scene.durationSeconds) } : {}) });
+      const sceneDurationsSeconds = Array.from({ length: plannedSceneCount(project.format as ProjectFormat) }, (_, index) => {
+        const scene = project.scenes.find((value) => value.sceneKey === 'SCENE-' + String(index + 1).padStart(3, '0'));
+        return scene && (project.storyboardBriefVersion === brief.version || scene.usesBriefDuration !== true) ? scene.durationSeconds : settings.defaultSceneDurationSeconds;
+      });
+      return createProductionPlan({ settings, format: project.format as ProjectFormat, briefVersion: brief.version, briefChecksum: revision.checksum, policy, sceneDurationsSeconds });
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
   }
 }

@@ -81,7 +81,7 @@ export default function ProjectStudio({ id }: { id: string }) {
   const [plan, setPlan] = useState<ProductionPlanView | null>(null);
   const [planError, setPlanError] = useState('');
   const planBriefVersion = bundle?.brief?.version;
-  const planDurationKey = bundle?.scenes.map((scene) => scene.durationSeconds).join(',');
+  const planDurationKey = bundle?.scenes.map((scene) => `${scene.durationSeconds}:${scene.usesBriefDuration}`).join(',');
   const settingsLoaded = useRef(false);
   const briefLoaded = useRef(false);
   const bundleRef = useRef<ProjectBundle | null>(null);
@@ -226,10 +226,8 @@ export default function ProjectStudio({ id }: { id: string }) {
     }), 'Correction de ' + sceneKey + ' lancee. Le master precedent est conserve.');
   }
 
-  async function updateDuration(sceneKey: string, durationSeconds: number) {
-    await runAction('duration', () => patchJson('/api/projects/' + id + '/scenes/' + sceneKey, {
-      durationSeconds
-    }), 'Duree de ' + sceneKey + ' mise a jour.');
+  async function updateDuration(sceneKey: string, durationSeconds: number | null) {
+    await runAction('duration', () => patchJson('/api/projects/' + id + '/scenes/' + sceneKey, durationSeconds === null ? { useBriefDuration: true } : { durationSeconds }), 'Durée de ' + sceneKey + ' mise à jour.');
   }
 
   async function approveMaster(version: MasterVersion) {
@@ -485,6 +483,8 @@ export default function ProjectStudio({ id }: { id: string }) {
                           {Array.from({ length: 15 }, (_, index) => index + 1).map((seconds) => <option key={seconds} value={seconds}>{seconds} s</option>)}
                         </select>
                       </label>
+                      <p className="hint" data-testid={'duration-origin-' + scene.sceneKey}>{scene.usesBriefDuration === true ? 'Suit la durée du brief à la régénération.' : scene.usesBriefDuration === false ? 'Durée personnalisée, conservée à la régénération.' : 'Durée historique, conservée à la régénération.'}</p>
+                      {scene.usesBriefDuration !== true ? <button type="button" className="btn btn-ghost" data-testid={'duration-reset-' + scene.sceneKey} onClick={() => updateDuration(scene.sceneKey, null)} disabled={Boolean(busy) || !bundle.brief || briefDirty || bundle.project.status === 'producing'}>Suivre la durée du brief</button> : null}
                       <div className="scene-actions">
                         <button type="button" className="btn btn-ghost btn-small" data-testid={'correct-scene-' + scene.sceneKey} onClick={() => focusCorrection(scene.sceneKey)}>
                           Corriger cette scene

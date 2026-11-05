@@ -55,6 +55,7 @@ export type Scene = {
   title: string;
   description: string;
   durationSeconds: number;
+  usesBriefDuration?: boolean | null;
   characterKey: string | null;
   versions: SceneVersion[];
 };

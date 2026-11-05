@@ -142,6 +142,7 @@ export class PrismaProjectBundleQuery implements ProjectBundleQueryPort {
       title: scene.title,
       description: scene.description,
       durationSeconds: scene.durationSeconds,
+      usesBriefDuration: scene.usesBriefDuration,
       characterKey: scene.characterKey,
       createdAt: scene.createdAt,
       versions: scene.versions.map((version) => ({
