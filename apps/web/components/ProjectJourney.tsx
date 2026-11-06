@@ -24,7 +24,12 @@ export default function ProjectJourney({ bundle, plan, planError, briefDirty, re
     } catch (err) { setEvidenceError(err instanceof Error ? err.message : 'Preuves indisponibles.'); }
     finally { setEvidenceBusy(false); }
   }
-  function focusSection(id: string) { document.getElementById(id)?.focus(); }
+  function focusSection(id: string) {
+    const target = document.getElementById(id);
+    let parent = target?.parentElement;
+    while (parent) { if (parent instanceof HTMLDetailsElement) parent.open = true; parent = parent.parentElement; }
+    target?.focus();
+  }
   return <section className="card project-journey stack" data-vululu-theme="blue" aria-labelledby="journey-heading" data-testid="project-journey">
     <div className="section-head"><div><p className="eyebrow">Votre parcours de création</p><h2 id="journey-heading">Du brief au résultat</h2></div><a href="#flow-details" className="text-link" onClick={(event) => { event.preventDefault(); const panel = document.getElementById('flow-details'); if (panel instanceof HTMLDetailsElement) { panel.open = true; panel.querySelector('summary')?.focus(); } }}>Consulter le flow</a></div>
     <p>Projet : <strong>{bundle.project.title}</strong> · Contexte : {bundle.context.name}. Ce parcours et le flow lisent le même projet ; consulter une étape ne lance aucune action.</p>

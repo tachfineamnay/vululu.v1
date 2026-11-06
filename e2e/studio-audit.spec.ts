@@ -31,11 +31,11 @@ test('audit : retour arrière, copie locale du Studio, conflit de révision, err
   try { await expect(page.getByTestId('brief-audience')).toBeDisabled(); await expect(page.getByTestId('brief-save')).toBeDisabled(); await expect(page.getByTestId('correct-input')).toBeDisabled(); }
   finally { releaseSave(); }
   await expect(page.getByTestId('studio-error')).toContainText('Sauvegarde indisponible'); await expect(page.getByTestId('brief-audience')).toHaveValue('Public à conserver');
-  await page.unroute('**' + endpoint + '/brief'); await page.getByTestId('brief-save').click(); await expect(page.getByTestId('project-journey').getByTestId('journey-state-brief')).toHaveText('Version 2 à confirmer');
+  await page.unroute('**' + endpoint + '/brief'); await page.getByTestId('brief-save').click(); await page.getByText('Parcours et plan de production', { exact: true }).click(); await expect(page.getByTestId('project-journey').getByTestId('journey-state-brief')).toHaveText('Version 2 à confirmer');
   for (const width of [1440,1024,768,390]) {
     await page.setViewportSize({ width, height: 900 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), 'débordement à ' + width).toBe(true);
-    expect(await page.locator('.project-topbar').evaluate((e) => getComputedStyle(e).position)).toBe('relative');
+    await expect(page.locator('.studio-sidebar')).toBeVisible();
   }
   let release!: () => void; const gate = new Promise<void>((resolve) => { release = resolve; });
   await page.route('**' + endpoint, async (route) => { await gate; await route.continue(); });

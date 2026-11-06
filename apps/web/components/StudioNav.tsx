@@ -12,11 +12,11 @@ const LINKS = [
   { key: 'assets', href: '/assets', label: 'Ressources' }
 ];
 
-export default function StudioNav() {
+export default function StudioNav({ primaryOnly = false }: { primaryOnly?: boolean }) {
   const pathname = usePathname() || '/';
   return (
     <nav className="nav-links" aria-label="Navigation principale">
-      {LINKS.map((link) => {
+      {LINKS.filter((link) => !primaryOnly || ['home', 'contexts', 'creations'].includes(link.key)).map((link) => {
         const active = link.href === '/' ? pathname === '/' : pathname === link.href || pathname.startsWith(link.href + '/');
         return (
           <Link key={link.key} href={link.href} data-testid={'nav-' + link.key} className={'nav-link' + (active ? ' is-active' : '')} aria-current={active ? 'page' : undefined}>

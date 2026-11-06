@@ -37,8 +37,13 @@ test('brief confirme : profil reel, revisions et storyboard perime', async ({ pa
   await expect(page.getByTestId('storyboard-generate')).toBeEnabled();
   await page.getByTestId('storyboard-generate').click();
   await expect(page.getByTestId('duration-summary')).toHaveText('5 scenes / 5 s');
-  for (let i = 1; i <= 5; i++) await expect(page.getByTestId('duration-SCENE-00' + i)).toHaveValue('1');
+  for (let i = 1; i <= 5; i++) {
+    await page.getByTestId('scene-SCENE-00' + i).click();
+    await expect(page.getByTestId('scene-SCENE-00' + i)).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('duration-SCENE-00' + i)).toHaveValue('1');
+  }
   await expect(page.getByTestId('produce')).toBeEnabled();
+  await page.getByTestId('scene-SCENE-003').click();
   await page.getByTestId('duration-SCENE-003').selectOption('3');
   await expect(page.getByTestId('duration-origin-SCENE-003')).toContainText('personnalisée');
   const initialScenes = (await (await page.request.get('/api/projects/' + project.id)).json()).scenes;
@@ -65,11 +70,13 @@ test('brief confirme : profil reel, revisions et storyboard perime', async ({ pa
   await expect(page.getByTestId('duration-summary')).toHaveText('5 scenes / 10 s');
   await expect(page.getByTestId('production-plan')).toContainText('5 scènes · 10 s');
   await page.reload();
+  await page.getByTestId('scene-SCENE-003').click();
   await expect(page.getByTestId('duration-origin-SCENE-003')).toContainText('Suit la durée du brief');
   await expect(page.getByTestId('produce')).toBeEnabled();
   await page.getByTestId('produce').click();
   await expect(page.getByTestId('status-badge')).toHaveText('Aperçu pret', { timeout: 180000 });
   const video = page.getByTestId('master-video');
+  await expect.poll(() => video.evaluate((element) => (element as HTMLVideoElement).readyState)).toBeGreaterThanOrEqual(2);
   await expect.poll(() => video.evaluate((element) => (element as HTMLVideoElement).videoHeight)).toBe(1350);
   expect(await video.evaluate((element) => (element as HTMLVideoElement).videoWidth)).toBe(1080);
   expect(await video.evaluate((element) => (element as HTMLVideoElement).duration)).toBeCloseTo(10, 1);
@@ -77,7 +84,16 @@ test('brief confirme : profil reel, revisions et storyboard perime', async ({ pa
   expect(bundle.brief).toMatchObject({ version: 2, confirmedVersion: 2, settings: { ratio: '4:5', visualStyle: 'bold' } });
   expect(bundle.brief.revisions).toHaveLength(2);
   expect(bundle.master.qaStatus).toBe('PASS');
-  await page.setViewportSize({ width: 390, height: 844 });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  for (const width of [1440, 1024, 768, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), 'débordement à ' + width).toBe(true);
+    await expect(page.getByTestId('scene-SCENE-003')).toBeVisible();
+    await expect(page.getByTestId('correct-input')).toBeVisible();
+    if (process.env.CAPTURE_STUDIO === '1' && (width === 1440 || width === 390)) { await page.evaluate(() => window.scrollTo(0, 0)); await page.screenshot({ path: '.v1/studio-final-' + width + '.png' }); }
+  }
+  await page.getByTestId('scene-SCENE-002').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('scene-SCENE-002')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('duration-SCENE-002')).toBeVisible();
   if (process.env.CAPTURE_STUDIO === '1') await page.screenshot({ path: '.v1/brief-profile.png', fullPage: true });
 });

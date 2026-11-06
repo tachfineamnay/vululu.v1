@@ -170,7 +170,7 @@ test('verticale Studio V1 complete (deterministe, correction ciblee, MOCK)', asy
   await page.locator('[data-testid=approve]').click();
   await expect(page.locator('[data-testid=approval-status]')).toBeVisible();
 
-  await page.locator('[data-testid=correct-scene]').selectOption('SCENE-002');
+  await page.getByTestId('scene-SCENE-002').click();
   await page.locator('[data-testid=correct-input]').fill('Rends le produit plus visible et garde le personnage.');
   await page.locator('[data-testid=correct-submit]').click();
   await expect(page.locator('[data-testid=master-version]')).toHaveText('Master v2', { timeout: 240000 });

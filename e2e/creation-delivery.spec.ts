@@ -23,10 +23,11 @@ test('livraison réelle : versions exactes, téléchargement, approbation obsol�
   await expect(page.getByTestId('produce')).toBeDisabled(); await expect(page.getByTestId('storyboard-generate')).toBeDisabled();
   await expect(page.getByTestId('master-version')).toHaveText('Master v1', { timeout: 180000 });
   const first = await getBundle();
+  await page.getByText('Parcours et plan de production', { exact: true }).click();
   await page.getByRole('link', { name: 'Consulter le flow', exact: true }).click();
   await page.getByRole('button', { name: 'Charger les sorties du run', exact: true }).click(); await expect(page.getByTestId('run-outputs')).toBeVisible();
   await page.getByTestId('approve').click(); await expect(page.getByTestId('current-approved-version')).toHaveText('v1');
-  await page.getByTestId('correct-scene').selectOption(first.scenes[0].sceneKey); await page.getByTestId('correct-input').fill('Mettre en valeur le sujet de cette scène fictive.');
+  await page.getByTestId('scene-' + first.scenes[0].sceneKey).click(); await expect(page.getByTestId('scene-' + first.scenes[0].sceneKey)).toHaveAttribute('aria-pressed', 'true'); await page.getByTestId('correct-input').fill('Mettre en valeur le sujet de cette scène fictive.');
   await page.route('**' + endpoint + '/scenes/' + first.scenes[0].sceneKey + '/correct', (route) => route.fulfill({ status: 503, json: { message: 'Correction non confirmée pour la recette' } }));
   await page.getByTestId('correct-submit').click(); await expect(page.getByTestId('studio-error')).toContainText('Correction non confirmée'); await expect(page.getByTestId('correct-input')).toHaveValue('Mettre en valeur le sujet de cette scène fictive.'); await expect(page.getByTestId('master-version')).toHaveText('Master v1');
   await page.unroute('**' + endpoint + '/scenes/' + first.scenes[0].sceneKey + '/correct');

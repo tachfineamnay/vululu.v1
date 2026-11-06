@@ -12,6 +12,10 @@ L’utilisateur a autorisé la **V1-DEMO complète sans connexion IA** : [périm
 
 ## 2. Principes de séquencement
 
+### Studio du 2026-11-06
+
+Recomposition du Studio autour de l’aperçu réel, d’un bandeau unique de scènes et d’un inspecteur contextuel : [périmètre, recette et limites](../reports/PRODUCT_DESIGN_STUDIO_2026-11-06.md). Le SVG et les contrats du dépôt ont servi de référence, sans attendre le PNG privé. La recette globale et la qualification live restent distinctes.
+
 ### Tranche frontend du 2026-11-05
 
 Diagnostic Product Design, fondations bleues à portée limitée et parcours Marques et références raccordés aux API existantes : [rapport et preuves](../reports/PRODUCT_DESIGN_LIVRAISON_2026-11-05.md). Recette ciblée contextes/ressources, clavier/mobile, build et contrôles locaux verts. Aucun changement de contrat backend, aucune publication. La fidélité exacte à la maquette PNG reste NOT_RUN (source absente) ; la migration visuelle des autres routes et la recette de release complète restent distinctes.

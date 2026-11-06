@@ -12,6 +12,7 @@ test('parcours et flow : mêmes données, dépendances, indisponibilités et rep
   const created = await page.request.post('/api/projects', { headers, data: { contextId: context.id, title: 'Parcours de recette', objective: 'Expliquer une activité', platform: 'Instagram', format: 'Video' } }); expect(created.status()).toBe(201);
   const { project } = await created.json();
   await page.goto('/projects/' + project.id);
+  await page.getByText('Parcours et plan de production', { exact: true }).click();
   const journey = page.getByTestId('project-journey');
   await expect(journey.getByTestId('journey-state-brief')).toHaveText('À préparer');
   await journey.getByRole('link', { name: 'Consulter le flow', exact: true }).press('Enter');
@@ -37,6 +38,7 @@ test('parcours et flow : mêmes données, dépendances, indisponibilités et rep
   await page.unroute('**/api/projects/' + project.id + '/production-plan');
   await flow.getByRole('button', { name: 'Actualiser le plan', exact: true }).click(); await expect(flow.getByRole('alert')).toHaveCount(0);
   await page.getByTestId('brief-confirm').click(); await page.getByTestId('storyboard-generate').click();
+  await expect.poll(async () => (await (await page.request.get('/api/projects/' + project.id)).json()).scenes.length).toBeGreaterThan(0);
   const actual = await (await page.request.get('/api/projects/' + project.id)).json();
   await expect(journey.getByTestId('journey-state-storyboard')).toHaveText(actual.scenes.length + ' scènes liées au brief actuel');
   for (const width of [1440,1024,768,390]) { await page.setViewportSize({ width, height: 900 }); expect(await journey.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true); }

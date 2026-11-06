@@ -1,5 +1,34 @@
 @import "../../../docs/design-system/tokens.css";
 
+/* Atelier projet : navigation, création et inspecteur restent dans le même flux. */
+[data-vululu-theme="blue"].project-studio-shell { display: grid; grid-template-columns: 216px minmax(0, 1fr); align-items: start; min-height: 100vh; }
+[data-vululu-theme="blue"] .studio-sidebar { position: sticky; top: 0; min-height: 100vh; padding: var(--v-space-24) var(--v-space-16); background: var(--v-color-surface); border-right: 1px solid var(--v-color-border); display: flex; flex-direction: column; gap: var(--v-space-32); }
+[data-vululu-theme="blue"] .studio-sidebar .brand { align-self: flex-start; }
+[data-vululu-theme="blue"] .studio-sidebar .nav-links { display: flex; flex-direction: column; align-items: stretch; gap: var(--v-space-8); }
+[data-vululu-theme="blue"] .studio-sidebar .nav-link { justify-content: flex-start; text-align: left; }
+[data-vululu-theme="blue"] .studio-sidebar > button { margin-top: auto; }
+[data-vululu-theme="blue"] .studio-page { width: 100%; max-width: none; min-width: 0; padding: var(--v-space-24); }
+[data-vululu-theme="blue"] .studio-head { align-items: flex-start; gap: var(--v-space-16); }
+[data-vululu-theme="blue"] .studio-head > div { min-width: 0; }
+[data-vululu-theme="blue"] .studio-head .btn { justify-self: start; }
+[data-vululu-theme="blue"] .studio-head-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--v-space-12); }
+[data-vululu-theme="blue"] .studio-workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 320px); gap: var(--v-space-24); align-items: start; margin-top: var(--v-space-24); }
+[data-vululu-theme="blue"] .studio-workspace > * { min-width: 0; }
+[data-vululu-theme="blue"] .studio-workspace .creation-delivery { margin: 0; }
+[data-vululu-theme="blue"] .studio-inspector { position: sticky; top: var(--v-space-24); }
+[data-vululu-theme="blue"] .studio-inspector > div:first-child { display: grid; gap: var(--v-space-8); }
+[data-vululu-theme="blue"] .studio-empty-preview { min-height: 300px; display: grid; place-content: center; gap: var(--v-space-8); text-align: center; background: var(--v-color-background); border-radius: var(--v-radius-control); padding: var(--v-space-24); color: var(--v-color-text-muted); }
+[data-vululu-theme="blue"] .studio-scenes { display: grid; gap: var(--v-space-16); min-width: 0; border-top: 1px solid var(--v-color-border); padding-top: var(--v-space-24); }
+[data-vululu-theme="blue"] .studio-scene-strip { display: flex; gap: var(--v-space-12); overflow-x: auto; padding: var(--v-space-4); scroll-padding: var(--v-space-4); }
+[data-vululu-theme="blue"] .studio-scene-choice { flex: 0 0 175px; display: grid; gap: var(--v-space-8); text-align: left; color: var(--v-color-text); background: var(--v-color-surface); border: 1px solid var(--v-color-border); border-radius: var(--v-radius-control); padding: var(--v-space-8); cursor: pointer; }
+[data-vululu-theme="blue"] .studio-scene-choice[aria-pressed="true"] { border-color: var(--v-color-action); box-shadow: inset 0 0 0 1px var(--v-color-action); background: var(--v-color-selected); }
+[data-vululu-theme="blue"] .studio-scene-choice img, [data-vululu-theme="blue"] .studio-scene-choice .scene-placeholder { width: 100%; height: 90px; object-fit: contain; background: var(--v-color-background); border-radius: var(--v-radius-small); }
+[data-vululu-theme="blue"] .studio-scene-choice span:last-child { display: grid; gap: var(--v-space-4); }
+[data-vululu-theme="blue"] .studio-scene-choice small { color: var(--v-color-text-muted); }
+[data-vululu-theme="blue"] .studio-preparation { margin-top: var(--v-space-24); }
+@media (max-width: 1150px) { [data-vululu-theme="blue"] .studio-workspace { grid-template-columns: minmax(0, 1fr); } [data-vululu-theme="blue"] .studio-inspector { position: static; } }
+@media (max-width: 768px) { [data-vululu-theme="blue"].project-studio-shell { display: block; } [data-vululu-theme="blue"] .studio-sidebar { position: static; min-height: 0; padding: var(--v-space-16); gap: var(--v-space-12); border-right: 0; border-bottom: 1px solid var(--v-color-border); } [data-vululu-theme="blue"] .studio-sidebar .nav-links { flex-direction: row; flex-wrap: wrap; order: initial; } [data-vululu-theme="blue"] .studio-sidebar > button { margin: 0; align-self: flex-start; } [data-vululu-theme="blue"].project-studio-shell .studio-page { padding: var(--v-space-16); } }
+
 /* En-tête du Studio seulement : les liens de retour peuvent occuper plusieurs lignes. */
 .project-topbar .topbar-actions { flex-wrap: wrap; min-width: 0; max-width: 100%; }
 

@@ -1,13 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { postJson, type MasterVersion, type ProjectBundle } from '../lib/api';
 import { exactApproval, masterMediaUrl } from '../lib/creationDelivery';
 
-type Props = { bundle: ProjectBundle; refresh: () => Promise<void>; blocked?: boolean; correct?: () => void };
+type Props = { bundle: ProjectBundle; refresh: () => Promise<void>; blocked?: boolean; correct?: () => void; scenes?: ReactNode };
 
-export default function CreationDelivery({ bundle, refresh, blocked = false, correct }: Props) {
+export default function CreationDelivery({ bundle, refresh, blocked = false, correct, scenes }: Props) {
   const [selected, setSelected] = useState<number | null>(null);
   const [compare, setCompare] = useState<number | null>(null);
   const [busy, setBusy] = useState('');
@@ -15,7 +15,7 @@ export default function CreationDelivery({ bundle, refresh, blocked = false, cor
   const [message, setMessage] = useState<{ versionId: string; masterId: string; text: string } | null>(null);
   const [mediaErrors, setMediaErrors] = useState<number[]>([]);
   const latest = bundle.master;
-  if (!latest) return <section className="card stack creation-delivery" data-vululu-theme="blue"><h2>Résultat à venir</h2><p>Aucun master n’est disponible pour ce projet. Reprenez le brief et les scènes pour préparer la production.</p>{correct ? <a className="text-link" href="#brief-heading">Compléter le brief</a> : <Link className="text-link" href={'/projects/' + bundle.project.id}>Reprendre le projet</Link>}</section>;
+  if (!latest) return <section className="card stack creation-delivery" data-vululu-theme="blue"><h2 id="preview-heading" tabIndex={-1}>Votre création</h2><div className="studio-empty-preview"><p>Aucun aperçu disponible pour le moment.</p><p>Préparez le brief et le storyboard pour produire votre création.</p></div>{scenes}{!correct ? <Link className="text-link" href={'/projects/' + bundle.project.id}>Reprendre le projet</Link> : null}</section>;
   const versions = bundle.masterVersions;
   const viewed = versions.find((version) => version.version === selected) ?? latest;
   const compared = versions.find((version) => version.version === compare && version.version !== viewed.version) ?? null;
@@ -47,7 +47,7 @@ export default function CreationDelivery({ bundle, refresh, blocked = false, cor
     } catch (err) { setError(err instanceof Error ? err.message : 'Téléchargement impossible.'); }
     finally { setBusy(''); }
   }
-  function player(version: MasterVersion, comparison = false) { return <div className="stack"><p>{comparison ? 'Comparaison' : 'Version consultée'} : <strong>v{version.version}</strong> · QA {version.qaStatus ?? 'NOT_RUN'}</p><video key={version.id} className="player" controls preload="metadata" data-testid={comparison ? 'master-video-compare' : 'master-video'} aria-label={(comparison ? 'Comparaison' : 'Master') + ' version ' + version.version} src={mediaUrl(version.version)} onError={() => setMediaErrors((values) => values.includes(version.version) ? values : [...values, version.version])} />{mediaErrors.includes(version.version) ? <p className="error" role="alert">Lecture indisponible pour la version {version.version}. Les autres versions restent accessibles ; réessayez le téléchargement ou rechargez le projet.</p> : null}</div>; }
+  function player(version: MasterVersion, comparison = false) { return <div className="stack"><p>{comparison ? 'Comparaison' : 'Version consultée'} : <strong>v{version.version}</strong> · QA {version.qaStatus ?? 'NOT_RUN'}</p><video key={version.id} className="player" controls preload="auto" data-testid={comparison ? 'master-video-compare' : 'master-video'} aria-label={(comparison ? 'Comparaison' : 'Master') + ' version ' + version.version} src={mediaUrl(version.version)} onError={() => setMediaErrors((values) => values.includes(version.version) ? values : [...values, version.version])} />{mediaErrors.includes(version.version) ? <p className="error" role="alert">Lecture indisponible pour la version {version.version}. Les autres versions restent accessibles ; réessayez le téléchargement ou rechargez le projet.</p> : null}</div>; }
   return <section className="card stack creation-delivery" data-vululu-theme="blue" aria-labelledby="preview-heading" data-testid="creation-delivery">
     <div className="section-head"><div><p className="eyebrow">{bundle.context.name} · {bundle.project.title}</p><h2 id="preview-heading" tabIndex={-1}>Résultat et livraison</h2></div><span className="pill" data-testid="master-version">Master v{viewed.version}</span></div>
     <p>Version courante : <strong>v{latest.version}</strong>. Version approuvée courante : <strong data-testid="current-approved-version">{exactApproval(latest) ? 'v' + latest.version : 'aucune'}</strong>. {bundle.project.status === 'producing' ? 'Une nouvelle production est en cours ; le résultat précédent reste disponible.' : ''}</p>
@@ -57,6 +57,7 @@ export default function CreationDelivery({ bundle, refresh, blocked = false, cor
     <div className="two-col"><label className="label">Version consultée<select className="input" data-testid="version-select" value={viewed.version} onChange={(event) => { setSelected(Number(event.target.value)); setCompare(null); }}>{versions.map((version) => <option key={version.id} value={version.version}>Version {version.version} · QA {version.qaStatus ?? 'NOT_RUN'}</option>)}</select></label><label className="label">Comparer avec<select className="input" data-testid="compare-version" value={compared?.version ?? ''} disabled={versions.length < 2} onChange={(event) => setCompare(event.target.value ? Number(event.target.value) : null)}><option value="">Sans comparaison</option>{versions.filter((version) => version.id !== viewed.id).map((version) => <option key={version.id} value={version.version}>Version {version.version} · QA {version.qaStatus ?? 'NOT_RUN'}</option>)}</select></label></div>
     {versions.length < 2 ? <p className="hint">Une seule version disponible. Les versions suivantes apparaîtront après une production ou une correction réussie.</p> : null}
     <div className={compared ? 'delivery-compare' : 'delivery-preview'}>{player(viewed)}{compared ? player(compared, true) : null}</div>
+    {scenes}
     <div className="actions"><button type="button" className="btn btn-primary" data-testid="download-master" disabled={!!busy} onClick={() => void download()}>{busy === 'download' ? 'Préparation du fichier…' : 'Télécharger le MP4 v' + viewed.version}</button><span className="hint">Télécharger conserve l’état d’approbation et de transfert.</span></div>
     <section className="stack" aria-labelledby="qa-heading"><h3 id="qa-heading" tabIndex={-1}>Qualité et approbation</h3><p data-testid="qa-status">QA {viewed.qaStatus ?? 'NOT_RUN'} · version consultée v{viewed.version}</p>
       {viewed.qaStatus !== 'PASS' ? <p className="error" role="alert">La QA de cette version n’est pas validée. Examinez les contrôles et corrigez le résultat avant de l’approuver.</p> : null}

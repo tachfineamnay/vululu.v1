@@ -27,12 +27,13 @@ test('conversation MOCK : brouillon relu, proposition obsolete et correction exp
   await briefButtons.last().click(); await expect(page.getByTestId('brief-cta')).toHaveValue('Découvrir la lampe'); expect((await bundle()).brief.version).toBe(1);
   await page.getByTestId('brief-save').click(); await expect(page.getByTestId('brief-confirm')).toBeEnabled(); await expect(briefButtons.last()).toBeDisabled();
   await page.getByTestId('brief-confirm').click(); await page.getByTestId('storyboard-generate').click();
-  await expect(page.getByTestId('scene-SCENE-001')).toContainText('Présenter une lampe fictive'); await expect(page.getByTestId('scene-SCENE-005')).toContainText('Découvrir la lampe');
+  await page.getByTestId('scene-SCENE-001').click(); await expect(page.locator('.studio-inspector')).toContainText('Présenter une lampe fictive');
+  await page.getByTestId('scene-SCENE-005').click(); await expect(page.locator('.studio-inspector')).toContainText('Découvrir la lampe');
   await page.getByTestId('produce').click(); await expect(page.getByTestId('status-badge')).toHaveText('Aperçu pret', { timeout: 180000 });
   const before = await bundle();
   await page.getByTestId('chat-input').fill('SCENE-003: Mettre le produit au premier plan.'); await page.getByTestId('chat-send').click();
   const correctionButton = page.getByRole('button', { name: 'Préremplir la correction', exact: true }); await expect(correctionButton).toBeEnabled();
-  await correctionButton.click(); await expect(page.getByTestId('correct-scene')).toHaveValue('SCENE-003'); await expect(page.getByTestId('correct-input')).toHaveValue('Mettre le produit au premier plan.');
+  await correctionButton.click(); await expect(page.getByTestId('scene-SCENE-003')).toHaveAttribute('aria-pressed', 'true'); await expect(page.getByTestId('correct-input')).toHaveValue('Mettre le produit au premier plan.');
   expect((await bundle()).master.version).toBe(1);
   await page.getByTestId('correct-submit').click(); await expect(page.getByTestId('master-version')).toHaveText('Master v2', { timeout: 180000 }); await expect(correctionButton).toBeDisabled();
   const after = await bundle(); expect(after.scenes.map((s: { id: string }) => s.id)).toEqual(before.scenes.map((s: { id: string }) => s.id));

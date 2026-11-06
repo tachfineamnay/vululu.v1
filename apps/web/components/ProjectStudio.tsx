@@ -93,6 +93,7 @@ export default function ProjectStudio({ id }: { id: string }) {
   const settingsLoaded = useRef(false);
   const briefLoaded = useRef(false);
   const initialWorkFocused = useRef(false);
+  const preparationInitiallyOpen = useRef<boolean | null>(null);
   const bundleRef = useRef<ProjectBundle | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -242,7 +243,7 @@ export default function ProjectStudio({ id }: { id: string }) {
   }
 
   async function generateStoryboard() {
-    await runAction('storyboard', () => postJson('/api/projects/' + id + '/storyboard', {}), 'Storyboard de 5 scenes genere.');
+    await runAction('storyboard', () => postJson('/api/projects/' + id + '/storyboard', {}), 'Storyboard genere.');
   }
 
   async function confirmBrief() {
@@ -291,11 +292,6 @@ export default function ProjectStudio({ id }: { id: string }) {
   async function logout() {
     try { await api('/api/auth/logout', { method: 'POST' }); router.push('/login'); }
     catch { setError('La déconnexion n’a pas été confirmée. Vos saisies sont conservées ; réessayez.'); }
-  }
-
-  function focusCorrection(sceneKey: string): void {
-    setCorrectionScene(sceneKey);
-    correctionRef.current?.focus();
   }
 
   if (loading) {
@@ -354,29 +350,26 @@ export default function ProjectStudio({ id }: { id: string }) {
   const job = bundle.job;
   const totalDurationSeconds = bundle.scenes.reduce((sum, scene) => sum + scene.durationSeconds, 0);
   const selectedScene = bundle.scenes.find((scene) => scene.sceneKey === correctionScene) || bundle.scenes[0] || null;
+  if (preparationInitiallyOpen.current === null) preparationInitiallyOpen.current = !bundle.brief;
 
   return (
-    <div className="shell" data-vululu-theme="blue">
+    <div className="shell project-studio-shell" data-vululu-theme="blue">
       <a className="skip-link" href="#studio-main">Aller au contenu</a>
-      <header className="topbar project-topbar">
+      <aside className="studio-sidebar" aria-label="Navigation de l’atelier">
         <Link href="/" className="brand" aria-label="Vululu, mes projets">vululu</Link>
-        <StudioNav />
-        <div className="topbar-actions">
-          <Link className="text-link studio-context-label" href={'/contexts?context=' + encodeURIComponent(bundle.context.id)}>Contexte : {bundle.context.name}</Link>
-          <Link className="text-link" href={'/assets?context=' + encodeURIComponent(bundle.context.id) + '&project=' + encodeURIComponent(bundle.project.id)}>Ressources du projet</Link>
-          <button className="btn btn-ghost" onClick={logout}>Sortir</button>
-        </div>
-      </header>
-
+        <StudioNav primaryOnly />
+        <button className="btn btn-ghost" onClick={logout}>Sortir</button>
+      </aside>
       <main id="studio-main" tabIndex={-1} className="page studio-page">
         <section className="studio-head">
           <div>
             <p className="eyebrow">Studio V1 / {bundle.context.name} / {bundle.project.platform} / {bundle.project.format}</p>
             <h1 data-testid="project-title-heading">{bundle.project.title}</h1>
             <p className="muted">{bundle.project.objective}</p>
-            {bundle.master ? <a className="text-link" href="#preview-heading" onClick={() => document.getElementById('preview-heading')?.focus()}>Voir le résultat et ses versions</a> : null}
+            <Link className="text-link" href={'/contexts?context=' + encodeURIComponent(bundle.context.id)}>Contexte : {bundle.context.name}</Link>
+            {bundle.master ? <a className="btn btn-secondary" href="#preview-heading">Versions et téléchargement</a> : <a className="btn btn-secondary" href="#storyboard-heading">Voir les scènes</a>}
           </div>
-          <span className={'badge status-' + bundle.project.status} data-testid="status-badge">{statusLabel(bundle.project.status)}</span>
+          <div className="studio-head-actions"><span className={'badge status-' + bundle.project.status} data-testid="status-badge">{statusLabel(bundle.project.status)}</span><button className="btn btn-primary" data-testid="produce" onClick={produce} disabled={!canProduce || busy === 'produce'}>Produire la création</button></div>
         </section>
 
         <div className="studio-banners" aria-label="Limites du prototype">
@@ -399,8 +392,51 @@ export default function ProjectStudio({ id }: { id: string }) {
           {refreshError ? <div role="alert" className="error"><p>Actualisation impossible : {refreshError} Le dernier résultat reçu reste affiché ; son état peut avoir évolué.</p><button className="btn btn-secondary" type="button" onClick={() => void load()}>Réessayer l’actualisation</button></div> : null}
         </div>
 
-        <ProjectJourney bundle={bundle} plan={plan} planError={planError} briefDirty={briefEdited || briefDirty} refreshing={refreshingPlan} refresh={() => void refreshPlan()} />
+        <div className="studio-workspace">
+          <CreationDelivery bundle={bundle} refresh={load} blocked={Boolean(busy) || briefEdited || briefDirty || !!refreshError} correct={() => correctionRef.current?.focus()} scenes={<>
+          <section className="studio-scenes" aria-labelledby="storyboard-heading">
+            <div className="section-head"><h2 id="storyboard-heading">Scènes</h2><span className="muted small">{bundle.scenes.length} scène(s) · {totalDurationSeconds} s</span></div>
+            {bundle.scenes.length ? <div className="studio-scene-strip" aria-label="Choisir une scène">
+              {bundle.scenes.map((scene) => <button type="button" key={scene.id} data-testid={'scene-' + scene.sceneKey} className="studio-scene-choice" aria-pressed={selectedScene?.id === scene.id} onClick={() => { setCorrectionScene(scene.sceneKey); setCorrectionEdited(!!correction.trim()); }}>
+                {scene.versions.length ? <img alt="" src={'/api/projects/' + id + '/scenes/' + scene.sceneKey + '/image?v=' + scene.versions[0].version} /> : <span className="scene-placeholder">En attente</span>}
+                <span><strong>{scene.title}</strong><small>{scene.sceneKey} · {scene.durationSeconds} s</small></span>
+              </button>)}
+            </div> : <p className="hint">Le storyboard apparaîtra après la préparation du brief.</p>}
+          <div className="actions">
+            <span className="pill" data-testid="duration-summary">{bundle.scenes.length} scenes / {totalDurationSeconds} s</span>
+            {job ? <span className="muted small" data-testid="job-status">{job.status} / {job.step} / {job.progress}%</span> : null}
+          </div>
+          {job && job.progress > 0 && job.progress < 100 ? (
+            <div className="progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={job.progress}><div className="progress-bar" style={{ width: job.progress + '%' }} /></div>
+          ) : null}
+          {job && job.error ? <p className="error" role="alert">{job.error}</p> : null}
 
+          </section></>} />
+
+        <aside className="card studio-inspector stack" aria-labelledby="correction-heading">
+          <div><p className="eyebrow">Scène sélectionnée</p><h2 id="correction-heading" tabIndex={-1}>{selectedScene ? selectedScene.title : 'Réglages de scène'}</h2></div>
+          {selectedScene ? <>
+            <p className="hint">{selectedScene.sceneKey} · {selectedScene.description}</p>
+            <label className="label">Durée de la scène
+              <select className="input" data-testid={'duration-' + selectedScene.sceneKey} value={selectedScene.durationSeconds} onChange={(event) => updateDuration(selectedScene.sceneKey, Number(event.target.value))} disabled={Boolean(busy) || bundle.project.status === 'producing'}>
+                {Array.from({ length: 15 }, (_, index) => index + 1).map((seconds) => <option key={seconds} value={seconds}>{seconds} s</option>)}
+              </select>
+            </label>
+            <p className="hint" data-testid={'duration-origin-' + selectedScene.sceneKey}>{selectedScene.usesBriefDuration === true ? 'Suit la durée du brief à la régénération.' : selectedScene.usesBriefDuration === false ? 'Durée personnalisée, conservée à la régénération.' : 'Durée historique, conservée à la régénération.'}</p>
+            {selectedScene.usesBriefDuration !== true ? <button type="button" className="btn btn-ghost" data-testid={'duration-reset-' + selectedScene.sceneKey} onClick={() => updateDuration(selectedScene.sceneKey, null)} disabled={Boolean(busy) || !bundle.brief || briefDirty || bundle.project.status === 'producing'}>Suivre la durée du brief</button> : null}
+            <label className="label">Instruction de correction
+              <input ref={correctionRef} className="input" data-testid="correct-input" maxLength={500} value={correction} onChange={(event) => { setCorrection(event.target.value); setCorrectionEdited(true); }} disabled={Boolean(busy)} />
+            </label>
+            <button className="btn btn-secondary" data-testid="correct-submit" onClick={correctScene} disabled={Boolean(busy) || !selectedScene.versions.length || !bundle.master || !briefConfirmed || briefDirty || bundle.project.status === 'producing' || correction.trim().length < 3}>Corriger {selectedScene.sceneKey}</button>
+            <p className="hint">Une version rendue, un master et un brief confirmé sont nécessaires. La correction utilise le plafond MOCK enregistré et crée une nouvelle version.</p>
+            <details><summary>Versions et détails de la scène</summary><div className="scene-versions" data-testid={'scene-versions-' + selectedScene.sceneKey}>
+              {selectedScene.versions.length ? selectedScene.versions.map((version) => <span className="scene-version" key={version.id}>v{version.version} / {shortChecksum(version.checksum)} / {formatDate(version.createdAt)}</span>) : <span className="hint">Aucune version rendue.</span>}
+            </div></details>
+          </> : <><p className="hint">Créez le storyboard pour sélectionner et régler une scène. Vous pouvez préparer votre instruction dès maintenant.</p><label className="label">Instruction de correction<input ref={correctionRef} className="input" data-testid="correct-input" maxLength={500} value={correction} onChange={(event) => { setCorrection(event.target.value); setCorrectionEdited(true); }} disabled={Boolean(busy)} /></label><button className="btn btn-secondary" data-testid="correct-submit" disabled>Correction indisponible</button></>}
+        </aside>
+        </div>
+        <details id="studio-preparation" className="studio-preparation" open={preparationInitiallyOpen.current || Boolean(draftConflict) || undefined} onToggle={(event) => { preparationInitiallyOpen.current = event.currentTarget.open; }}>
+          <summary>Préparer le brief et le storyboard</summary>
         <div className="studio-grid">
           <section className="card brief-entry" data-vululu-theme="blue" aria-labelledby="brief-heading">
             <p className="eyebrow">Votre idée → Vos références → Votre destination → Votre création</p>
@@ -411,7 +447,7 @@ export default function ProjectStudio({ id }: { id: string }) {
             <p className="hint">L’idée et les informations disponibles du contexte sont préremplies. Public, ton et appel à l’action restent nécessaires pour enregistrer le brief. Aucun choix de modèle ou de flow requis.</p>
             <p className="hint" role="status">{briefEdited ? 'Modifications du brief non enregistrées.' : bundle.brief ? 'Brief enregistré sur le serveur. Relisez sa version avant confirmation.' : 'Projet enregistré ; brief à compléter et enregistrer.'}</p>
             <p className="hint" data-testid="studio-draft-status" role="status">{draftStored ? (briefEdited || correction.trim() || chatInput.trim() ? (draftRestored ? 'Saisies locales reprises et conservées dans cet onglet.' : 'Saisies locales conservées dans cet onglet.') : 'Conservation locale active dans cet onglet.') : 'Conservation dans l’onglet indisponible : enregistrez le brief avant de quitter.'} Cette copie locale n’est pas une révision serveur ; fermer l’onglet peut l’effacer.</p>
-            {draftConflict ? <div className="context-completeness stack" role="alert"><p>Un brouillon local repose sur une autre version du brief. Il n’a pas été appliqué à la version serveur actuelle. Reprenez-le explicitement ou enregistrez votre formulaire courant pour le remplacer.</p><details><summary>Consulter la saisie locale précédente</summary><dl className="journey-data"><dt>Objectif</dt><dd>{draftConflict.objective}</dd><dt>Public</dt><dd>{draftConflict.audience}</dd><dt>Ton</dt><dd>{draftConflict.tone}</dd><dt>Appel à l’action</dt><dd>{draftConflict.cta}</dd><dt>Correction</dt><dd>{draftConflict.correction}</dd><dt>Message non envoyé</dt><dd>{draftConflict.chatInput}</dd></dl></details><button className="btn btn-secondary" type="button" onClick={() => { restoreInputs(draftConflict); setBriefEdited(true); setDraftConflict(null); }}>Reprendre ces saisies comme brouillon à relire</button></div> : null}
+            {draftConflict ? <div className="context-completeness stack" role="alert"><p>Un brouillon local repose sur une autre version du brief. Il n’a pas été appliqué à la version serveur actuelle. Reprenez-le explicitement ou enregistrez votre formulaire courant pour le remplacer.</p><details><summary>Consulter la saisie locale précédente</summary><dl className="journey-data"><dt>Objectif</dt><dd>{draftConflict.objective}</dd><dt>Public</dt><dd>{draftConflict.audience}</dd><dt>Ton</dt><dd>{draftConflict.tone}</dd><dt>Appel à l’action</dt><dd>{draftConflict.cta}</dd><dt>Correction</dt><dd>{draftConflict.correction}</dd><dt>Message non envoyé</dt><dd>{draftConflict.chatInput}</dd></dl></details><button className="btn btn-secondary" type="button" onClick={() => { preparationInitiallyOpen.current = true; restoreInputs(draftConflict); setBriefEdited(true); setDraftConflict(null); }}>Reprendre ces saisies comme brouillon à relire</button></div> : null}
             <form className="stack" onSubmit={saveBrief} onChange={() => setBriefEdited(true)}>
               <label className="label">Objectif
                 <input ref={briefObjectiveRef} className="input" data-testid="brief-objective" value={briefObjective} onChange={(event) => setBriefObjective(event.target.value)} placeholder="Faire connaitre l offre" required disabled={Boolean(busy)} />
@@ -468,7 +504,7 @@ export default function ProjectStudio({ id }: { id: string }) {
               </details>
             ) : null}
             <button className="btn btn-primary full-width" data-testid="storyboard-generate" onClick={generateStoryboard} disabled={!briefConfirmed || briefDirty || Boolean(busy) || activeRun || bundle.project.status === 'producing'}>
-              Generer le storyboard de 5 scenes
+              Générer le storyboard
             </button>
           </section>
           <details className="card chat-card" data-testid="studio-assistance"><summary>Assistance MOCK facultative</summary>
@@ -504,98 +540,13 @@ export default function ProjectStudio({ id }: { id: string }) {
 
         </div>
 
-        <section className="card" aria-labelledby="storyboard-heading">
-          <div className="section-head">
-            <h2 id="storyboard-heading" tabIndex={-1}>Storyboard et production</h2>
-            <span className="muted small">{bundle.scenes.length} / 5 scenes</span>
-          </div>
-          <p className="hint">Script de démonstration MOCK issu du brief confirmé, à relire avant production.</p>
-          {bundle.scenes.length === 0 ? (
-            <p className="muted">Le storyboard apparaitra apres la preparation du brief.</p>
-          ) : (
-            <div className="scene-grid">
-              {bundle.scenes.map((scene) => {
-                const latest = scene.versions.length > 0 ? scene.versions[0] : null;
-                return (
-                  <article className="scene-card" data-testid={'scene-' + scene.sceneKey} key={scene.id}>
-                    <div className="scene-image-wrap">
-                      {latest ? (
-                        <img className="scene-image" alt={'Scene ' + scene.sceneKey + ' : ' + scene.title} src={'/api/projects/' + id + '/scenes/' + scene.sceneKey + '/image?v=' + latest.version} />
-                      ) : (
-                        <div className="scene-placeholder">Scene en attente</div>
-                      )}
-                    </div>
-                    <div className="scene-meta">
-                      <span className="scene-key">{scene.sceneKey}</span>
-                      <strong>{scene.title}</strong>
-                      <p className="muted small">{scene.description}</p>
-                      <label className="label duration-label">Duree
-                        <select className="input duration-select" data-testid={'duration-' + scene.sceneKey} value={scene.durationSeconds} onChange={(event) => updateDuration(scene.sceneKey, Number(event.target.value))} disabled={busy !== '' || bundle.project.status === 'producing'}>
-                          {Array.from({ length: 15 }, (_, index) => index + 1).map((seconds) => <option key={seconds} value={seconds}>{seconds} s</option>)}
-                        </select>
-                      </label>
-                      <p className="hint" data-testid={'duration-origin-' + scene.sceneKey}>{scene.usesBriefDuration === true ? 'Suit la durée du brief à la régénération.' : scene.usesBriefDuration === false ? 'Durée personnalisée, conservée à la régénération.' : 'Durée historique, conservée à la régénération.'}</p>
-                      {scene.usesBriefDuration !== true ? <button type="button" className="btn btn-ghost" data-testid={'duration-reset-' + scene.sceneKey} onClick={() => updateDuration(scene.sceneKey, null)} disabled={Boolean(busy) || !bundle.brief || briefDirty || bundle.project.status === 'producing'}>Suivre la durée du brief</button> : null}
-                      <div className="scene-actions">
-                        <button type="button" className="btn btn-ghost btn-small" data-testid={'correct-scene-' + scene.sceneKey} onClick={() => focusCorrection(scene.sceneKey)}>
-                          Corriger cette scene
-                        </button>
-                        {latest ? <span className="pill">v{latest.version}</span> : null}
-                      </div>
-                      <div className="scene-versions" data-testid={'scene-versions-' + scene.sceneKey}>
-                        {scene.versions.length === 0 ? (
-                          <span className="muted small">Aucune version rendue.</span>
-                        ) : scene.versions.slice(0, 3).map((version) => (
-                          <span className="scene-version" key={version.id}>
-                            v{version.version} / {shortChecksum(version.checksum)} / {formatDate(version.createdAt)}
-                          </span>
-                        ))}
-                        {scene.versions.length > 1 ? <span className="muted small">Les versions precedentes sont conservees.</span> : null}
-                      </div>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          )}
-          <div className="actions">
-            <button className="btn btn-primary" data-testid="produce" onClick={produce} disabled={!canProduce || busy === 'produce'}>
-              Produire les 5 scenes
-            </button>
-            <span className="pill" data-testid="duration-summary">{bundle.scenes.length} scenes / {totalDurationSeconds} s</span>
-            {job ? <span className="muted small" data-testid="job-status">{job.status} / {job.step} / {job.progress}%</span> : null}
-          </div>
-          {job && job.progress > 0 && job.progress < 100 ? (
-            <div className="progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={job.progress}><div className="progress-bar" style={{ width: job.progress + '%' }} /></div>
-          ) : null}
-          {job && job.error ? <p className="error" role="alert">{job.error}</p> : null}
-        </section>
 
-        <section className="card" aria-labelledby="correction-heading">
-          <div className="section-head">
-            <h2 id="correction-heading" tabIndex={-1}>Correction ciblee par Scene ID</h2>
-              <span className="pill">{bundle.scenes.length} scène(s) disponibles</span>
-          </div>
-          <div className="correction-grid">
-            <label className="label">Scene a corriger
-              <select className="input" data-testid="correct-scene" value={selectedScene?.sceneKey ?? ''} onChange={(event) => { setCorrectionScene(event.target.value); setCorrectionEdited(!!correction.trim()); }} disabled={Boolean(busy) || !bundle.scenes.length}>
-                {bundle.scenes.map((scene) => (
-                  <option key={scene.id} value={scene.sceneKey}>{scene.sceneKey} — {scene.title}</option>
-                ))}
-              </select>
-            </label>
-            <label className="label correction-instruction">Instruction de correction
-              <input ref={correctionRef} className="input" data-testid="correct-input" maxLength={500} value={correction} onChange={(event) => { setCorrection(event.target.value); setCorrectionEdited(true); }} disabled={Boolean(busy)} />
-            </label>
-            <button className="btn btn-secondary" data-testid="correct-submit" onClick={correctScene} disabled={Boolean(busy) || !selectedScene?.versions.length || !bundle.master || !briefConfirmed || briefDirty || bundle.project.status === 'producing' || correction.trim().length < 3}>
-              {selectedScene ? 'Corriger ' + selectedScene.sceneKey : 'Correction indisponible'}
-            </button>
-          </div>
-          <p className="hint">La correction ne relance que la scene ciblee et les etapes dependantes ; les autres scenes et les versions precedentes sont conservees. Une nouvelle version invalide l approbation precedente.</p>
-          <p className="hint">Un master et une version rendue de la scène sont nécessaires, avec un brief confirmé sans modification en attente. Saisissez une instruction d’au moins trois caractères. L’estimation propre à une correction n’est pas exposée ici ; le serveur applique le plafond du brief enregistré. Coûts MOCK, aucun coût IA réel.</p>
-        </section>
+        </details>
+        <details className="studio-preparation"><summary>Parcours et plan de production</summary>
+        <ProjectJourney bundle={bundle} plan={plan} planError={planError} briefDirty={briefEdited || briefDirty} refreshing={refreshingPlan} refresh={() => void refreshPlan()} />
 
-        <CreationDelivery bundle={bundle} refresh={load} blocked={Boolean(busy) || briefEdited || briefDirty || !!refreshError} correct={() => correctionRef.current?.focus()} />
+
+        </details>
       </main>
     </div>
   );
