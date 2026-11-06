@@ -63,12 +63,14 @@ test('verticale Studio V1 complete (deterministe, correction ciblee, MOCK)', asy
   await expect(page).toHaveURL(/\/contexts\/new$/);
 
   await page.locator('[data-testid=context-name]').fill(contextName);
+  await page.getByText('Références et couleurs (facultatif)', { exact: true }).click();
   await page.locator('[data-testid=context-website]').fill('https://example.com');
   await page.locator('[data-testid=context-description]').fill('Contexte de test E2E pour la verticale V0.');
+  await page.getByText('Préciser le public et le ton (facultatif)', { exact: true }).click();
   await page.locator('[data-testid=context-audience]').fill('Createurs francais');
   await page.locator('[data-testid=context-tone]').fill('Premium, direct, chaleureux');
   await page.locator('[data-testid=context-submit]').click();
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/contexts\?context=/);
   await page.waitForLoadState('networkidle');
   await page.waitForTimeout(600);
 
@@ -84,12 +86,16 @@ test('verticale Studio V1 complete (deterministe, correction ciblee, MOCK)', asy
   await expect(page).toHaveURL(/\/projects\/new$/);
   await page.waitForLoadState('networkidle');
   await page.waitForTimeout(800);
-  await page.locator('[data-testid=project-context]').selectOption({ label: contextName });
   await page.locator('[data-testid=project-title]').fill(projectTitle);
+  await page.locator('[data-testid=project-objective]').fill('Faire connaitre la nouvelle offre et donner envie de decouvrir la marque.');
+  await page.getByTestId('project-next').click();
+  await page.locator('[data-testid=project-context]').selectOption({ label: contextName });
+  await page.getByTestId('project-next').click();
   await page.locator('[data-testid=project-platform]').selectOption('Instagram');
   await page.locator('[data-testid=project-format]').selectOption('Video');
+  await page.getByText('Durée et réglages différables', { exact: true }).click();
   await page.locator('[data-testid=project-scene-duration]').selectOption('2');
-  await page.locator('[data-testid=project-objective]').fill('Faire connaitre la nouvelle offre et donner envie de decouvrir la marque.');
+  await page.getByTestId('project-next').click();
   await page.locator('[data-testid=project-submit]').click();
   await page.waitForURL((url) => url.pathname.startsWith('/projects/') && !url.pathname.endsWith('/new'), { timeout: 30000 });
 

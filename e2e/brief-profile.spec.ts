@@ -22,6 +22,7 @@ test('brief confirme : profil reel, revisions et storyboard perime', async ({ pa
   await page.getByTestId('brief-tone').fill('Clair et direct');
   await page.getByTestId('brief-cta').fill('Découvrir la collection');
   await page.getByLabel('Ratio de sortie', { exact: true }).selectOption('4:5');
+  await page.getByTestId('advanced-production').locator('summary').click();
   await page.getByLabel('Style de simulation', { exact: true }).selectOption('bold');
   await page.getByLabel('Direction artistique simulée', { exact: true }).fill('Plan produit');
   await page.getByLabel('Durée par défaut d’une scène (secondes)').fill('1');

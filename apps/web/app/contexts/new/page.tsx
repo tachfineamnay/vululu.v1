@@ -1,80 +1,43 @@
 'use client';
 
 import Link from 'next/link';
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { postJson } from '../../../lib/api';
+import { postJson, type BrandContext } from '../../../lib/api';
+import { useUnsavedChanges } from '../../../lib/useUnsavedChanges';
 import StudioNav from '../../../components/StudioNav';
+import ContextFields, { type ContextDraft } from '../../../components/ContextFields';
 
 export default function NewContextPage() {
   const router = useRouter();
-  const [name, setName] = useState('Atelier V0');
-  const [website, setWebsite] = useState('https://example.com');
-  const [description, setDescription] = useState('Une marque de test pour la verticale V0.');
-  const [audience, setAudience] = useState('Createurs et petites marques');
-  const [tone, setTone] = useState('Chaleureux, direct, premium');
-  const [colorPrimary, setColorPrimary] = useState('#6C5CE7');
-  const [colorSecondary, setColorSecondary] = useState('#00D2FF');
+  const [draft, setDraft] = useState<ContextDraft>({ name: '', website: '', description: '', audience: '', tone: '', colorPrimary: '#2347be', colorSecondary: '#f5d867' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-
+  const [saved, setSaved] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [returnToProject, setReturnToProject] = useState(false);
+  useEffect(() => { setReturnToProject(new URLSearchParams(window.location.search).get('returnTo') === 'project'); }, []);
+  useUnsavedChanges(!saved && dirty);
   async function submit(event: FormEvent) {
-    event.preventDefault();
-    setBusy(true);
-    setError('');
+    event.preventDefault(); setBusy(true); setError('');
     try {
-      await postJson('/api/contexts', { name, website, description, audience, tone, colorPrimary, colorSecondary });
-      router.push('/');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Creation impossible.');
-    } finally {
-      setBusy(false);
-    }
+      const { context } = await postJson<{ context: BrandContext }>('/api/contexts', draft);
+      setSaved(true); router.push((returnToProject ? '/projects/new?context=' : '/contexts?context=') + encodeURIComponent(context.id));
+    } catch (err) { setError(err instanceof Error ? err.message : 'Création impossible.'); }
+    finally { setBusy(false); }
   }
-
-  return (
-    <div className="shell">
-      <header className="topbar">
-        <Link href="/" className="brand"><span className="brand-mark small">V</span><span>Vululu AI</span></Link>
-        <StudioNav />
-        <Link href="/" className="text-link">Retour</Link>
-      </header>
-      <main className="page narrow">
-        <p className="eyebrow">Contexte de marque</p>
-        <h1>Une fiche reutilisable</h1>
-        <p className="lead">Vululu utilise ce contexte pour produire sans te redemander les memes informations.</p>
-        <form className="card stack" onSubmit={submit}>
-          <label className="label">Nom de la marque
-            <input className="input" data-testid="context-name" value={name} onChange={(event) => setName(event.target.value)} required />
-          </label>
-          <label className="label">Site web
-            <input className="input" data-testid="context-website" value={website} onChange={(event) => setWebsite(event.target.value)} />
-          </label>
-          <label className="label">Description
-            <textarea className="input textarea" data-testid="context-description" value={description} onChange={(event) => setDescription(event.target.value)} required />
-          </label>
-          <div className="two-col">
-            <label className="label">Audience
-              <input className="input" data-testid="context-audience" value={audience} onChange={(event) => setAudience(event.target.value)} />
-            </label>
-            <label className="label">Ton
-              <input className="input" data-testid="context-tone" value={tone} onChange={(event) => setTone(event.target.value)} />
-            </label>
-          </div>
-          <div className="two-col">
-            <label className="label">Couleur principale
-              <input className="input color-input" data-testid="context-color-primary" type="color" value={colorPrimary} onChange={(event) => setColorPrimary(event.target.value)} />
-            </label>
-            <label className="label">Couleur secondaire
-              <input className="input color-input" data-testid="context-color-secondary" type="color" value={colorSecondary} onChange={(event) => setColorSecondary(event.target.value)} />
-            </label>
-          </div>
-          {error ? <p className="error" data-testid="context-error">{error}</p> : null}
-          <button className="btn btn-primary" data-testid="context-submit" type="submit" disabled={busy}>
-            {busy ? 'Enregistrement...' : 'Valider le contexte'}
-          </button>
-        </form>
-      </main>
-    </div>
-  );
+  return <div className="shell" data-vululu-theme="blue">
+    <a className="skip-link" href="#new-context-main">Aller au contenu</a>
+    <header className="topbar"><Link href="/" className="brand" aria-label="Vululu, mes projets">vululu</Link><StudioNav /><Link href={returnToProject ? '/projects/new' : '/contexts'} className="text-link">{returnToProject ? 'Retour au nouveau projet' : 'Retour aux contextes'}</Link></header>
+    <main id="new-context-main" tabIndex={-1} className="page narrow stack">
+      <p className="eyebrow">Marques et références</p><h1>Créer un contexte</h1><p className="muted">Une marque, une activité, un univers créatif : commencez par ce qui compte. Seuls le nom et la description sont obligatoires.</p>
+      <form className="card stack" onSubmit={submit} aria-busy={busy}>
+        <ContextFields value={draft} onChange={(field, value) => { setDirty(true); setDraft((current) => ({ ...current, [field]: value })); }} disabled={busy} />
+        {error ? <div className="error" role="alert" data-testid="context-error"><p>{error}</p><p>Le contexte n’a pas pu être créé. Votre saisie est conservée ; corrigez-la ou réessayez.</p></div> : null}
+        <p className="hint">Ces informations sont déclarées par vous. Les références et les ressources pourront être complétées après l’enregistrement.</p>
+        <button className="btn btn-primary" data-testid="context-submit" type="submit" disabled={busy}>{busy ? 'Enregistrement…' : 'Créer le contexte'}</button>
+        {busy ? <p role="status">Enregistrement du contexte…</p> : null}
+      </form>
+    </main>
+  </div>;
 }

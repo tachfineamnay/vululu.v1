@@ -10,13 +10,17 @@ test('contexte : proposition MOCK relue, validation humaine et revisions persist
   const response = await page.request.post('/api/contexts', { headers: { 'x-csrf-token': csrf }, data: { name: 'Contexte relu ' + Date.now(), description: 'Marque fictive de céramique, information saisie.', website: 'http://127.0.0.1:9/aucun-fetch' } });
   expect(response.status()).toBe(201); const { context } = await response.json();
   await page.goto('/contexts'); await page.getByTestId('context-card-' + context.id).click();
+  await page.getByRole('button', { name: 'Modifier la fiche', exact: true }).click();
   const save = page.getByRole('button', { name: 'Confirmer et enregistrer la fiche', exact: true });
   await expect(save).toBeDisabled();
+  await page.getByText('Proposition assistée de démonstration', { exact: true }).click();
   await page.getByRole('button', { name: 'Préparer une proposition démo', exact: true }).click();
   const proposal = page.getByRole('region', { name: 'Proposition simulée' });
   await expect(proposal).toContainText('MOCK'); await expect(proposal).toContainText('Aucune URL consultée');
   await expect(proposal).toContainText('Exemple générique de démo');
   await page.getByRole('button', { name: 'Reprendre les hypothèses dans le brouillon' }).click();
+  await page.getByText('Préciser le public et le ton (facultatif)', { exact: true }).click();
+  await page.getByText('Références et couleurs (facultatif)', { exact: true }).click();
   await expect(page.getByLabel('Audience du contexte', { exact: true })).toHaveValue(/Public intéressé/);
   await expect(save).toBeDisabled();
   await page.getByLabel('Audience du contexte', { exact: true }).fill('Collectionneurs, audience relue manuellement');
@@ -28,8 +32,10 @@ test('contexte : proposition MOCK relue, validation humaine et revisions persist
     await color.screenshot({ path: '.v1/context-color.png' });
   }
   await page.getByRole('checkbox', { name: 'J’ai relu les informations et les hypothèses ; je confirme cette fiche.' }).check();
-  await save.click(); await expect(page.getByRole('status')).toContainText('révision 2');
+  await save.click(); await expect(page.locator('.toast--success')).toContainText('révision 2');
   await page.reload();
+  await page.getByRole('button', { name: 'Modifier la fiche', exact: true }).click();
+  await page.getByText('Préciser le public et le ton (facultatif)', { exact: true }).click();
   await expect(page.getByLabel('Audience du contexte', { exact: true })).toHaveValue('Collectionneurs, audience relue manuellement');
   const history = page.getByRole('region', { name: 'Historique du contexte' });
   await expect(history.locator('details')).toHaveCount(2);

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { connection } from 'next/server';
 import './globals.css';
+import './atelier-blue.css';
 
 export const metadata: Metadata = {
   title: 'Vululu AI — Studio',

@@ -57,7 +57,7 @@ beforeAll(async () => {
   }
   a = await setup('Actifs A'); b = await setup('Actifs B');
   otherContext = (await db.brandContext.create({ data: { userId: a.userId, name: 'Autre contexte A', description: 'Isolation des contextes' } })).id;
-  const fixture = await renderScene({ projectId: 'asset-fixture', artifactRoot: path.resolve('.v1/library-test-artifacts'), sceneKey: 'SCENE-001', position: 1, title: 'Image fictive', description: 'Fixture', brandName: 'Fixture', colorPrimary: '#123456', colorSecondary: '#abcdef', version: 1 });
+  const fixture = await renderScene({ projectId: 'asset-fixture-' + crypto.randomUUID(), artifactRoot: path.resolve('.v1/library-test-artifacts'), sceneKey: 'SCENE-001', position: 1, title: 'Image fictive', description: 'Fixture', brandName: 'Fixture', colorPrimary: '#123456', colorSecondary: '#abcdef', version: 1 });
   png = fs.readFileSync(fixture.absolutePath);
 });
 afterAll(async () => {

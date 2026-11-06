@@ -12,6 +12,22 @@ L’utilisateur a autorisé la **V1-DEMO complète sans connexion IA** : [périm
 
 ## 2. Principes de séquencement
 
+### Tranche frontend du 2026-11-05
+
+Diagnostic Product Design, fondations bleues à portée limitée et parcours Marques et références raccordés aux API existantes : [rapport et preuves](../reports/PRODUCT_DESIGN_LIVRAISON_2026-11-05.md). Recette ciblée contextes/ressources, clavier/mobile, build et contrôles locaux verts. Aucun changement de contrat backend, aucune publication. La fidélité exacte à la maquette PNG reste NOT_RUN (source absente) ; la migration visuelle des autres routes et la recette de release complète restent distinctes.
+
+### Tranche Mes projets du 2026-11-06
+
+Mes projets et démarrage guidé Idée → Références → Destination → Création, reprise de contexte et validation du brief : [livraison et preuves](../reports/PRODUCT_DESIGN_PROJETS_2026-11-06.md). 27 tests ciblés et cinq scénarios E2E distincts validés après rejeux. Brouillon initial dans l’onglet explicitement distingué des enregistrements serveur ; estimation et plafond MOCK conservés. Aucun changement backend ni activation de format supplémentaire. Prochaine tranche visuelle : Studio complet ; recette globale et qualification live séparées.
+
+### Tranches parcours puis livraison du 2026-11-06
+
+Parcours séquentiel et flow consultable du même projet, puis Mes créations avec versions, QA, téléchargement exact, approbation et transfert MOCK : [contrats, preuves et limites](../reports/PRODUCT_DESIGN_PARCOURS_LIVRAISON_2026-11-06.md). Réutilisation de contexte existante ; aucune édition/clonage de flow, déclinaison ou publication simulée comme disponible. La recomposition complète du Studio attend toujours sa référence PNG.
+
+### Audit Product Design du 2026-11-06
+
+Deux usages testés dans l’application réelle ; corrections de perte de saisie, états de commandes et notification d’approbation obsolète, thème Studio à portée limitée et réglages repliables : [audit, captures et limites](../reports/PRODUCT_DESIGN_AUDIT_2026-11-06.md). Recomposition centrale complète du Studio encore ouverte ; comparaison PNG et zoom navigateur natif NOT_RUN, reflow vérifié séparément. Aucun déploiement automatique.
+
 1. **Lever les inconnues avant de coder** : stack, orchestration, environnement, stratégie de tests.
 2. **Tranche verticale d'abord** : invitation → contexte → brief → run mock → artefact → QA → approbation → Postiz mock, avant les fournisseurs réels.
 3. **Un lot = un périmètre testable et réversible**, avec preuves et limitations.

@@ -3,9 +3,13 @@
 import Link from 'next/link';
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, patchJson, postJson, MasterVersion, ProjectBundle, type ProductionPlanView, type MessageProposal } from '../lib/api';
+import { api, patchJson, postJson, ProjectBundle, type ProductionPlanView, type MessageProposal } from '../lib/api';
 import StudioNav from './StudioNav';
 import ConversationProposalCard from './ConversationProposalCard';
+import { useUnsavedChanges } from '../lib/useUnsavedChanges';
+import ProjectJourney from './ProjectJourney';
+import CreationDelivery from './CreationDelivery';
+import { matchesStudioRevision, readStudioDraft, type StudioDraft } from '../lib/studioDraft';
 
 const statusLabels: Record<string, string> = {
   draft: 'Brouillon',
@@ -18,13 +22,14 @@ const statusLabels: Record<string, string> = {
   failed: 'Erreur',
   cancelled: 'Annule'
 };
+const ratioLabels: Record<string, string> = { '9:16': 'Vidéo verticale · 9:16', '4:5': 'Portrait · 4:5', '1:1': 'Carré · 1:1', '16:9': 'Paysage · 16:9' };
 
 const stepLabels: Record<string, string> = {
   snapshot: 'Capture des paramètres',
   'correct-scene': 'Correction de la scène',
   'validate-snapshot': 'Validation du snapshot',
   'resolve-capabilities': 'Resolution des capacites',
-  'render-scenes': 'Rendu des 5 scenes',
+  'render-scenes': 'Rendu des scènes',
   'assemble-master': 'Assemblage du master',
   qa: 'Controle qualite',
   finalize: 'Finalisation / provenance',
@@ -53,12 +58,6 @@ function formatDate(value: string | undefined | null): string {
   return date.toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
 }
 
-function qaChecks(master: MasterVersion | null): Array<{ name: string; status: string; detail: string }> {
-  if (!master || !master.qaReport) return [];
-  const report = master.qaReport as { checks?: Array<{ name: string; status: string; detail: string }> };
-  return report.checks || [];
-}
-
 type ToastState = { id: number; message: string; tone: 'success' | 'error' } | null;
 
 export default function ProjectStudio({ id }: { id: string }) {
@@ -69,29 +68,57 @@ export default function ProjectStudio({ id }: { id: string }) {
   const [busy, setBusy] = useState('');
   const [toast, setToast] = useState<ToastState>(null);
   const [chatInput, setChatInput] = useState('');
-  const [correction, setCorrection] = useState('Rends le produit plus visible et garde le personnage.');
-  const [correctionScene, setCorrectionScene] = useState('SCENE-003');
-  const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
-  const [compareVersion, setCompareVersion] = useState<number | null>(null);
+  const [correction, setCorrection] = useState('');
+  const [correctionScene, setCorrectionScene] = useState('');
+  const [correctionEdited, setCorrectionEdited] = useState(false);
   const [briefObjective, setBriefObjective] = useState('');
   const [briefAudience, setBriefAudience] = useState('');
   const [briefTone, setBriefTone] = useState('');
   const [briefCta, setBriefCta] = useState('');
+  const [briefEdited, setBriefEdited] = useState(false);
+  useUnsavedChanges(briefEdited || correctionEdited || !!chatInput.trim());
+  const [draftKey, setDraftKey] = useState('');
+  const [draftStored, setDraftStored] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
+  const [draftConflict, setDraftConflict] = useState<StudioDraft | null>(null);
+  const draftBase = useRef<{ version: number | null; checksum: string | null }>({ version: null, checksum: null });
+  const ownerRef = useRef<Promise<{ user: { id: string } }> | null>(null);
   const [productionSettings, setProductionSettings] = useState<import('@vululu/contracts').ProductionSettings | null>(null);
   const [plan, setPlan] = useState<ProductionPlanView | null>(null);
   const [planError, setPlanError] = useState('');
+  const [refreshingPlan, setRefreshingPlan] = useState(false);
+  const [refreshError, setRefreshError] = useState('');
   const planBriefVersion = bundle?.brief?.version;
   const planDurationKey = bundle?.scenes.map((scene) => `${scene.durationSeconds}:${scene.usesBriefDuration}`).join(',');
   const settingsLoaded = useRef(false);
   const briefLoaded = useRef(false);
+  const initialWorkFocused = useRef(false);
   const bundleRef = useRef<ProjectBundle | null>(null);
-  const lastMasterVersionRef = useRef<number | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const actionInFlight = useRef(false);
   const correctionRef = useRef<HTMLInputElement | null>(null);
   const briefObjectiveRef = useRef<HTMLInputElement | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const messageCount = bundle?.messages.length ?? 0;
+
+  function restoreInputs(draft: StudioDraft) {
+    setBriefObjective(draft.objective); setBriefAudience(draft.audience); setBriefTone(draft.tone); setBriefCta(draft.cta); setProductionSettings(draft.settings);
+    setBriefEdited(draft.briefEdited); setCorrection(draft.correction); setCorrectionScene(draft.correctionScene); setCorrectionEdited(draft.correctionEdited); setChatInput(draft.chatInput); setDraftRestored(true);
+  }
+
+  useEffect(() => {
+    if (!draftKey || !productionSettings || !briefLoaded.current || draftConflict) return;
+    try {
+      if (briefEdited || correction.trim() || chatInput.trim()) {
+        const draft: StudioDraft = { schemaVersion: 1, baseVersion: draftBase.current.version, baseChecksum: draftBase.current.checksum, objective: briefObjective, audience: briefAudience, tone: briefTone, cta: briefCta, settings: productionSettings, briefEdited, correction, correctionScene, correctionEdited, chatInput };
+        const encoded = JSON.stringify(draft);
+        if (!readStudioDraft(encoded)) throw new Error('Brouillon local hors limites.');
+        sessionStorage.setItem(draftKey, encoded);
+      } else sessionStorage.removeItem(draftKey);
+      setDraftStored(true);
+    } catch { setDraftStored(false); }
+  }, [draftKey, productionSettings, briefEdited, briefObjective, briefAudience, briefTone, briefCta, correction, correctionScene, correctionEdited, chatInput, draftConflict]);
 
   useEffect(() => {
     if (messagesRef.current) messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
@@ -115,30 +142,36 @@ export default function ProjectStudio({ id }: { id: string }) {
 
   const load = useCallback(async () => {
     try {
-      const data = await api<ProjectBundle>('/api/projects/' + id);
+      ownerRef.current ??= api<{ user: { id: string } }>('/api/auth/me');
+      const [data, me] = await Promise.all([api<ProjectBundle>('/api/projects/' + id), ownerRef.current]);
       bundleRef.current = data;
-      const nextMasterVersion = data.master ? data.master.version : null;
-      if (lastMasterVersionRef.current !== null && nextMasterVersion !== null && lastMasterVersionRef.current !== nextMasterVersion) {
-        setSelectedVersion(null);
-        setCompareVersion(null);
-      }
-      lastMasterVersionRef.current = nextMasterVersion;
       setBundle(data);
       if (!settingsLoaded.current) {
         setProductionSettings(data.brief?.settings ?? { schemaVersion: 1, profileVersion: 'v1-demo-2026-11-04', ratio: data.project.platform === 'LinkedIn' ? '1:1' : '9:16', defaultSceneDurationSeconds: data.project.sceneDurationSeconds, visualStyle: 'editorial', direction: '', maxMockCents: 1000, audio: { voiceVersionId: null, musicVersionId: null, spokenText: '', voiceGainDb: -3, musicGainDb: -18, ducking: true } });
         settingsLoaded.current = true;
       }
-      setError('');
-      if (!briefLoaded.current && data.brief) {
-        setBriefObjective(data.brief.objective);
-        setBriefAudience(data.brief.audience);
-        setBriefTone(data.brief.tone);
-        setBriefCta(data.brief.cta);
+      setRefreshError('');
+      if (!briefLoaded.current) {
+        setBriefObjective(data.brief?.objective ?? data.project.objective);
+        setBriefAudience(data.brief?.audience ?? data.context.audience ?? '');
+        setBriefTone(data.brief?.tone ?? data.context.tone ?? '');
+        setBriefCta(data.brief?.cta ?? '');
+        const base = { version: data.brief?.version ?? null, checksum: data.brief?.revisions.find((revision) => revision.version === data.brief?.version)?.checksum ?? null };
+        draftBase.current = base;
+        const key = 'vululu:studio-draft:v1:' + me.user.id + ':' + id;
+        try {
+          const previous = readStudioDraft(sessionStorage.getItem(key));
+          if (previous && matchesStudioRevision(previous, base.version, base.checksum)) restoreInputs(previous);
+          else if (previous) setDraftConflict(previous);
+        } catch { /* Le formulaire et la protection de sortie restent disponibles. */ }
+        setDraftKey(key);
         briefLoaded.current = true;
       }
     } catch (err) {
+      ownerRef.current = null;
       const message = err instanceof Error ? err.message : 'Projet introuvable.';
       if (!bundleRef.current) setError(message);
+      else setRefreshError(message);
       if (message.toLowerCase().includes('session')) router.push('/login');
     } finally {
       setLoading(false);
@@ -154,7 +187,17 @@ export default function ProjectStudio({ id }: { id: string }) {
     };
   }, [load]);
 
+  useEffect(() => {
+    if (loading || !bundle || initialWorkFocused.current) return;
+    initialWorkFocused.current = true;
+    if (window.location.hash) return;
+    if (bundle.master) document.getElementById('preview-heading')?.focus();
+    else if (!bundle.brief && bundle.project.status === 'draft') document.getElementById('brief-heading')?.focus();
+  }, [loading, bundle]);
+
   async function runAction(name: string, action: () => Promise<unknown>, successMessage?: string) {
+    if (actionInFlight.current) return;
+    actionInFlight.current = true;
     setBusy(name);
     setError('');
     try {
@@ -166,6 +209,7 @@ export default function ProjectStudio({ id }: { id: string }) {
       setError(message);
       notify(message, 'error');
     } finally {
+      actionInFlight.current = false;
       setBusy('');
     }
   }
@@ -181,7 +225,7 @@ export default function ProjectStudio({ id }: { id: string }) {
     event.preventDefault();
     if (!bundle) return;
     await runAction('brief', async () => {
-      const result = await patchJson<{ brief: { settings?: import('@vululu/contracts').ProductionSettings } }>('/api/projects/' + id + '/brief', {
+      const result = await patchJson<{ brief: NonNullable<ProjectBundle['brief']> }>('/api/projects/' + id + '/brief', {
       objective: briefObjective,
       audience: briefAudience,
       tone: briefTone,
@@ -191,6 +235,9 @@ export default function ProjectStudio({ id }: { id: string }) {
       ...(productionSettings ? { settings: productionSettings } : {})
       });
       if (result.brief.settings) setProductionSettings(result.brief.settings);
+      draftBase.current = { version: result.brief.version, checksum: result.brief.revisions.find((revision) => revision.version === result.brief.version)?.checksum ?? null };
+      setDraftConflict(null);
+      setBriefEdited(false);
     }, 'Brief enregistre. Une nouvelle revision est conservee.');
   }
 
@@ -215,35 +262,35 @@ export default function ProjectStudio({ id }: { id: string }) {
     if (!plan || result.plan.checksum !== plan.checksum) throw new Error('Le plan a évolué. Relisez-le avant de confirmer ou de lancer la production.');
   }
 
+  async function refreshPlan() {
+    setRefreshingPlan(true);
+    try {
+      const result = await api<{ plan: ProductionPlanView }>('/api/projects/' + id + '/production-plan');
+      setPlan(result.plan); setPlanError('');
+    } catch (err) { setPlanError(err instanceof Error ? err.message : 'Plan indisponible.'); }
+    finally { setRefreshingPlan(false); }
+  }
+
   async function produce() {
     await runAction('produce', async () => { await reviewCurrentPlan(); return postJson('/api/projects/' + id + '/produce', {}); }, 'Production lancee. Suivez les etapes ci-dessous.');
   }
 
   async function correctScene() {
-    const sceneKey = correctionScene;
-    await runAction('correct', () => postJson('/api/projects/' + id + '/scenes/' + sceneKey + '/correct', {
-      instruction: correction
-    }), 'Correction de ' + sceneKey + ' lancee. Le master precedent est conserve.');
+    const sceneKey = bundle?.scenes.find((scene) => scene.sceneKey === correctionScene)?.sceneKey ?? bundle?.scenes[0]?.sceneKey;
+    if (!sceneKey || !correction.trim()) return;
+    await runAction('correct', async () => {
+      await postJson('/api/projects/' + id + '/scenes/' + sceneKey + '/correct', { instruction: correction.trim() });
+      setCorrectionEdited(false);
+    }, 'Correction de ' + sceneKey + ' lancee. Le master precedent est conserve.');
   }
 
   async function updateDuration(sceneKey: string, durationSeconds: number | null) {
     await runAction('duration', () => patchJson('/api/projects/' + id + '/scenes/' + sceneKey, durationSeconds === null ? { useBriefDuration: true } : { durationSeconds }), 'Durée de ' + sceneKey + ' mise à jour.');
   }
 
-  async function approveMaster(version: MasterVersion) {
-    await runAction('approve', () => postJson('/api/projects/' + id + '/approve', {
-      artifactVersionId: version.id,
-      checksum: version.checksum
-    }), 'Version exacte approuvee (v' + version.version + ').');
-  }
-
-  async function transferMaster() {
-    await runAction('transfer', () => postJson('/api/projects/' + id + '/transfer', {}), 'Transfert Postiz MOCK soumis.');
-  }
-
   async function logout() {
-    try { await api('/api/auth/logout', { method: 'POST' }); } catch { /* ignore */ }
-    router.push('/login');
+    try { await api('/api/auth/logout', { method: 'POST' }); router.push('/login'); }
+    catch { setError('La déconnexion n’a pas été confirmée. Vos saisies sont conservées ; réessayez.'); }
   }
 
   function focusCorrection(sceneKey: string): void {
@@ -267,10 +314,6 @@ export default function ProjectStudio({ id }: { id: string }) {
     );
   }
 
-  const master = bundle.master;
-  const activeVersion = selectedVersion || (master ? master.version : 0);
-  const activeMaster = bundle.masterVersions.find((item) => item.version === activeVersion) || master;
-  const effectiveCompareVersion = compareVersion || (bundle.masterVersions.find((item) => item.version !== activeVersion) || master)?.version || null;
   const briefConfirmed = Boolean(bundle.brief && bundle.brief.confirmedVersion === bundle.brief.version && bundle.brief.confirmedChecksum === bundle.brief.revisions.find((value) => value.version === bundle.brief!.version)?.checksum);
   const canonical = (value: unknown) => JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.keys(item).sort().map((key) => [key, item[key]])) : item);
   const briefDirty = Boolean(bundle.brief && (briefObjective !== bundle.brief.objective || briefAudience !== bundle.brief.audience || briefTone !== bundle.brief.tone || briefCta !== bundle.brief.cta || canonical(productionSettings) !== canonical(bundle.brief.settings)));
@@ -298,41 +341,40 @@ export default function ProjectStudio({ id }: { id: string }) {
     const blocked = proposalBlockedReason(proposal); if (blocked) { notify(blocked, 'error'); return; }
     if (proposal.kind === 'brief') {
       const take = (field: keyof typeof draftValues, value: string) => !hasUnsavedBrief || proposal.sources[field] === 'user' || !value.trim() ? proposal.fields[field] : value;
+      setBriefEdited(true);
       setBriefObjective((value) => take('objective', value)); setBriefAudience((value) => take('audience', value)); setBriefTone((value) => take('tone', value)); setBriefCta((value) => take('cta', value));
       briefObjectiveRef.current?.focus(); notify('Proposition reprise dans le brouillon. Relisez et enregistrez cette version.');
     } else {
-      setCorrectionScene(proposal.sceneKey); setCorrection(proposal.instruction); correctionRef.current?.focus(); notify('Correction préremplie. Relisez la scène et le master avant le lancement.');
+      setCorrectionScene(proposal.sceneKey); setCorrection(proposal.instruction); setCorrectionEdited(true); correctionRef.current?.focus(); notify('Correction préremplie. Relisez la scène et le master avant le lancement.');
     }
   }
-  const planReady = plan?.ready && plan.briefVersion === bundle.brief?.version;
-  const canProduce = bundle.scenes.length === 5 && briefConfirmed && bundle.project.storyboardBriefVersion === bundle.brief?.version && planReady && !briefDirty && !busy;
+  const planReady = !planError && plan?.ready && plan.briefVersion === bundle.brief?.version;
+  const activeRun = ['queued', 'running', 'waiting_approval', 'recovery_pending'].includes(bundle.jobRun?.status ?? '');
+  const canProduce = !!plan && bundle.scenes.length === plan.sceneCount && briefConfirmed && bundle.project.storyboardBriefVersion === bundle.brief?.version && planReady && !briefDirty && !busy && !activeRun && bundle.project.status !== 'producing';
   const job = bundle.job;
-  const jobRun = bundle.jobRun;
-  const checks = qaChecks(activeMaster);
-  const approval = activeMaster ? activeMaster.approval : null;
-  const approvalValid = Boolean(approval && !approval.invalidatedAt);
-  const transferRecord = approval && !approval.invalidatedAt ? approval.transfer : null;
   const totalDurationSeconds = bundle.scenes.reduce((sum, scene) => sum + scene.durationSeconds, 0);
-  const isLatestMaster = Boolean(master && activeMaster && activeMaster.version === master.version);
   const selectedScene = bundle.scenes.find((scene) => scene.sceneKey === correctionScene) || bundle.scenes[0] || null;
 
   return (
-    <div className="shell">
-      <header className="topbar">
-        <Link href="/" className="brand"><span className="brand-mark small">V</span><span>Vululu AI</span></Link>
+    <div className="shell" data-vululu-theme="blue">
+      <a className="skip-link" href="#studio-main">Aller au contenu</a>
+      <header className="topbar project-topbar">
+        <Link href="/" className="brand" aria-label="Vululu, mes projets">vululu</Link>
         <StudioNav />
         <div className="topbar-actions">
-          <span className="muted small studio-context-label">{bundle.context.name}</span>
+          <Link className="text-link studio-context-label" href={'/contexts?context=' + encodeURIComponent(bundle.context.id)}>Contexte : {bundle.context.name}</Link>
+          <Link className="text-link" href={'/assets?context=' + encodeURIComponent(bundle.context.id) + '&project=' + encodeURIComponent(bundle.project.id)}>Ressources du projet</Link>
           <button className="btn btn-ghost" onClick={logout}>Sortir</button>
         </div>
       </header>
 
-      <main className="page studio-page">
+      <main id="studio-main" tabIndex={-1} className="page studio-page">
         <section className="studio-head">
           <div>
             <p className="eyebrow">Studio V1 / {bundle.context.name} / {bundle.project.platform} / {bundle.project.format}</p>
             <h1 data-testid="project-title-heading">{bundle.project.title}</h1>
             <p className="muted">{bundle.project.objective}</p>
+            {bundle.master ? <a className="text-link" href="#preview-heading" onClick={() => document.getElementById('preview-heading')?.focus()}>Voir le résultat et ses versions</a> : null}
           </div>
           <span className={'badge status-' + bundle.project.status} data-testid="status-badge">{statusLabel(bundle.project.status)}</span>
         </section>
@@ -354,10 +396,82 @@ export default function ProjectStudio({ id }: { id: string }) {
             <p className={'toast toast--' + toast.tone} role="status" data-testid="toast">{toast.message}</p>
           ) : null}
           {error ? <p className="error" role="alert" data-testid="studio-error">{error}</p> : null}
+          {refreshError ? <div role="alert" className="error"><p>Actualisation impossible : {refreshError} Le dernier résultat reçu reste affiché ; son état peut avoir évolué.</p><button className="btn btn-secondary" type="button" onClick={() => void load()}>Réessayer l’actualisation</button></div> : null}
         </div>
 
+        <ProjectJourney bundle={bundle} plan={plan} planError={planError} briefDirty={briefEdited || briefDirty} refreshing={refreshingPlan} refresh={() => void refreshPlan()} />
+
         <div className="studio-grid">
-          <section className="card chat-card" aria-labelledby="chat-heading">
+          <section className="card brief-entry" data-vululu-theme="blue" aria-labelledby="brief-heading">
+            <p className="eyebrow">Votre idée → Vos références → Votre destination → Votre création</p>
+            <div className="section-head">
+              <h2 id="brief-heading" tabIndex={-1}>Préparer et valider le brief</h2>
+              <span className="muted small">{bundle.brief ? 'Version ' + bundle.brief.version + ' / ' + bundle.brief.revisions.length + ' revision(s)' : 'A preparer'}</span>
+            </div>
+            <p className="hint">L’idée et les informations disponibles du contexte sont préremplies. Public, ton et appel à l’action restent nécessaires pour enregistrer le brief. Aucun choix de modèle ou de flow requis.</p>
+            <p className="hint" role="status">{briefEdited ? 'Modifications du brief non enregistrées.' : bundle.brief ? 'Brief enregistré sur le serveur. Relisez sa version avant confirmation.' : 'Projet enregistré ; brief à compléter et enregistrer.'}</p>
+            <p className="hint" data-testid="studio-draft-status" role="status">{draftStored ? (briefEdited || correction.trim() || chatInput.trim() ? (draftRestored ? 'Saisies locales reprises et conservées dans cet onglet.' : 'Saisies locales conservées dans cet onglet.') : 'Conservation locale active dans cet onglet.') : 'Conservation dans l’onglet indisponible : enregistrez le brief avant de quitter.'} Cette copie locale n’est pas une révision serveur ; fermer l’onglet peut l’effacer.</p>
+            {draftConflict ? <div className="context-completeness stack" role="alert"><p>Un brouillon local repose sur une autre version du brief. Il n’a pas été appliqué à la version serveur actuelle. Reprenez-le explicitement ou enregistrez votre formulaire courant pour le remplacer.</p><details><summary>Consulter la saisie locale précédente</summary><dl className="journey-data"><dt>Objectif</dt><dd>{draftConflict.objective}</dd><dt>Public</dt><dd>{draftConflict.audience}</dd><dt>Ton</dt><dd>{draftConflict.tone}</dd><dt>Appel à l’action</dt><dd>{draftConflict.cta}</dd><dt>Correction</dt><dd>{draftConflict.correction}</dd><dt>Message non envoyé</dt><dd>{draftConflict.chatInput}</dd></dl></details><button className="btn btn-secondary" type="button" onClick={() => { restoreInputs(draftConflict); setBriefEdited(true); setDraftConflict(null); }}>Reprendre ces saisies comme brouillon à relire</button></div> : null}
+            <form className="stack" onSubmit={saveBrief} onChange={() => setBriefEdited(true)}>
+              <label className="label">Objectif
+                <input ref={briefObjectiveRef} className="input" data-testid="brief-objective" value={briefObjective} onChange={(event) => setBriefObjective(event.target.value)} placeholder="Faire connaitre l offre" required disabled={Boolean(busy)} />
+              </label>
+              <label className="label">Audience
+                <input className="input" data-testid="brief-audience" value={briefAudience} onChange={(event) => setBriefAudience(event.target.value)} placeholder="Createurs, jeunes actifs..." required disabled={Boolean(busy)} />
+              </label>
+              <label className="label">Ton
+                <input className="input" data-testid="brief-tone" value={briefTone} onChange={(event) => setBriefTone(event.target.value)} placeholder="Premium, direct..." required disabled={Boolean(busy)} />
+              </label>
+              <label className="label">Appel a action
+                <input className="input" data-testid="brief-cta" value={briefCta} onChange={(event) => setBriefCta(event.target.value)} placeholder="Decouvrir la collection" required disabled={Boolean(busy)} />
+              </label>
+              {productionSettings ? <fieldset className="stack production-profile" id="project-destination"><legend>Cadrage et réglages de production</legend>
+                <label className="label">Cadrage de la vidéo<select aria-label="Ratio de sortie" className="input" value={productionSettings.ratio} disabled={Boolean(busy)} onChange={(e) => setProductionSettings({ ...productionSettings, ratio: e.target.value as typeof productionSettings.ratio })}>{(bundle.project.platform === 'TikTok' ? ['9:16'] : bundle.project.platform === 'LinkedIn' ? ['1:1', '16:9'] : ['9:16', '4:5', '1:1']).map((ratio) => <option key={ratio} value={ratio}>{ratioLabels[ratio] ?? ratio}</option>)}</select></label>
+                <details data-testid="advanced-production"><summary>Style et direction simulés · réglages avancés</summary><div className="stack">
+                <label className="label">Style de simulation<select aria-label="Style de simulation" className="input" value={productionSettings.visualStyle} disabled={Boolean(busy)} onChange={(e) => setProductionSettings({ ...productionSettings, visualStyle: e.target.value as typeof productionSettings.visualStyle })}><option value="editorial">Éditorial</option><option value="minimal">Minimal</option><option value="bold">Contrasté</option></select></label>
+                <label className="label">Direction artistique simulée<textarea aria-label="Direction artistique simulée" className="input" value={productionSettings.direction} maxLength={1000} disabled={Boolean(busy)} onChange={(e) => setProductionSettings({ ...productionSettings, direction: e.target.value })} /></label>
+                <p className="hint">La direction fait varier le décor de façon déterministe. Aucun modèle IA n’interprète le texte.</p>
+                </div></details>
+                <label className="label">Durée par défaut d’une scène (secondes)<input className="input" type="number" min={1} max={15} value={productionSettings.defaultSceneDurationSeconds} disabled={Boolean(busy)} onChange={(e) => setProductionSettings({ ...productionSettings, defaultSceneDurationSeconds: Number(e.target.value) })} /></label>
+                <label className="label">Plafond du run en centimes MOCK<input className="input" type="number" min={0} max={100000} step={1} value={productionSettings.maxMockCents} disabled={Boolean(busy)} onChange={(e) => setProductionSettings({ ...productionSettings, maxMockCents: Number(e.target.value) })} /></label>
+                <p className="hint">Voix et musique : fichiers et mix en cours de qualification. Cette tranche produit une piste silencieuse.</p>
+              </fieldset> : null}
+              <button className="btn btn-secondary" data-testid="brief-save" type="submit" disabled={Boolean(busy)}>
+                {bundle.brief ? 'Enregistrer une nouvelle révision' : 'Enregistrer le brouillon du brief'}
+              </button>
+            </form>
+            {bundle.brief ? <section className="production-plan stack" aria-labelledby="production-plan-heading" data-testid="production-plan">
+              <h3 id="production-plan-heading">Plan et estimation MOCK</h3>
+              <button className="btn btn-ghost btn-small" type="button" disabled={Boolean(busy) || refreshingPlan} onClick={() => void refreshPlan()}>Recalculer le plan</button>
+              {briefDirty ? <p className="hint">Enregistrez vos modifications pour actualiser ce plan.</p> : null}
+              {planError ? <p className="error" role="alert">{planError}</p> : plan ? <>
+                <p><strong>{bundle.project.format === 'Video' ? 'Livrables prévus : aperçus des scènes, montage vidéo MP4 et rapport de contrôle qualité.' : 'Livrables indisponibles : la production de ce format n’est pas encore qualifiée.'}</strong></p>
+                <p>{plan.sceneCount} scènes · {plan.durationSeconds} s · {plan.ratio}</p>
+                <p data-testid="plan-estimate">Estimation indicative : {plan.pricing.estimatedCents} centimes MOCK. Plafond du brief : {plan.pricing.ceilingCents} centimes MOCK.</p>
+                <p className="hint">{plan.executionMode === 'local' ? 'Rendu local sans invocation fournisseur.' : 'Routage simulé avec fallback admissible. Maximum du scénario : ' + plan.pricing.maxPossibleCents + ' centimes MOCK.'} Aucun paiement réel.</p>
+                <ol>{plan.steps.map((step) => <li key={step.key}>{stepLabel(step.key)}<span className="hint">{step.dependsOn.length ? ' — après ' + step.dependsOn.map(stepLabel).join(', ') : ' — début du plan'}</span></li>)}</ol>
+                {!plan.ready ? <ul role="alert">{plan.issues.map((issue) => <li key={issue.code}>{issue.message}</li>)}</ul> : null}
+              </> : <p role="status">Calcul du plan…</p>}
+            </section> : null}
+            {bundle.brief ? <div className="stack"><p className="hint">{briefConfirmed ? 'Version exacte confirmée.' : 'Relisez le plan et cette version puis confirmez le brief et son plafond avant le lancement.'}{briefDirty ? ' Enregistrez d’abord vos modifications.' : ''}</p><button type="button" className="btn btn-secondary" data-testid="brief-confirm" disabled={briefConfirmed || briefDirty || Boolean(busy) || !planReady || !bundle.brief.revisions.length} onClick={confirmBrief}>Confirmer la version {bundle.brief.version} du brief et son plafond</button></div> : null}
+            {bundle.brief && bundle.brief.revisions.length > 0 ? (
+              <details className="history-details">
+                <summary>Historique des revisions ({bundle.brief.revisions.length})</summary>
+                <ul className="history-list">
+                  {bundle.brief.revisions.map((revision) => (
+                    <li key={revision.id}>
+                      <span className="pill">v{revision.version}</span>
+                      <span className="muted small">{formatDate(revision.createdAt)} / {shortChecksum(revision.checksum)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+            <button className="btn btn-primary full-width" data-testid="storyboard-generate" onClick={generateStoryboard} disabled={!briefConfirmed || briefDirty || Boolean(busy) || activeRun || bundle.project.status === 'producing'}>
+              Generer le storyboard de 5 scenes
+            </button>
+          </section>
+          <details className="card chat-card" data-testid="studio-assistance"><summary>Assistance MOCK facultative</summary>
             <div className="section-head">
               <h2 id="chat-heading">Conversation avec Vululu</h2>
               <span className="pill">Simulation MOCK</span>
@@ -382,80 +496,17 @@ export default function ProjectStudio({ id }: { id: string }) {
             </div>
             <form className="composer" onSubmit={sendMessage}>
               <label className="label sr-only" htmlFor="chat-input-field">Message a Vululu</label>
-              <textarea id="chat-input-field" className="input" data-testid="chat-input" aria-describedby="chat-format-help" maxLength={2000} rows={3} value={chatInput} onChange={(event) => setChatInput(event.target.value)} placeholder={'Objectif: …\nAudience: …\nTon: …\nCTA: …'} />
-              <button className="btn btn-secondary" data-testid="chat-send" type="submit" disabled={busy === 'chat'}>Envoyer</button>
+              <textarea id="chat-input-field" className="input" data-testid="chat-input" aria-describedby="chat-format-help" maxLength={2000} rows={3} value={chatInput} onChange={(event) => setChatInput(event.target.value)} placeholder={'Objectif: …\nAudience: …\nTon: …\nCTA: …'} disabled={Boolean(busy)} />
+              <button className="btn btn-secondary" data-testid="chat-send" type="submit" disabled={Boolean(busy)}>Envoyer</button>
             </form>
             <p className="hint" id="chat-format-help">Scénarios MOCK : /brief, /aide ou SCENE-003: votre instruction. Les propositions préremplissent les formulaires après votre clic.</p>
-          </section>
+          </details>
 
-          <section className="card" aria-labelledby="brief-heading">
-            <div className="section-head">
-              <h2 id="brief-heading">Brief versionne</h2>
-              <span className="muted small">{bundle.brief ? 'Version ' + bundle.brief.version + ' / ' + bundle.brief.revisions.length + ' revision(s)' : 'A preparer'}</span>
-            </div>
-            <form className="stack" onSubmit={saveBrief}>
-              <label className="label">Objectif
-                <input ref={briefObjectiveRef} className="input" data-testid="brief-objective" value={briefObjective} onChange={(event) => setBriefObjective(event.target.value)} placeholder="Faire connaitre l offre" required />
-              </label>
-              <label className="label">Audience
-                <input className="input" data-testid="brief-audience" value={briefAudience} onChange={(event) => setBriefAudience(event.target.value)} placeholder="Createurs, jeunes actifs..." required />
-              </label>
-              <label className="label">Ton
-                <input className="input" data-testid="brief-tone" value={briefTone} onChange={(event) => setBriefTone(event.target.value)} placeholder="Premium, direct..." required />
-              </label>
-              <label className="label">Appel a action
-                <input className="input" data-testid="brief-cta" value={briefCta} onChange={(event) => setBriefCta(event.target.value)} placeholder="Decouvrir la collection" required />
-              </label>
-              {productionSettings ? <fieldset className="stack production-profile"><legend>Profil de production démo</legend>
-                <label className="label">Ratio de sortie<select aria-label="Ratio de sortie" className="input" value={productionSettings.ratio} disabled={Boolean(busy)} onChange={(e) => setProductionSettings({ ...productionSettings, ratio: e.target.value as typeof productionSettings.ratio })}>{(bundle.project.platform === 'TikTok' ? ['9:16'] : bundle.project.platform === 'LinkedIn' ? ['1:1', '16:9'] : ['9:16', '4:5', '1:1']).map((ratio) => <option key={ratio}>{ratio}</option>)}</select></label>
-                <label className="label">Style de simulation<select aria-label="Style de simulation" className="input" value={productionSettings.visualStyle} disabled={Boolean(busy)} onChange={(e) => setProductionSettings({ ...productionSettings, visualStyle: e.target.value as typeof productionSettings.visualStyle })}><option value="editorial">Éditorial</option><option value="minimal">Minimal</option><option value="bold">Contrasté</option></select></label>
-                <label className="label">Direction artistique simulée<textarea aria-label="Direction artistique simulée" className="input" value={productionSettings.direction} maxLength={1000} disabled={Boolean(busy)} onChange={(e) => setProductionSettings({ ...productionSettings, direction: e.target.value })} /></label>
-                <p className="hint">La direction fait varier le décor de façon déterministe. Aucun modèle IA n’interprète le texte.</p>
-                <label className="label">Durée par défaut d’une scène (secondes)<input className="input" type="number" min={1} max={15} value={productionSettings.defaultSceneDurationSeconds} disabled={Boolean(busy)} onChange={(e) => setProductionSettings({ ...productionSettings, defaultSceneDurationSeconds: Number(e.target.value) })} /></label>
-                <label className="label">Plafond du run en centimes MOCK<input className="input" type="number" min={0} max={100000} step={1} value={productionSettings.maxMockCents} disabled={Boolean(busy)} onChange={(e) => setProductionSettings({ ...productionSettings, maxMockCents: Number(e.target.value) })} /></label>
-                <p className="hint">Voix et musique : fichiers et mix en cours de qualification. Cette tranche produit une piste silencieuse.</p>
-              </fieldset> : null}
-              <button className="btn btn-secondary" data-testid="brief-save" type="submit" disabled={Boolean(busy)}>
-                {bundle.brief ? 'Enregistrer une nouvelle révision' : 'Enregistrer le brouillon du brief'}
-              </button>
-            </form>
-            {bundle.brief ? <section className="production-plan stack" aria-labelledby="production-plan-heading" data-testid="production-plan">
-              <h3 id="production-plan-heading">Plan et estimation MOCK</h3>
-              <button className="btn btn-ghost btn-small" type="button" disabled={Boolean(busy)} onClick={() => runAction('plan', async () => {
-                const result = await api<{ plan: ProductionPlanView }>('/api/projects/' + id + '/production-plan'); setPlan(result.plan); setPlanError('');
-              })}>Recalculer le plan</button>
-              {briefDirty ? <p className="hint">Enregistrez vos modifications pour actualiser ce plan.</p> : null}
-              {planError ? <p className="error" role="alert">{planError}</p> : plan ? <>
-                <p>{plan.sceneCount} scènes · {plan.durationSeconds} s · {plan.ratio}</p>
-                <p data-testid="plan-estimate">Estimation indicative : {plan.pricing.estimatedCents} centimes MOCK. Plafond du brief : {plan.pricing.ceilingCents} centimes MOCK.</p>
-                <p className="hint">{plan.executionMode === 'local' ? 'Rendu local sans invocation fournisseur.' : 'Routage simulé avec fallback admissible. Maximum du scénario : ' + plan.pricing.maxPossibleCents + ' centimes MOCK.'} Aucun paiement réel.</p>
-                <ol>{plan.steps.map((step) => <li key={step.key}>{stepLabel(step.key)}<span className="hint">{step.dependsOn.length ? ' — après ' + step.dependsOn.map(stepLabel).join(', ') : ' — début du plan'}</span></li>)}</ol>
-                {!plan.ready ? <ul role="alert">{plan.issues.map((issue) => <li key={issue.code}>{issue.message}</li>)}</ul> : null}
-              </> : <p role="status">Calcul du plan…</p>}
-            </section> : null}
-            {bundle.brief ? <div className="stack"><p className="hint">{briefConfirmed ? 'Version exacte confirmée.' : 'Relisez le plan et cette version puis confirmez le brief et son plafond avant le lancement.'}{briefDirty ? ' Enregistrez d’abord vos modifications.' : ''}</p><button type="button" className="btn btn-secondary" data-testid="brief-confirm" disabled={briefConfirmed || briefDirty || Boolean(busy) || !planReady || !bundle.brief.revisions.length} onClick={confirmBrief}>Confirmer la version {bundle.brief.version} du brief</button></div> : null}
-            {bundle.brief && bundle.brief.revisions.length > 0 ? (
-              <details className="history-details">
-                <summary>Historique des revisions ({bundle.brief.revisions.length})</summary>
-                <ul className="history-list">
-                  {bundle.brief.revisions.map((revision) => (
-                    <li key={revision.id}>
-                      <span className="pill">v{revision.version}</span>
-                      <span className="muted small">{formatDate(revision.createdAt)} / {shortChecksum(revision.checksum)}</span>
-                    </li>
-                  ))}
-                </ul>
-              </details>
-            ) : null}
-            <button className="btn btn-primary full-width" data-testid="storyboard-generate" onClick={generateStoryboard} disabled={!briefConfirmed || briefDirty || Boolean(busy)}>
-              Generer le storyboard de 5 scenes
-            </button>
-          </section>
         </div>
 
         <section className="card" aria-labelledby="storyboard-heading">
           <div className="section-head">
-            <h2 id="storyboard-heading">Storyboard et production</h2>
+            <h2 id="storyboard-heading" tabIndex={-1}>Storyboard et production</h2>
             <span className="muted small">{bundle.scenes.length} / 5 scenes</span>
           </div>
           <p className="hint">Script de démonstration MOCK issu du brief confirmé, à relire avant production.</p>
@@ -520,176 +571,31 @@ export default function ProjectStudio({ id }: { id: string }) {
           {job && job.error ? <p className="error" role="alert">{job.error}</p> : null}
         </section>
 
-        <section className="card" aria-labelledby="job-heading">
-          <div className="section-head">
-            <h2 id="job-heading">Suivi des etapes du job</h2>
-            <span className="muted small">{jobRun ? jobRun.orchestrator || 'local' : 'aucun run'}</span>
-          </div>
-          <div className="timeline" data-testid="job-steps">
-            {!jobRun || jobRun.steps.length === 0 ? (
-              <p className="muted">Aucune etape enregistree pour ce projet.</p>
-            ) : jobRun.steps.map((step) => (
-              <div className={'timeline-step status-' + step.status} key={step.name}>
-                <span className={'dot ' + (step.status === 'succeeded' ? 'dot-pass' : step.status === 'failed' ? 'dot-fail' : 'dot-pending')} aria-hidden="true" />
-                <div>
-                  <strong>{stepLabel(step.name)}</strong>
-                  <span className="muted small"> {step.status}</span>
-                  {step.attempts > 0 ? <span className="muted small"> / {step.attempts} tentative(s)</span> : null}
-                  {step.error ? <p className="error small">{step.error}</p> : null}
-                </div>
-                <span className="muted small">{formatDate(step.finishedAt || step.startedAt)}</span>
-              </div>
-            ))}
-          </div>
-          {jobRun ? (
-            <p className="hint">Trace : {jobRun.traceId || 'non exposee'} / workflow : {jobRun.workflowRunId || 'local'} / statut run : {jobRun.status}</p>
-          ) : null}
-          <p className="hint">Pause, annulation et relance ne sont pas proposees : l API ne garantit pas l arret du rendu ni un remboursement. Aucun cout IA reel n est engage (MOCK).</p>
-        </section>
-
         <section className="card" aria-labelledby="correction-heading">
           <div className="section-head">
-            <h2 id="correction-heading">Correction ciblee par Scene ID</h2>
-            <span className="pill">Toutes les scenes autorisees</span>
+            <h2 id="correction-heading" tabIndex={-1}>Correction ciblee par Scene ID</h2>
+              <span className="pill">{bundle.scenes.length} scène(s) disponibles</span>
           </div>
           <div className="correction-grid">
             <label className="label">Scene a corriger
-              <select className="input" data-testid="correct-scene" value={correctionScene} onChange={(event) => setCorrectionScene(event.target.value)} disabled={busy === 'correct'}>
+              <select className="input" data-testid="correct-scene" value={selectedScene?.sceneKey ?? ''} onChange={(event) => { setCorrectionScene(event.target.value); setCorrectionEdited(!!correction.trim()); }} disabled={Boolean(busy) || !bundle.scenes.length}>
                 {bundle.scenes.map((scene) => (
                   <option key={scene.id} value={scene.sceneKey}>{scene.sceneKey} — {scene.title}</option>
                 ))}
               </select>
             </label>
             <label className="label correction-instruction">Instruction de correction
-              <input ref={correctionRef} className="input" data-testid="correct-input" value={correction} onChange={(event) => setCorrection(event.target.value)} />
+              <input ref={correctionRef} className="input" data-testid="correct-input" maxLength={500} value={correction} onChange={(event) => { setCorrection(event.target.value); setCorrectionEdited(true); }} disabled={Boolean(busy)} />
             </label>
-            <button className="btn btn-secondary" data-testid="correct-submit" onClick={correctScene} disabled={busy === 'correct' || !selectedScene}>
-              Corriger {correctionScene}
+            <button className="btn btn-secondary" data-testid="correct-submit" onClick={correctScene} disabled={Boolean(busy) || !selectedScene?.versions.length || !bundle.master || !briefConfirmed || briefDirty || bundle.project.status === 'producing' || correction.trim().length < 3}>
+              {selectedScene ? 'Corriger ' + selectedScene.sceneKey : 'Correction indisponible'}
             </button>
           </div>
           <p className="hint">La correction ne relance que la scene ciblee et les etapes dependantes ; les autres scenes et les versions precedentes sont conservees. Une nouvelle version invalide l approbation precedente.</p>
+          <p className="hint">Un master et une version rendue de la scène sont nécessaires, avec un brief confirmé sans modification en attente. Saisissez une instruction d’au moins trois caractères. L’estimation propre à une correction n’est pas exposée ici ; le serveur applique le plafond du brief enregistré. Coûts MOCK, aucun coût IA réel.</p>
         </section>
 
-        {master ? (
-          <section className="card studio-card" aria-labelledby="preview-heading">
-            <div className="section-head">
-              <h2 id="preview-heading">Preview, provenance et comparaison</h2>
-              <span className="pill" data-testid="master-version">Master v{activeVersion}</span>
-            </div>
-            <div className="studio-preview">
-              <div className="compare-grid">
-                <div>
-                  <p className="small-label">Version affichee</p>
-                  <select className="input" data-testid="version-select" value={activeVersion} onChange={(event) => { setSelectedVersion(Number(event.target.value)); setCompareVersion(null); }}>
-                    {bundle.masterVersions.map((version) => (
-                      <option key={version.id} value={version.version}>Version {version.version} — {version.qaStatus || 'QA inconnue'}</option>
-                    ))}
-                  </select>
-                  <video key={'master-' + activeVersion} className="player" data-testid="master-video" controls aria-label={'Master version ' + activeVersion} src={'/api/projects/' + id + '/master?v=' + activeVersion} />
-                </div>
-                <div>
-                  <p className="small-label">Version de comparaison</p>
-                  {bundle.masterVersions.length > 1 ? (
-                    <>
-                      <select className="input" data-testid="compare-version" value={effectiveCompareVersion || ''} onChange={(event) => setCompareVersion(Number(event.target.value))}>
-                        {bundle.masterVersions.map((version) => (
-                          <option key={version.id} value={version.version}>Version {version.version} — {version.qaStatus || 'QA inconnue'}</option>
-                        ))}
-                      </select>
-                      <video key={'compare-' + effectiveCompareVersion} className="player" data-testid="master-video-compare" controls aria-label={'Master de comparaison version ' + effectiveCompareVersion} src={'/api/projects/' + id + '/master?v=' + effectiveCompareVersion} />
-                    </>
-                  ) : (
-                    <p className="muted">Une seule version : la comparaison devient disponible apres une correction.</p>
-                  )}
-                </div>
-              </div>
-            </div>
-            <div className="provenance-grid" data-testid="provenance">
-              <div><span className="small-label">Version</span><strong>v{activeVersion}</strong></div>
-              <div><span className="small-label">Checksum</span><code className="mono small">{shortChecksum(activeMaster ? activeMaster.checksum : '')}</code></div>
-              <div><span className="small-label">QA</span><strong>{activeMaster ? activeMaster.qaStatus || 'NOT_RUN' : 'aucune'}</strong></div>
-              <div><span className="small-label">Rendu</span><strong>Deterministe (Sharp/FFmpeg)</strong></div>
-              <div><span className="small-label">Produit le</span><strong>{formatDate(activeMaster ? activeMaster.createdAt : null)}</strong></div>
-              <div><span className="small-label">Approbation</span><strong>{approvalValid ? 'exacte v' + (activeMaster ? activeMaster.version : '') : 'non approuvee'}</strong></div>
-            </div>
-          </section>
-        ) : null}
-
-        {activeMaster ? (
-          <section className="card" aria-labelledby="qa-heading">
-            <div className="section-head">
-              <h2 id="qa-heading">Qualite, approbation et transfert</h2>
-              <span className={'badge ' + (activeMaster.qaStatus === 'PASS' ? 'status-approved' : 'status-failed')} data-testid="qa-status">
-                QA {activeMaster.qaStatus || 'NOT_RUN'}
-              </span>
-            </div>
-            <div className="qa-list" data-testid="qa-checks">
-              {checks.length === 0 ? <p className="muted">Aucun detail QA disponible.</p> : checks.map((check) => (
-                <div className="list-row" key={check.name}>
-                  <span className={'dot ' + (check.status === 'PASS' ? 'dot-pass' : 'dot-fail')} aria-hidden="true" />
-                  <span>{check.name}</span>
-                  <span className="muted small">{check.detail}</span>
-                </div>
-              ))}
-            </div>
-            <p className="hint">QA technique (dimensions, codecs, duree, checksums). Les droits de licence et la conformite creative ne sont pas encore verifies automatiquement.</p>
-            <div className="actions">
-              {approvalValid ? (
-                <span className="pill" data-testid="approval-status">Master approuve v{activeMaster.version} / {shortChecksum(approval ? approval.checksum : '')}</span>
-              ) : (
-                <>
-                  {approval && approval.invalidatedAt ? <span className="pill" data-testid="approval-invalidated">Approbation invalidee par une nouvelle version</span> : null}
-                  <button className="btn btn-primary" data-testid="approve" onClick={() => approveMaster(activeMaster)} disabled={busy === 'approve' || !isLatestMaster}>
-                    Valider le master v{activeMaster.version}
-                  </button>
-                  {!isLatestMaster ? <span className="muted small">Selectionnez la version courante pour approuver.</span> : null}
-                </>
-              )}
-              {approvalValid && !transferRecord ? (
-                <button className="btn btn-secondary" data-testid="transfer" onClick={transferMaster} disabled={busy === 'transfer' || !isLatestMaster}>
-                  Transferer vers Postiz (mock)
-                </button>
-              ) : null}
-              {transferRecord ? <span className="pill" data-testid="transfer-status">Transfert MOCK {transferRecord.status} / {transferRecord.provider}</span> : null}
-            </div>
-            <p className="hint">Postiz est simule localement (provider postiz-mock). Aucun envoi reseau, aucune publication reelle ; transfere ne signifie pas publie.</p>
-          </section>
-        ) : null}
-
-        <section className="card" aria-labelledby="history-heading">
-          <div className="section-head">
-            <h2 id="history-heading">Historique des masters</h2>
-            <span className="muted small">{bundle.masterVersions.length} version(s)</span>
-          </div>
-          {bundle.masterVersions.length === 0 ? (
-            <p className="muted">Aucune version produite.</p>
-          ) : (
-            <div className="history-table-wrap">
-              <table className="history-table">
-                <caption className="sr-only">Historique des masters avec QA, approbation et transfert</caption>
-                <thead>
-                  <tr><th scope="col">Version</th><th scope="col">QA</th><th scope="col">Checksum</th><th scope="col">Approbation</th><th scope="col">Transfert</th><th scope="col">Date</th><th scope="col">Actions</th></tr>
-                </thead>
-                <tbody>
-                  {bundle.masterVersions.map((version) => (
-                    <tr key={version.id}>
-                      <th scope="row">v{version.version}</th>
-                      <td>{version.qaStatus || 'NOT_RUN'}</td>
-                      <td><code className="mono small">{shortChecksum(version.checksum)}</code></td>
-                      <td>{version.approval ? (version.approval.invalidatedAt ? 'invalidee' : 'approuvee') : 'non approuvee'}</td>
-                      <td>{version.approval && version.approval.transfer ? version.approval.transfer.provider + ' / ' + version.approval.transfer.status : '—'}</td>
-                      <td>{formatDate(version.createdAt)}</td>
-                      <td className="history-actions">
-                        <button type="button" className="btn btn-ghost btn-small" onClick={() => { setSelectedVersion(version.version); }}>Afficher</button>
-                        {bundle.masterVersions.length > 1 ? <button type="button" className="btn btn-ghost btn-small" onClick={() => setCompareVersion(version.version)}>Comparer</button> : null}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
+        <CreationDelivery bundle={bundle} refresh={load} blocked={Boolean(busy) || briefEdited || briefDirty || !!refreshError} correct={() => correctionRef.current?.focus()} />
       </main>
     </div>
   );

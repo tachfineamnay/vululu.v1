@@ -13,6 +13,7 @@ test('conversation MOCK : brouillon relu, proposition obsolete et correction exp
   const { project } = await response.json();
   const bundle = async () => (await page.request.get('/api/projects/' + project.id)).json();
   await page.goto('/projects/' + project.id);
+  await page.getByTestId('studio-assistance').locator('summary').click();
   await page.getByTestId('brief-objective').fill('Objectif saisi dans le brouillon');
   await page.getByRole('button', { name: 'Proposer un brief MOCK', exact: true }).click();
   const briefButtons = page.getByRole('button', { name: 'Reprendre ce brief en brouillon', exact: true });

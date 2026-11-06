@@ -4,11 +4,12 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const LINKS = [
-  { key: 'home', href: '/', label: 'Accueil' },
-  { key: 'contexts', href: '/contexts', label: 'Contextes' },
+  { key: 'home', href: '/', label: 'Mes projets' },
+  { key: 'contexts', href: '/contexts', label: 'Marques et références' },
+  { key: 'creations', href: '/creations', label: 'Mes créations' },
   { key: 'campaigns', href: '/campaigns', label: 'Campagnes' },
   { key: 'catalog', href: '/catalog', label: 'Catalogue' },
-  { key: 'assets', href: '/assets', label: 'Actifs' }
+  { key: 'assets', href: '/assets', label: 'Ressources' }
 ];
 
 export default function StudioNav() {

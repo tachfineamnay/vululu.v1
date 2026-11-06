@@ -1,0 +1,48 @@
+import { test, expect } from '@playwright/test';
+
+test('parcours et flow : mêmes données, dépendances, indisponibilités et reprise après erreur', async ({ page }) => {
+  await page.goto('/login');
+  await page.getByLabel('Email', { exact: true }).fill(process.env.DEMO_EMAIL!);
+  await page.getByLabel('Mot de passe', { exact: true }).fill(process.env.DEMO_PASSWORD!);
+  await page.getByTestId('login-submit').click(); await expect(page).toHaveURL(/\/$/);
+  const csrf = await page.evaluate(() => decodeURIComponent(document.cookie.split('; ').find((part) => part.startsWith('vululu_csrf='))?.split('=')[1] ?? ''));
+  const headers = { 'x-csrf-token': csrf };
+  const contextResponse = await page.request.post('/api/contexts', { headers, data: { name: 'Univers parcours ' + Date.now(), description: 'Contexte fictif de recette des étapes' } }); expect(contextResponse.status()).toBe(201);
+  const { context } = await contextResponse.json();
+  const created = await page.request.post('/api/projects', { headers, data: { contextId: context.id, title: 'Parcours de recette', objective: 'Expliquer une activité', platform: 'Instagram', format: 'Video' } }); expect(created.status()).toBe(201);
+  const { project } = await created.json();
+  await page.goto('/projects/' + project.id);
+  const journey = page.getByTestId('project-journey');
+  await expect(journey.getByTestId('journey-state-brief')).toHaveText('À préparer');
+  await journey.getByRole('link', { name: 'Consulter le flow', exact: true }).press('Enter');
+  const flow = page.getByTestId('flow-details'); await expect(flow).toHaveAttribute('open', '');
+  await expect(flow.locator(':scope > summary')).toBeFocused();
+  await expect(flow).toContainText('Indisponible : enregistrez le brief');
+  await expect(flow).toContainText('Aucune exécution enregistrée');
+  await journey.getByRole('link', { name: 'Relire et compléter le brief', exact: true }).press('Enter');
+  await expect(page.getByRole('heading', { name: 'Préparer et valider le brief', exact: true })).toBeFocused();
+  await page.getByTestId('brief-audience').fill('Public fictif'); await page.getByTestId('brief-tone').fill('Clair'); await page.getByTestId('brief-cta').fill('Découvrir');
+  await expect(journey).toContainText('modifications non enregistrées');
+  await page.getByTestId('brief-save').click();
+  await expect(journey.getByTestId('journey-state-brief')).toHaveText('Version 1 à confirmer');
+  await expect(flow).toContainText('Plan admissible');
+  const plan = (await (await page.request.get('/api/projects/' + project.id + '/production-plan')).json()).plan;
+  expect(await flow.locator('.flow-step-list').first().locator('li').count()).toBe(plan.steps.length);
+  await flow.locator('.flow-step-list').first().locator('summary').first().press('Enter');
+  await expect(flow).toContainText(plan.steps[0].capability);
+  await page.route('**/api/projects/' + project.id + '/production-plan', (route) => route.fulfill({ status: 503, json: { message: 'Plan temporairement inaccessible' } }));
+  await flow.getByRole('button', { name: 'Actualiser le plan', exact: true }).click();
+  await expect(flow.getByRole('alert')).toContainText('Plan temporairement inaccessible');
+  await expect(flow).toContainText('Plan admissible'); // Le dernier plan reçu reste consultable, avec erreur explicite.
+  await page.unroute('**/api/projects/' + project.id + '/production-plan');
+  await flow.getByRole('button', { name: 'Actualiser le plan', exact: true }).click(); await expect(flow.getByRole('alert')).toHaveCount(0);
+  await page.getByTestId('brief-confirm').click(); await page.getByTestId('storyboard-generate').click();
+  const actual = await (await page.request.get('/api/projects/' + project.id)).json();
+  await expect(journey.getByTestId('journey-state-storyboard')).toHaveText(actual.scenes.length + ' scènes liées au brief actuel');
+  for (const width of [1440,1024,768,390]) { await page.setViewportSize({ width, height: 900 }); expect(await journey.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true); }
+  const reuse = journey.getByRole('link', { name: 'Nouveau projet avec ce contexte', exact: true });
+  await expect(reuse).toHaveAttribute('href', '/projects/new?context=' + context.id);
+  await reuse.click(); await expect(page).toHaveURL(new RegExp('/projects/new\\?context=' + context.id));
+  await page.getByTestId('project-title').fill('Projet réutilisé'); await page.getByTestId('project-objective').fill('Une nouvelle idée'); await page.getByTestId('project-next').click();
+  await expect(page.getByTestId('project-context')).toHaveValue(context.id);
+});
