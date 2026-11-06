@@ -1,6 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
+import { BCRYPT_MAX_PASSWORD_BYTES, demoPasswordMinimum } from './demoCredentialPolicy';
 
 /** Maintenance explicite de recette ; aucun effet lors d'un amorçage normal. */
 export async function resetRecettePasswords(db: PrismaClient, config: Record<string, string | undefined>): Promise<number> {
@@ -9,9 +10,9 @@ export async function resetRecettePasswords(db: PrismaClient, config: Record<str
   const adminEmail = (config.V1_BOOTSTRAP_EMAIL ?? '').trim().toLowerCase();
   const demoEmail = (config.DEMO_EMAIL ?? '').trim().toLowerCase();
   const adminPassword = config.V1_BOOTSTRAP_PASSWORD ?? ''; const demoPassword = config.DEMO_PASSWORD ?? '';
-  const minimum = config.RECETTE_ALLOW_SHORT_PASSWORDS === '1' ? 1 : 12;
+  const minimum = demoPasswordMinimum(config);
   if (adminEmail === demoEmail || ![adminEmail, demoEmail].every((value) => z.email().safeParse(value).success)
-    || ![adminPassword, demoPassword].every((value) => value.length >= minimum && Buffer.byteLength(value, 'utf8') <= 72)) throw new Error('recette_credentials_invalid');
+    || ![adminPassword, demoPassword].every((value) => value.length >= minimum && Buffer.byteLength(value, 'utf8') <= BCRYPT_MAX_PASSWORD_BYTES)) throw new Error('recette_credentials_invalid');
   return db.$transaction(async (tx) => {
     const admin = await tx.user.findUnique({ where: { email: adminEmail } });
     const demo = await tx.user.findUnique({ where: { id: 'v1-demo-user' } });
