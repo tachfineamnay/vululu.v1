@@ -1,6 +1,7 @@
-import { Prisma } from '@prisma/client';
 import type { PrismaClient } from '@prisma/client';
 import { prisma } from '@vululu/db';
+import { normalizeProductionSettings, updateSceneDuration, type Platform, type ProjectFormat, type ProductionSettings } from '@vululu/domain';
+import { ApplicationError } from '@vululu/application';
 import type { SceneRecord, SceneRepository } from '@vululu/application';
 import { toSceneRecord } from './mappers';
 
@@ -64,19 +65,27 @@ export class PrismaSceneRepository implements SceneRepository {
   async updateDuration(
     projectId: string,
     sceneKey: string,
-    durationSeconds: number
+    durationSeconds: number | null,
+    userId: string
   ): Promise<SceneRecord> {
-    try {
-      const row = await this.db.scene.update({
-        where: { projectId_sceneKey: { projectId, sceneKey } },
-        data: { durationSeconds }
-      });
-      return toSceneRecord(row);
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-        throw new Error('scene_introuvable: ' + projectId + '/' + sceneKey, { cause: error });
+    return this.db.$transaction(async (tx) => {
+      // Même verrou que les lancements : pas d'édition après capture du snapshot.
+      const locked = await tx.project.updateMany({ where: { id: projectId, userId, status: { not: 'producing' } }, data: { updatedAt: new Date() } });
+      if (!locked.count) {
+        const owned = await tx.project.findFirst({ where: { id: projectId, userId }, select: { id: true } });
+        if (!owned) throw new ApplicationError('project_not_found', 'Projet introuvable.', 404);
+        throw new ApplicationError('project_busy', 'La durée ne peut pas changer pendant une production.', 409);
       }
-      throw error;
-    }
+      const scene = await tx.scene.findUnique({ where: { projectId_sceneKey: { projectId, sceneKey } } });
+      if (!scene) throw new ApplicationError('scene_not_found', 'scene_introuvable: ' + sceneKey, 404);
+      let seconds = durationSeconds;
+      if (seconds === null) {
+        const project = await tx.project.findUniqueOrThrow({ where: { id: projectId }, include: { brief: true } });
+        if (!project.brief) throw new ApplicationError('brief_required', 'Enregistrez le brief avant de reprendre sa durée.', 409);
+        seconds = normalizeProductionSettings(project.platform as Platform, project.format as ProjectFormat, (project.brief.settings as unknown as ProductionSettings | null) ?? { defaultSceneDurationSeconds: project.sceneDurationSeconds }).defaultSceneDurationSeconds;
+      }
+      updateSceneDuration(toSceneRecord(scene), seconds);
+      return toSceneRecord(await tx.scene.update({ where: { id: scene.id }, data: { durationSeconds: seconds, usesBriefDuration: durationSeconds === null } }));
+    });
   }
 }

@@ -1,12 +1,14 @@
 import type { PrismaClient } from '@prisma/client';
 import { prisma } from '@vululu/db';
-import type { MessageRecord, MessageStore } from '@vululu/application';
+import type { MessageRecord, MessageStore, MessageProposal } from '@vululu/application';
+import { toJsonInput } from './mappers';
 
 function mapMessage(row: {
   id: string;
   projectId: string;
   role: string;
   content: string;
+  proposal?: unknown;
   createdAt: Date;
 }): MessageRecord {
   return {
@@ -14,6 +16,7 @@ function mapMessage(row: {
     projectId: row.projectId,
     role: row.role === 'assistant' ? 'assistant' : 'user',
     content: row.content,
+    ...(row.proposal ? { proposal: row.proposal as MessageProposal } : {}),
     createdAt: row.createdAt
   };
 }
@@ -26,13 +29,14 @@ export class PrismaMessageStore implements MessageStore {
     projectId: string;
     userContent: string;
     assistantContent: string;
+    assistantProposal?: MessageProposal;
   }): Promise<{ userMessage: MessageRecord; assistantMessage: MessageRecord }> {
     return this.db.$transaction(async (tx) => {
       const userMessage = await tx.message.create({
         data: { projectId: input.projectId, role: 'user', content: input.userContent }
       });
       const assistantMessage = await tx.message.create({
-        data: { projectId: input.projectId, role: 'assistant', content: input.assistantContent }
+        data: { projectId: input.projectId, role: 'assistant', content: input.assistantContent, ...(input.assistantProposal ? { proposal: toJsonInput(input.assistantProposal as unknown as Record<string, unknown>) } : {}) }
       });
       return {
         userMessage: mapMessage(userMessage),

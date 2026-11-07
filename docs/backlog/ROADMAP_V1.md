@@ -1,14 +1,36 @@
 # Feuille de route V1 — Vululu AI
 
-- **Statut** : proposition issue de la Mission 00, non encore approuvée lot par lot
-- **Date** : 2026-10-21
+- **Statut courant** : finalisation V1-DEMO autorisée le 2026-11-04 ; plan d’exécution lié ci-dessous
+- **Date** : 2026-11-04 ; proposition initiale conservée ci-dessous (2026-10-21)
 - **Sources** : [PRD V1.2](../01_PRD_V1.md), [CDC V1.2](../02_CAHIER_DES_CHARGES_V1.md), [Architecture V1](../03_ARCHITECTURE_V1.md), [Backlog](../11_BACKLOG.md), [Rapport d'inauguration](../INAUGURATION_REPORT.md)
 
 ## 1. État de départ
 
-Le dépôt ne contient encore aucune application. La Mission 00 a livré le corpus documentaire, les ADR et la structure. Le premier lot technique proposé est P0-0 (audit et fondations), avant tout développement métier.
+La proposition initiale partait d’un dépôt documentaire. Au 2026-11-04, main contient un socle V1 avec API, Web/Admin, média déterministe, couches domaine/application, adaptateurs et tests. Cette mise à jour explicite corrige le statut ancien sans déclarer les lots P0 terminés : la couverture reste partielle.
+
+L’utilisateur a autorisé la **V1-DEMO complète sans connexion IA** : [périmètre](../releases/V1_DEMO_SCOPE_2026-11-04.md), [traçabilité et preuves](../releases/V1_DEMO_TRACEABILITY.md), [plan](../superpowers/plans/2026-11-04-v1-demo-complete-coolify.md). Le périmètre documentaire est réconcilié ; bootstrap démo, campagnes, bibliothèque versionnée et contextes relus/révisés ont des preuves locales. Les lots release/infra restent non clos. Prochaine tranche fonctionnelle : brief/wizard démo complet puis médias et compositing, en poursuivant la qualification serveur séparée. Les sections 2 à 7 conservent la proposition de séquencement initiale ; les statuts courants et la prochaine action sont ceux de cette section.
 
 ## 2. Principes de séquencement
+
+### Studio du 2026-11-06
+
+Recomposition du Studio autour de l’aperçu réel, d’un bandeau unique de scènes et d’un inspecteur contextuel : [périmètre, recette et limites](../reports/PRODUCT_DESIGN_STUDIO_2026-11-06.md). Le SVG et les contrats du dépôt ont servi de référence, sans attendre le PNG privé. La recette globale et la qualification live restent distinctes.
+
+### Tranche frontend du 2026-11-05
+
+Diagnostic Product Design, fondations bleues à portée limitée et parcours Marques et références raccordés aux API existantes : [rapport et preuves](../reports/PRODUCT_DESIGN_LIVRAISON_2026-11-05.md). Recette ciblée contextes/ressources, clavier/mobile, build et contrôles locaux verts. Aucun changement de contrat backend, aucune publication. La fidélité exacte à la maquette PNG reste NOT_RUN (source absente) ; la migration visuelle des autres routes et la recette de release complète restent distinctes.
+
+### Tranche Mes projets du 2026-11-06
+
+Mes projets et démarrage guidé Idée → Références → Destination → Création, reprise de contexte et validation du brief : [livraison et preuves](../reports/PRODUCT_DESIGN_PROJETS_2026-11-06.md). 27 tests ciblés et cinq scénarios E2E distincts validés après rejeux. Brouillon initial dans l’onglet explicitement distingué des enregistrements serveur ; estimation et plafond MOCK conservés. Aucun changement backend ni activation de format supplémentaire. Prochaine tranche visuelle : Studio complet ; recette globale et qualification live séparées.
+
+### Tranches parcours puis livraison du 2026-11-06
+
+Parcours séquentiel et flow consultable du même projet, puis Mes créations avec versions, QA, téléchargement exact, approbation et transfert MOCK : [contrats, preuves et limites](../reports/PRODUCT_DESIGN_PARCOURS_LIVRAISON_2026-11-06.md). Réutilisation de contexte existante ; aucune édition/clonage de flow, déclinaison ou publication simulée comme disponible. La recomposition complète du Studio attend toujours sa référence PNG.
+
+### Audit Product Design du 2026-11-06
+
+Deux usages testés dans l’application réelle ; corrections de perte de saisie, états de commandes et notification d’approbation obsolète, thème Studio à portée limitée et réglages repliables : [audit, captures et limites](../reports/PRODUCT_DESIGN_AUDIT_2026-11-06.md). Recomposition centrale complète du Studio encore ouverte ; comparaison PNG et zoom navigateur natif NOT_RUN, reflow vérifié séparément. Aucun déploiement automatique.
 
 1. **Lever les inconnues avant de coder** : stack, orchestration, environnement, stratégie de tests.
 2. **Tranche verticale d'abord** : invitation → contexte → brief → run mock → artefact → QA → approbation → Postiz mock, avant les fournisseurs réels.
@@ -72,6 +94,30 @@ Chaque décision est explicite, écrite et horodatée ; aucun GO implicite.
 - Le périmètre V1 est large : la verticale mock doit rester le fil conducteur pour éviter les lots horizontaux interminables.
 - Le dépôt public expose les spécifications : la visibilité doit être tranchée avant tout contenu sensible.
 
-## 7. Prochaine action
+## 7. Prochaine action de la proposition initiale (historique)
 
 Proposer et obtenir un **GO P0-0**, exécuter l'audit et les fondations, puis décider GO P0-A. Aucun développement métier n'est autorisé avant la clôture de P0-0.
+
+## Suivi de la tranche cadre de navigation — 2026-11-06
+
+Cadre commun et liens secondaires implémentés ; recette authentifiée du Studio **NOT_RUN** en attente d'une session de recette. Détails et retour arrière : [rapport de tranche](../reports/CADRE_NAVIGATION_2026-11-06.md).
+
+## Suivi du parcours Studio — 2026-11-06
+
+Étapes guidées et reprise du brief vérifiées avec API MOCK ; recette E2E authentifiée **NOT_RUN** en attente d'un environnement de recette. Voir le [rapport](../reports/PARCOURS_STUDIO_2026-11-06.md).
+
+## Suivi de la zone Création — 2026-11-06
+
+Aperçu de scène, inspecteur et finalisation réorganisés et vérifiés avec API MOCK ; recette E2E authentifiée **NOT_RUN**. Voir le [rapport](../reports/CREATION_STUDIO_2026-11-06.md).
+
+## Suivi des brouillons de correction — 2026-11-07
+
+Brouillons distincts par scène et reprise du format local précédent vérifiés avec API MOCK ; recette authentifiée **NOT_RUN**. Voir le [rapport](../reports/BROUILLONS_CORRECTION_2026-11-07.md).
+
+## Suivi de la finition visuelle — 2026-11-07
+
+Contrastes, en-tête et hiérarchie du média ajustés ; contrôles responsive avec API **MOCK** et recette authentifiée sur base locale isolée. La base locale initiale présente des migrations en attente. Voir le [rapport](../reports/FINITION_VISUELLE_2026-11-07.md).
+
+## Suivi de la recette des parcours — 2026-11-07
+
+Parcours débutant et professionnel, reprise des saisies, clavier et téléchargements vérifiés sur base locale isolée ; reprise ajoutée pour une image momentanément indisponible. Voir le [rapport](../reports/RECETTE_PARCOURS_2026-11-07.md).

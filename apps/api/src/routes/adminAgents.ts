@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { actorOf, agentConfigs, providerCatalog, routing } from '../application/container';
+import { actorOf, agentConfigs, providerCatalog, providerCredentials, routing } from '../application/container';
+import { ApplicationError } from '@vululu/application';
+import { providerCredentialInputSchema } from '@vululu/contracts';
 import { rateLimitPreHandler, RATE_LIMITS } from '../infrastructure/security/rateLimiter';
 
 const capabilityRequirementSchema = z.object({
@@ -107,9 +109,18 @@ export async function adminAgentRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/api/admin/providers', superAdminOnly, async (request) => {
-    const items = await providerCatalog.listProviders(actorOf(request.currentUser));
-    return { items };
+    const actor = actorOf(request.currentUser);
+    const items = await providerCatalog.listProviders(actor);
+    return { items: await Promise.all(items.map(async (item) => ({ ...item, credentials: await providerCredentials.status(actor, item.key) }))) };
   });
+
+  const credentialsWrite = { preHandler: [...superAdminOnly.preHandler, rateLimitPreHandler(RATE_LIMITS.mutation, (request) => 'credentials:' + request.currentUser?.id)] };
+  app.put('/api/admin/providers/:key/credentials', credentialsWrite, async (request) => {
+    const input = providerCredentialInputSchema.safeParse(request.body);
+    if (!input.success) throw new ApplicationError('invalid_credentials', 'Saisissez uniquement une clé API valide.', 400);
+    return { credentials: await providerCredentials.save(actorOf(request.currentUser), (request.params as { key: string }).key, input.data.apiKey) };
+  });
+  app.delete('/api/admin/providers/:key/credentials', credentialsWrite, async (request) => ({ credentials: await providerCredentials.remove(actorOf(request.currentUser), (request.params as { key: string }).key) }));
 
   app.post('/api/admin/providers', superAdminOnly, async (request, reply) => {
     const input = providerSchema.parse(request.body);

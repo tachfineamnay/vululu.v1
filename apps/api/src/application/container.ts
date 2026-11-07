@@ -1,14 +1,23 @@
 import crypto from 'node:crypto';
+import { PrismaProviderCredentialStore } from '../infrastructure/prisma/providerCredentialStore';
+import { AesProviderCredentialCipher } from '../infrastructure/security/providerCredentialCipher';
 import {
+  AdminQueryUseCases,
   AgentConfigUseCases,
   ArtifactAccessUseCases,
   BriefUseCases,
   ContextUseCases,
+  CampaignUseCases,
+  AssetUseCases,
+  ContextReviewUseCases,
+  BriefConfirmationUseCases,
   MessageUseCases,
   ProductionUseCases,
+  ProductionPlanningUseCases,
   ProjectBundleUseCases,
   ProjectUseCases,
   ProviderCatalogUseCases,
+  ProviderCredentialUseCases,
   RoutingUseCases,
   SceneUseCases,
   StoryboardUseCases,
@@ -20,6 +29,7 @@ import {
   MediaRendererAdapter,
   PostizMockAdapter,
   MockCapabilityProvider,
+  PrismaAdminQuery,
   PrismaAgentRepository,
   PrismaArtifactAccess,
   PrismaAuditAdapter,
@@ -45,6 +55,12 @@ import {
   OutboxApprovalSignal,
   OutboxDispatcher
 } from '../infrastructure';
+import { PrismaCampaignRepository } from '../infrastructure/prisma/campaignRepository';
+import { PrismaAssetRepository } from '../infrastructure/prisma/assetRepository';
+import { PrismaProductionPlanning } from '../infrastructure/prisma/productionPlanning';
+import { inspectAsset } from '@vululu/media';
+import { PrismaContextReviewStore } from '../infrastructure/prisma/contextReviewStore';
+import { DeterministicContextAnalyzer } from '../infrastructure/providers/deterministicContextAnalyzer';
 
 const clock = { now: () => new Date() };
 const ids = { next: () => crypto.randomUUID() };
@@ -81,8 +97,13 @@ const executor = durableMode
 export { outboxDispatcher, durableMode, durableStore };
 
 export const contexts = new ContextUseCases(contextRepository, clock, ids);
+export const contextReview = new ContextReviewUseCases(new PrismaContextReviewStore(), new DeterministicContextAnalyzer(), audit, clock, ids);
+export const campaigns = new CampaignUseCases(new PrismaCampaignRepository(), projectRepository, audit, clock, ids);
+export const assets = new AssetUseCases(new PrismaAssetRepository(), contextRepository, projectRepository, { inspect: inspectAsset }, artifactStorage, artifactStorages, audit, clock, ids);
 export const projects = new ProjectUseCases(projectRepository, contextRepository, clock, ids);
 export const briefs = new BriefUseCases(projectRepository, briefStore, clock, ids, audit);
+export const briefConfirmations = new BriefConfirmationUseCases(projectRepository, briefStore, audit, clock);
+export const productionPlanning = new ProductionPlanningUseCases(projectRepository, new PrismaProductionPlanning());
 export const storyboards = new StoryboardUseCases(
   projectRepository,
   briefStore,
@@ -127,8 +148,12 @@ const routingRepository = new PrismaRoutingRepository();
 const costRepository = new PrismaCostRepository();
 const mockCapabilityProvider = new MockCapabilityProvider();
 
+const adminQueryPort = new PrismaAdminQuery({ storage: artifactStorage });
+export const adminQueries = new AdminQueryUseCases(adminQueryPort);
+
 export const agentConfigs = new AgentConfigUseCases(agentRepository, clock, ids, audit);
 export const providerCatalog = new ProviderCatalogUseCases(providerCatalogRepository, audit);
+export const providerCredentials = new ProviderCredentialUseCases(new PrismaProviderCredentialStore(), new AesProviderCredentialCipher(), audit);
 export const routing = new RoutingUseCases(
   providerCatalogRepository,
   routingRepository,

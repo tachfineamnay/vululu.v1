@@ -1,0 +1,23 @@
+# Image Web Next (studio + admin) Vululu V1.
+FROM node:24-bookworm-slim AS build
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN corepack enable && corepack prepare pnpm@10.6.1 --activate
+WORKDIR /app
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+COPY packages ./packages
+COPY apps/web ./apps/web
+ARG API_INTERNAL_URL=http://api:3101
+ENV API_INTERNAL_URL=$API_INTERNAL_URL
+RUN pnpm install --frozen-lockfile
+RUN pnpm --filter @vululu/web build
+
+FROM node:24-bookworm-slim
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN corepack enable && corepack prepare pnpm@10.6.1 --activate
+WORKDIR /app
+COPY --from=build /app /app
+ENV NODE_ENV=production
+EXPOSE 3100
+CMD ["pnpm", "--filter", "@vululu/web", "start"]

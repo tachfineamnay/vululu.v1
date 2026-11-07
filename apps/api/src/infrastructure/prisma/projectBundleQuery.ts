@@ -7,6 +7,7 @@ import type {
   CharacterRecord,
   MasterVersionView,
   MessageRecord,
+  MessageProposal,
   ProjectBundleQueryPort,
   ProjectBundleRecord,
   SceneWithVersionsRecord
@@ -28,7 +29,7 @@ export class PrismaProjectBundleQuery implements ProjectBundleQueryPort {
       include: {
         context: true,
         brief: { include: { revisions: { orderBy: { version: 'asc' } } } },
-        messages: { orderBy: { createdAt: 'asc' } },
+        messages: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
         scenes: {
           orderBy: { position: 'asc' },
           include: { versions: { orderBy: { version: 'desc' } } }
@@ -48,6 +49,15 @@ export class PrismaProjectBundleQuery implements ProjectBundleQueryPort {
     if (!project) {
       throw new ApplicationError('project_not_found', 'Projet introuvable.', 404);
     }
+
+    const [latestRun, costAggregate] = await Promise.all([
+      this.db.jobRun.findFirst({
+        where: { projectId },
+        orderBy: { createdAt: 'desc' },
+        include: { steps: { orderBy: { createdAt: 'asc' } } }
+      }),
+      this.db.costEvent.aggregate({ where: { projectId }, _sum: { amountCents: true }, _count: { _all: true } })
+    ]);
 
     const masterArtifact = project.artifacts.find((artifact) => artifact.kind === 'master') ?? null;
     const masterVersions: MasterVersionView[] = (masterArtifact?.versions ?? []).map((version) => ({
@@ -91,6 +101,11 @@ export class PrismaProjectBundleQuery implements ProjectBundleQueryPort {
           platform: project.brief.platform,
           format: project.brief.format,
           version: project.brief.version,
+          ...(project.brief.settings ? { settings: project.brief.settings as unknown as import('@vululu/domain').ProductionSettings } : {}),
+          confirmedVersion: project.brief.confirmedVersion,
+          confirmedChecksum: project.brief.confirmedChecksum,
+          confirmedBy: project.brief.confirmedBy,
+          confirmedAt: project.brief.confirmedAt,
           createdAt: project.brief.createdAt,
           updatedAt: project.brief.updatedAt,
           revisions: project.brief.revisions.map((revision) => ({
@@ -104,6 +119,7 @@ export class PrismaProjectBundleQuery implements ProjectBundleQueryPort {
             platform: revision.platform as BriefContentRecord['platform'],
             format: revision.format as BriefContentRecord['format'],
             checksum: revision.checksum,
+            ...(revision.settings ? { settings: revision.settings as unknown as import('@vululu/domain').ProductionSettings } : {}),
             createdAt: revision.createdAt
           }))
         }
@@ -114,6 +130,7 @@ export class PrismaProjectBundleQuery implements ProjectBundleQueryPort {
       projectId: message.projectId,
       role: message.role === 'assistant' ? 'assistant' : 'user',
       content: message.content,
+      ...(message.proposal ? { proposal: message.proposal as unknown as MessageProposal } : {}),
       createdAt: message.createdAt
     }));
 
@@ -125,6 +142,7 @@ export class PrismaProjectBundleQuery implements ProjectBundleQueryPort {
       title: scene.title,
       description: scene.description,
       durationSeconds: scene.durationSeconds,
+      usesBriefDuration: scene.usesBriefDuration,
       characterKey: scene.characterKey,
       createdAt: scene.createdAt,
       versions: scene.versions.map((version) => ({
@@ -157,6 +175,7 @@ export class PrismaProjectBundleQuery implements ProjectBundleQueryPort {
         format: project.format,
         objective: project.objective,
         sceneDurationSeconds: project.sceneDurationSeconds,
+        storyboardBriefVersion: project.storyboardBriefVersion,
         contextId: project.contextId,
         createdAt: project.createdAt,
         updatedAt: project.updatedAt
@@ -191,7 +210,31 @@ export class PrismaProjectBundleQuery implements ProjectBundleQueryPort {
             createdAt: job.createdAt,
             updatedAt: job.updatedAt
           }
-        : null
+        : null,
+      jobRun: latestRun
+        ? {
+            id: latestRun.id,
+            status: latestRun.status,
+            orchestrator: latestRun.orchestrator,
+            workflowRunId: latestRun.workflowRunId,
+            traceId: latestRun.traceId,
+            createdAt: latestRun.createdAt,
+            updatedAt: latestRun.updatedAt,
+            steps: latestRun.steps.map((step) => ({
+              name: step.name,
+              status: step.status,
+              attempts: step.attempts,
+              error: step.error,
+              startedAt: step.startedAt,
+              finishedAt: step.finishedAt
+            }))
+          }
+        : null,
+      costs: {
+        totalCents: costAggregate._sum.amountCents ?? 0,
+        events: costAggregate._count._all,
+        mode: 'MOCK'
+      }
     };
   }
 }

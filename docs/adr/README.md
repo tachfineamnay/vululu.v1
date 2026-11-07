@@ -35,13 +35,30 @@ Chaque décision suit [template.md](template.md) :
 | [0011](0011-artefacts-immuables-stockage-interchangeable.md) | Artefacts immuables et stockage interchangeable | Acceptée sous condition | 2026-10-25 |
 | [0012](0012-durcissement-securite-observabilite.md) | Durcissement sécurité, observabilité et exploitation | Acceptée sous condition | 2026-10-25 |
 | [0013](0013-certification-locale-readiness-separees.md) | Certification locale et readiness de déploiement séparées | Acceptée sous condition | 2026-10-25 |
+| [0014](0014-admin-dans-apps-web.md) | Administration dans apps/web | Acceptée pour V1 | 2026-11-01 |
+| [0015](0015-topologie-preprod-hatchet-s3.md) | Topologie préproduction Hatchet/S3 | Acceptée avec limites ; déploiement complet non validé | 2026-11-01 |
+| [0016](0016-v1-demo-sans-fournisseur-ia.md) | V1-DEMO sans connexion IA et compte ordinaire distinct | Acceptée pour la démo autorisée | 2026-11-04 |
+| [0017](0017-campagnes-groupement-simple-projets.md) | Campagnes : regroupement explicite de projets par propriétaire | Acceptée localement, revue de release requise | 2026-11-04 |
+| [0019](0019-brief-confirme-et-profils-demo.md) | Brief confirmé et profils de production démo | Acceptée pour mise en œuvre lot 6 ; qualification média au lot 7 | 2026-11-04 |
+| [0020](0020-dependances-brief-storyboard-master.md) | Dépendances exactes brief, storyboard et master | Acceptée pour le lot 6 | 2026-11-04 |
+| [0021](0021-politique-execution-figee-au-lancement.md) | Politique d’exécution figée au lancement | Acceptée pour la tranche 6B | 2026-11-04 |
+| [0022](0022-plan-et-plafond-mock-avant-run.md) | Plan indicatif et plafond MOCK avant run | Acceptée pour la tranche 6C | 2026-11-05 |
+| [0023](0023-propositions-conversation-demo-et-storyboard.md) | Propositions de conversation MOCK et storyboard issu du brief | Acceptée pour la tranche 6D | 2026-11-05 |
+| [0024](0024-origine-explicite-durees-scenes.md) | Origine explicite des durées de scène | Acceptée pour la tranche 6E | 2026-11-05 |
+| [0025](0025-invocations-mock-bornees-et-validees.md) | Invocations MOCK bornées et validées | Acceptée pour la tranche 6F | 2026-11-05 |
+| [0026](0026-composition-native-et-texte-integral.md) | Composition native et texte intégral | Acceptée pour la tranche 7A / MVP 01 | 2026-11-05 |
+| [0027](0027-mvp-coolify-et-cles-ia.md) | MVP Coolify et clés IA optionnelles | Acceptée pour mise en œuvre du MVP | 2026-11-05 |
 
 ## Décisions encore ouvertes
 
-Les arbitrages suivants ne sont pas des ADR acceptés : stack applicative, authentification MCP, fournisseur S3, API Postiz, licence, protection de branche, budgets et rétention. Voir la section 9 du [rapport d'inauguration](../INAUGURATION_REPORT.md).
+[ADR 0018](0018-bibliotheque-actifs-versionnes.md) : bibliothèque, versions, droits et sélection figée (2026-11-04).
+
+Le registre d’inauguration reste historique. La stack présente est décrite dans les ADR et rapports V1 ; les choix encore ouverts portent notamment sur l’authentification MCP, le S3 et le moteur qualifiés pour la cible finale, Postiz réel, licence, protection de branche, budgets réels et rétention. Leur état courant est suivi dans la [traçabilité V1-DEMO](../releases/V1_DEMO_TRACEABILITY.md). Aucun statut conditionnel n’est transformé en certification par cet index.
 
 ## Sources
 
 - [Architecture V1](../03_ARCHITECTURE_V1.md)
 - [PRD V1.2](../01_PRD_V1.md)
 - [Cahier des charges V1.2](../02_CAHIER_DES_CHARGES_V1.md)
+
+- [ADR 0028 — Mots de passe de recette](0028-mots-de-passe-de-recette.md)

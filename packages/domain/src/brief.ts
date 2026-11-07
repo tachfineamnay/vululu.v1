@@ -4,6 +4,7 @@ import { assertEntityId, EntityId, requireNonEmpty } from './identifiers';
 import { deepFreeze } from './immutability';
 import { assertProjectFormat, ProjectFormat, assertPlatform, Platform } from './project';
 import { assertIsoTimestamp, IsoTimestamp } from './timestamp';
+import { normalizeProductionSettings, type ProductionSettings } from './productionProfile';
 
 export interface BriefContent {
   readonly objective: string;
@@ -12,6 +13,7 @@ export interface BriefContent {
   readonly cta: string;
   readonly platform: Platform;
   readonly format: ProjectFormat;
+  readonly settings?: ProductionSettings;
 }
 
 export interface Brief {
@@ -36,7 +38,8 @@ export function snapshotBriefContent(content: BriefContent): BriefContent {
     tone: requireNonEmpty(content.tone, 'tone'),
     cta: requireNonEmpty(content.cta, 'cta'),
     platform: assertPlatform(content.platform),
-    format: assertProjectFormat(content.format)
+    format: assertProjectFormat(content.format),
+    ...(content.settings === undefined ? {} : { settings: normalizeProductionSettings(content.platform, content.format, content.settings) })
   });
 }
 
@@ -85,12 +88,12 @@ export function reviseBrief(input: {
   const revision: BriefRevision = {
     id: assertEntityId(input.revisionId, 'revisionId'),
     briefId: input.brief.id,
-    version: nextVersion(input.revisions),
+    version: nextVersion(input.revisions, input.brief.currentVersion),
     checksum: contentChecksum(content),
     ...content,
     createdAt: assertIsoTimestamp(input.createdAt, 'createdAt')
   };
-  const appended = appendVersion(input.revisions, revision);
+  const appended = appendVersion(input.revisions, revision, input.brief.currentVersion);
   return deepFreeze({
     brief: { ...input.brief, currentVersion: revision.version },
     revisions: appended.versions,

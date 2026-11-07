@@ -11,6 +11,7 @@ vi.hoisted(() => {
 
 import { prisma } from '@vululu/db';
 import { env } from '../../apps/api/src/env';
+import { ensureMockSceneCatalog } from '../helpers/mockSceneCatalog';
 import { createSession, purgeSessions, revokeAllUserSessions } from '../../apps/api/src/security/session';
 import { isAllowedOrigin } from '../../apps/api/src/security/origin';
 import { consumeRateLimit } from '../../apps/api/src/infrastructure/security/rateLimiter';
@@ -28,6 +29,7 @@ beforeAll(async () => {
     env: { ...process.env, DATABASE_URL: TEST_DB_URL },
     stdio: 'pipe'
   });
+  await ensureMockSceneCatalog(prisma);
 });
 
 afterAll(async () => {
@@ -126,7 +128,7 @@ describe('V1-01-F hardening session/rate-limit/observability', () => {
         brief: {
           create: {
             objective: 'o', audience: 'a', tone: 't', cta: 'c', platform: 'Instagram', format: 'Video', version: 1,
-            revisions: { create: [{ version: 1, objective: 'o', audience: 'a', tone: 't', cta: 'c', platform: 'Instagram', format: 'Video', checksum: sha('brief') }] }
+            revisions: { create: [{ version: 1, objective: 'o', audience: 'a', tone: 't', cta: 'c', platform: 'Instagram', format: 'Video', checksum: briefChecksum({ objective: 'o', audience: 'a', tone: 't', cta: 'c', platform: 'Instagram', format: 'Video' }) }] }
           }
         },
         scenes: {
@@ -134,6 +136,7 @@ describe('V1-01-F hardening session/rate-limit/observability', () => {
         }
       }
     });
+    await confirmFixtureBrief(prisma, project.id);
     const repo = new PrismaProductionRunRepository(prisma);
     const run = await repo.startRun({
       userId: user.id,
@@ -176,3 +179,4 @@ describe('V1-01-F hardening session/rate-limit/observability', () => {
     ).resolves.toMatchObject({ dryRun: false });
   });
 });
+import { confirmFixtureBrief, briefChecksum } from '../helpers/confirmFixtureBrief';

@@ -3,38 +3,63 @@
 import Link from 'next/link';
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, patchJson, postJson, MasterVersion, ProjectBundle } from '../lib/api';
+import { api, patchJson, postJson, ProjectBundle, type ProductionPlanView, type MessageProposal } from '../lib/api';
+import StudioNav from './StudioNav';
+import ConversationProposalCard from './ConversationProposalCard';
+import { useUnsavedChanges } from '../lib/useUnsavedChanges';
+import ProjectJourney from './ProjectJourney';
+import { projectJourney } from '../lib/projectJourney';
+import CreationDelivery from './CreationDelivery';
+import { matchesStudioRevision, readStudioDraft, type CorrectionDraft, type StudioDraft } from '../lib/studioDraft';
 
 const statusLabels: Record<string, string> = {
   draft: 'Brouillon',
-  brief_ready: 'Brief pret',
-  storyboard_ready: 'Storyboard pret',
+  brief_ready: 'Brief prêt',
+  storyboard_ready: 'Storyboard prêt',
   producing: 'Production en cours',
-  review: 'Aperçu pret',
-  approved: 'Master approuve',
-  transferred: 'Transfert mock confirme',
+  review: 'Aperçu prêt',
+  approved: 'Master approuvé',
+  transferred: 'Transfert MOCK confirmé',
   failed: 'Erreur',
-  cancelled: 'Annule'
+  cancelled: 'Annulé'
+};
+const ratioLabels: Record<string, string> = { '9:16': 'Vidéo verticale · 9:16', '4:5': 'Portrait · 4:5', '1:1': 'Carré · 1:1', '16:9': 'Paysage · 16:9' };
+
+const stepLabels: Record<string, string> = {
+  snapshot: 'Capture des paramètres',
+  'correct-scene': 'Correction de la scène',
+  'validate-snapshot': 'Validation du snapshot',
+  'resolve-capabilities': 'Résolution des capacités',
+  'render-scenes': 'Rendu des scènes',
+  'assemble-master': 'Assemblage du master',
+  qa: 'Contrôle qualité',
+  finalize: 'Finalisation / provenance',
+  approval: 'Approbation durable',
+  transfer: 'Transfert Postiz MOCK',
+  pending: 'En attente'
 };
 
 function statusLabel(status: string): string {
   return statusLabels[status] || status;
 }
 
-function shortChecksum(value: string): string {
-  if (value.length <= 14) {
-    return value;
-  }
-  return value.slice(0, 12) + '...';
+function stepLabel(name: string): string {
+  return stepLabels[name] || name;
 }
 
-function qaChecks(master: MasterVersion | null): Array<{ name: string; status: string; detail: string }> {
-  if (!master || !master.qaReport) {
-    return [];
-  }
-  const report = master.qaReport as { checks?: Array<{ name: string; status: string; detail: string }> };
-  return report.checks || [];
+function shortChecksum(value: string): string {
+  if (!value) return '';
+  return value.length <= 16 ? value : value.slice(0, 14) + '...';
 }
+
+function formatDate(value: string | undefined | null): string {
+  if (!value) return 'date inconnue';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+type ToastState = { id: number; message: string; tone: 'success' | 'error' } | null;
 
 export default function ProjectStudio({ id }: { id: string }) {
   const router = useRouter();
@@ -42,44 +67,124 @@ export default function ProjectStudio({ id }: { id: string }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
+  const [toast, setToast] = useState<ToastState>(null);
   const [chatInput, setChatInput] = useState('');
-  const [correction, setCorrection] = useState('Rends le produit plus visible et garde le personnage.');
-  const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
+  const [correctionDrafts, setCorrectionDrafts] = useState<Record<string, CorrectionDraft>>({});
+  const [unassignedCorrection, setUnassignedCorrection] = useState<CorrectionDraft>({ instruction: '', edited: false });
+  const [correctionScene, setCorrectionScene] = useState('');
+  const [previewMode, setPreviewMode] = useState<'scene' | 'video'>('scene');
   const [briefObjective, setBriefObjective] = useState('');
   const [briefAudience, setBriefAudience] = useState('');
   const [briefTone, setBriefTone] = useState('');
   const [briefCta, setBriefCta] = useState('');
+  const [briefEdited, setBriefEdited] = useState(false);
+  const selectedScene = bundle?.scenes.find((scene) => scene.sceneKey === correctionScene) ?? bundle?.scenes[0] ?? null;
+  const selectedCorrection = selectedScene ? correctionDrafts[selectedScene.sceneKey] : unassignedCorrection;
+  const correction = selectedCorrection?.instruction ?? '';
+  const hasCorrectionDraft = !!unassignedCorrection.instruction || unassignedCorrection.edited || Object.values(correctionDrafts).some((draft) => !!draft.instruction || draft.edited);
+  const hasEditedCorrection = unassignedCorrection.edited || Object.values(correctionDrafts).some((draft) => draft.edited);
+  useUnsavedChanges(briefEdited || hasEditedCorrection || !!chatInput.trim());
+  const [draftKey, setDraftKey] = useState('');
+  const [draftStored, setDraftStored] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
+  const [draftConflict, setDraftConflict] = useState<StudioDraft | null>(null);
+  const draftBase = useRef<{ version: number | null; checksum: string | null }>({ version: null, checksum: null });
+  const ownerRef = useRef<Promise<{ user: { id: string } }> | null>(null);
+  const [productionSettings, setProductionSettings] = useState<import('@vululu/contracts').ProductionSettings | null>(null);
+  const [plan, setPlan] = useState<ProductionPlanView | null>(null);
+  const [planError, setPlanError] = useState('');
+  const [refreshingPlan, setRefreshingPlan] = useState(false);
+  const [refreshError, setRefreshError] = useState('');
+  const planBriefVersion = bundle?.brief?.version;
+  const planDurationKey = bundle?.scenes.map((scene) => `${scene.durationSeconds}:${scene.usesBriefDuration}`).join(',');
+  const settingsLoaded = useRef(false);
   const briefLoaded = useRef(false);
+  const initialWorkFocused = useRef(false);
+  const preparationInitiallyOpen = useRef<boolean | null>(null);
   const bundleRef = useRef<ProjectBundle | null>(null);
-  const lastMasterVersionRef = useRef<number | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const actionInFlight = useRef(false);
+  const correctionRef = useRef<HTMLInputElement | null>(null);
+  const briefObjectiveRef = useRef<HTMLInputElement | null>(null);
+  const messagesRef = useRef<HTMLDivElement | null>(null);
+  const messageCount = bundle?.messages.length ?? 0;
+
+  function restoreInputs(draft: StudioDraft) {
+    setBriefObjective(draft.objective); setBriefAudience(draft.audience); setBriefTone(draft.tone); setBriefCta(draft.cta); setProductionSettings(draft.settings);
+    const legacyScene = draft.correctionScene || bundleRef.current?.scenes[0]?.sceneKey || '';
+    const legacyCorrection = { instruction: draft.correction, edited: draft.correctionEdited };
+    setCorrectionDrafts(draft.correctionDrafts ?? (legacyScene && (draft.correction || draft.correctionEdited) ? { [legacyScene]: legacyCorrection } : {}));
+    setUnassignedCorrection(draft.unassignedCorrection ?? (!legacyScene ? legacyCorrection : { instruction: '', edited: false }));
+    setBriefEdited(draft.briefEdited); setCorrectionScene(draft.correctionScene || legacyScene); setChatInput(draft.chatInput); setDraftRestored(true);
+  }
+
+  useEffect(() => {
+    if (!draftKey || !productionSettings || !briefLoaded.current || draftConflict) return;
+    try {
+      if (briefEdited || hasCorrectionDraft || chatInput.trim()) {
+        const draft: StudioDraft = { schemaVersion: 1, baseVersion: draftBase.current.version, baseChecksum: draftBase.current.checksum, objective: briefObjective, audience: briefAudience, tone: briefTone, cta: briefCta, settings: productionSettings, briefEdited, correction, correctionScene: selectedScene?.sceneKey ?? '', correctionEdited: selectedCorrection?.edited ?? false, correctionDrafts, unassignedCorrection, chatInput };
+        const encoded = JSON.stringify(draft);
+        if (!readStudioDraft(encoded)) throw new Error('Brouillon local hors limites.');
+        sessionStorage.setItem(draftKey, encoded);
+      } else sessionStorage.removeItem(draftKey);
+      setDraftStored(true);
+    } catch { setDraftStored(false); }
+  }, [draftKey, productionSettings, briefEdited, briefObjective, briefAudience, briefTone, briefCta, correction, selectedScene?.sceneKey, selectedCorrection?.edited, correctionDrafts, unassignedCorrection, hasCorrectionDraft, chatInput, draftConflict]);
+
+  useEffect(() => {
+    if (messagesRef.current) messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
+  }, [messageCount]);
+
+  useEffect(() => {
+    if (!planBriefVersion) return;
+    let cancelled = false;
+    setPlan(null); setPlanError('');
+    void api<{ plan: ProductionPlanView }>('/api/projects/' + id + '/production-plan').then((result) => {
+      if (!cancelled) setPlan(result.plan);
+    }).catch((err: unknown) => { if (!cancelled) setPlanError(err instanceof Error ? err.message : 'Plan indisponible.'); });
+    return () => { cancelled = true; };
+  }, [id, planBriefVersion, planDurationKey]);
+
+  function notify(message: string, tone: 'success' | 'error' = 'success'): void {
+    setToast({ id: Date.now(), message, tone });
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 4200);
+  }
 
   const load = useCallback(async () => {
     try {
-      const data = await api<ProjectBundle>('/api/projects/' + id);
+      ownerRef.current ??= api<{ user: { id: string } }>('/api/auth/me');
+      const [data, me] = await Promise.all([api<ProjectBundle>('/api/projects/' + id), ownerRef.current]);
       bundleRef.current = data;
-      const nextMasterVersion = data.master ? data.master.version : null;
-      if (lastMasterVersionRef.current !== null && nextMasterVersion !== null && lastMasterVersionRef.current !== nextMasterVersion) {
-        setSelectedVersion(null);
-      }
-      lastMasterVersionRef.current = nextMasterVersion;
       setBundle(data);
-      setError('');
-      if (!briefLoaded.current && data.brief) {
-        setBriefObjective(data.brief.objective);
-        setBriefAudience(data.brief.audience);
-        setBriefTone(data.brief.tone);
-        setBriefCta(data.brief.cta);
+      if (!settingsLoaded.current) {
+        setProductionSettings(data.brief?.settings ?? { schemaVersion: 1, profileVersion: 'v1-demo-2026-11-04', ratio: data.project.platform === 'LinkedIn' ? '1:1' : '9:16', defaultSceneDurationSeconds: data.project.sceneDurationSeconds, visualStyle: 'editorial', direction: '', maxMockCents: 1000, audio: { voiceVersionId: null, musicVersionId: null, spokenText: '', voiceGainDb: -3, musicGainDb: -18, ducking: true } });
+        settingsLoaded.current = true;
+      }
+      setRefreshError('');
+      if (!briefLoaded.current) {
+        setBriefObjective(data.brief?.objective ?? data.project.objective);
+        setBriefAudience(data.brief?.audience ?? data.context.audience ?? '');
+        setBriefTone(data.brief?.tone ?? data.context.tone ?? '');
+        setBriefCta(data.brief?.cta ?? '');
+        const base = { version: data.brief?.version ?? null, checksum: data.brief?.revisions.find((revision) => revision.version === data.brief?.version)?.checksum ?? null };
+        draftBase.current = base;
+        const key = 'vululu:studio-draft:v1:' + me.user.id + ':' + id;
+        try {
+          const previous = readStudioDraft(sessionStorage.getItem(key));
+          if (previous && matchesStudioRevision(previous, base.version, base.checksum)) restoreInputs(previous);
+          else if (previous) setDraftConflict(previous);
+        } catch { /* Le formulaire et la protection de sortie restent disponibles. */ }
+        setDraftKey(key);
         briefLoaded.current = true;
       }
     } catch (err) {
+      ownerRef.current = null;
       const message = err instanceof Error ? err.message : 'Projet introuvable.';
-      if (!bundleRef.current) {
-        setError(message);
-      }
-      if (message.toLowerCase().includes('session')) {
-        router.push('/login');
-      }
+      if (!bundleRef.current) setError(message);
+      else setRefreshError(message);
+      if (message.toLowerCase().includes('session')) router.push('/login');
     } finally {
       setLoading(false);
     }
@@ -87,377 +192,399 @@ export default function ProjectStudio({ id }: { id: string }) {
 
   useEffect(() => {
     void load();
-    pollRef.current = setInterval(() => {
-      void load();
-    }, 1500);
+    pollRef.current = setInterval(() => { void load(); }, 1500);
     return () => {
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-      }
+      if (pollRef.current) clearInterval(pollRef.current);
+      if (toastTimer.current) clearTimeout(toastTimer.current);
     };
   }, [load]);
 
-  async function runAction(name: string, action: () => Promise<unknown>) {
+  useEffect(() => {
+    if (loading || !bundle || initialWorkFocused.current) return;
+    initialWorkFocused.current = true;
+    if (window.location.hash) return;
+    const action = projectJourney(bundle).recommended.action;
+    document.getElementById(action === 'brief' ? 'brief-heading' : action === 'storyboard' ? 'storyboard-generate' : action === 'produce' ? 'storyboard-heading' : 'preview-heading')?.focus();
+  }, [loading, bundle]);
+
+  async function runAction(name: string, action: () => Promise<unknown>, successMessage?: string) {
+    if (actionInFlight.current) return;
+    actionInFlight.current = true;
     setBusy(name);
     setError('');
     try {
       await action();
       await load();
+      if (successMessage) notify(successMessage);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Action impossible.');
+      const message = err instanceof Error ? err.message : 'Action impossible.';
+      setError(message);
+      notify(message, 'error');
     } finally {
+      actionInFlight.current = false;
       setBusy('');
     }
   }
 
   async function sendMessage(event: FormEvent) {
     event.preventDefault();
-    if (!chatInput.trim()) {
-      return;
-    }
+    if (!chatInput.trim()) return;
     const content = chatInput.trim();
-    setChatInput('');
-    await runAction('chat', () => postJson('/api/projects/' + id + '/messages', { content }));
+    await runAction('chat', async () => { await postJson('/api/projects/' + id + '/messages', { content }); setChatInput(''); }, 'Message envoye a Vululu.');
   }
 
   async function saveBrief(event: FormEvent) {
     event.preventDefault();
-    if (!bundle) {
-      return;
-    }
-    await runAction('brief', () => patchJson('/api/projects/' + id + '/brief', {
+    if (!bundle) return;
+    await runAction('brief', async () => {
+      const result = await patchJson<{ brief: NonNullable<ProjectBundle['brief']> }>('/api/projects/' + id + '/brief', {
       objective: briefObjective,
       audience: briefAudience,
       tone: briefTone,
       cta: briefCta,
       platform: bundle.project.platform,
-      format: bundle.project.format
-    }));
+      format: bundle.project.format,
+      ...(productionSettings ? { settings: productionSettings } : {})
+      });
+      if (result.brief.settings) setProductionSettings(result.brief.settings);
+      draftBase.current = { version: result.brief.version, checksum: result.brief.revisions.find((revision) => revision.version === result.brief.version)?.checksum ?? null };
+      setDraftConflict(null);
+      setBriefEdited(false);
+    }, 'Brief enregistre. Une nouvelle revision est conservee.');
   }
 
   async function generateStoryboard() {
-    await runAction('storyboard', () => postJson('/api/projects/' + id + '/storyboard', {}));
+    await runAction('storyboard', () => postJson('/api/projects/' + id + '/storyboard', {}), 'Storyboard genere.');
+  }
+
+  async function confirmBrief() {
+    if (!bundle?.brief) return;
+    const revision = bundle.brief.revisions.find((value) => value.version === bundle.brief!.version);
+    if (!revision) return;
+    await runAction('brief-confirm', async () => {
+      await reviewCurrentPlan();
+      return postJson('/api/projects/' + id + '/brief/confirm', { version: revision.version, checksum: revision.checksum });
+    }, 'Version exacte du brief confirmée.');
+  }
+
+  async function reviewCurrentPlan() {
+    const result = await api<{ plan: ProductionPlanView }>('/api/projects/' + id + '/production-plan');
+    setPlan(result.plan); setPlanError('');
+    if (!result.plan.ready) throw new Error(result.plan.issues[0]?.message ?? 'Ce plan ne peut pas être lancé.');
+    if (!plan || result.plan.checksum !== plan.checksum) throw new Error('Le plan a évolué. Relisez-le avant de confirmer ou de lancer la production.');
+  }
+
+  async function refreshPlan() {
+    setRefreshingPlan(true);
+    try {
+      const result = await api<{ plan: ProductionPlanView }>('/api/projects/' + id + '/production-plan');
+      setPlan(result.plan); setPlanError('');
+    } catch (err) { setPlanError(err instanceof Error ? err.message : 'Plan indisponible.'); }
+    finally { setRefreshingPlan(false); }
   }
 
   async function produce() {
-    await runAction('produce', () => postJson('/api/projects/' + id + '/produce', {}));
+    await runAction('produce', async () => { await reviewCurrentPlan(); return postJson('/api/projects/' + id + '/produce', {}); }, 'Production lancee. Suivez les etapes ci-dessous.');
   }
 
   async function correctScene() {
-    await runAction('correct', () => postJson('/api/projects/' + id + '/scenes/SCENE-003/correct', {
-      instruction: correction
-    }));
+    const sceneKey = selectedScene?.sceneKey;
+    if (!sceneKey || !correction.trim()) return;
+    const instruction = correction;
+    await runAction('correct', async () => {
+      await postJson('/api/projects/' + encodeURIComponent(id) + '/scenes/' + encodeURIComponent(sceneKey) + '/correct', { instruction: instruction.trim() });
+      setCorrectionDrafts((current) => current[sceneKey]?.instruction === instruction ? { ...current, [sceneKey]: { ...current[sceneKey], edited: false } } : current);
+    }, 'Correction de ' + sceneKey + ' lancee. Le master precedent est conserve.');
   }
 
-  async function updateDuration(sceneKey: string, durationSeconds: number) {
-    await runAction('duration', () => patchJson('/api/projects/' + id + '/scenes/' + sceneKey, {
-      durationSeconds
-    }));
-  }
-
-  async function approveMaster() {
-    if (!bundle || !bundle.master) {
-      return;
-    }
-    await runAction('approve', () => postJson('/api/projects/' + id + '/approve', {
-      artifactVersionId: bundle.master!.id,
-      checksum: bundle.master!.checksum
-    }));
-  }
-
-  async function transferMaster() {
-    await runAction('transfer', () => postJson('/api/projects/' + id + '/transfer', {}));
+  async function updateDuration(sceneKey: string, durationSeconds: number | null) {
+    await runAction('duration', () => patchJson('/api/projects/' + id + '/scenes/' + sceneKey, durationSeconds === null ? { useBriefDuration: true } : { durationSeconds }), 'Durée de ' + sceneKey + ' mise à jour.');
   }
 
   async function logout() {
-    try {
-      await api('/api/auth/logout', { method: 'POST' });
-    } catch {
-      // Ignore.
+    try { await api('/api/auth/logout', { method: 'POST' }); router.push('/login'); }
+    catch { setError('La déconnexion n’a pas été confirmée. Vos saisies sont conservées ; réessayez.'); }
+  }
+
+  if (loading || !bundle) {
+    return <div className="shell project-studio-shell" data-vululu-theme="blue">
+      <a className="skip-link" href="#studio-main">Aller au contenu</a>
+      <StudioNav />
+      <main id="studio-main" tabIndex={-1} className="page studio-page">
+        {loading ? <p className="muted" role="status">Chargement du studio...</p> : <div className="stack"><h1>Studio indisponible</h1><p className="error" role="alert">{error || 'Projet introuvable.'}</p><Link href="/" className="btn btn-secondary">Retour à l’accueil</Link></div>}
+      </main>
+    </div>;
+  }
+
+  const briefConfirmed = Boolean(bundle.brief && bundle.brief.confirmedVersion === bundle.brief.version && bundle.brief.confirmedChecksum === bundle.brief.revisions.find((value) => value.version === bundle.brief!.version)?.checksum);
+  const canonical = (value: unknown) => JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.keys(item).sort().map((key) => [key, item[key]])) : item);
+  const briefDirty = Boolean(bundle.brief && (briefObjective !== bundle.brief.objective || briefAudience !== bundle.brief.audience || briefTone !== bundle.brief.tone || briefCta !== bundle.brief.cta || canonical(productionSettings) !== canonical(bundle.brief.settings)));
+  const hasUnsavedBrief = bundle.brief ? briefDirty : Boolean(briefObjective || briefAudience || briefTone || briefCta);
+  const draftValues = { objective: briefObjective, audience: briefAudience, tone: briefTone, cta: briefCta };
+  function proposalIsCurrent(proposal: MessageProposal) {
+    if (!bundle || proposal.schemaVersion !== 1 || proposal.mode !== 'MOCK' || proposal.baseBriefVersion !== (bundle.brief?.version ?? null)) return false;
+    if (proposal.kind === 'brief') {
+      const revision = bundle.brief?.revisions.find((value) => value.version === bundle.brief?.version);
+      return proposal.baseBriefChecksum === (revision?.checksum ?? null)
+        && (proposal.sources.objective !== 'project' || proposal.fields.objective === bundle.project.objective.trim())
+        && (['audience', 'tone'] as const).every((field) => proposal.sources[field] !== 'context' || proposal.fields[field] === bundle.context[field]?.trim());
     }
-    router.push('/login');
+    const version = bundle.scenes.find((scene) => scene.sceneKey === proposal.sceneKey)?.versions[0];
+    return version?.version === proposal.sceneVersion && version?.checksum === proposal.sceneChecksum && bundle.master?.version === proposal.masterVersion && bundle.master?.checksum === proposal.masterChecksum;
   }
-
-  if (loading) {
-    return <div className="shell"><main className="page"><p className="muted">Chargement du studio...</p></main></div>;
+  function proposalBlockedReason(proposal: MessageProposal) {
+    if (!proposalIsCurrent(proposal)) return 'Proposition ancienne : demandez-en une nouvelle après relecture.';
+    if (hasUnsavedBrief && proposal.kind === 'correction') return 'Enregistrez votre brouillon avant de préparer une correction.';
+    if (proposal.kind === 'correction' && correctionDrafts[proposal.sceneKey]?.instruction && correctionDrafts[proposal.sceneKey].instruction !== proposal.instruction) return 'Une instruction existe pour cette scène. Terminez-la ou effacez-la avant de reprendre cette proposition.';
+    if (proposal.kind === 'brief' && !(['objective', 'audience', 'tone', 'cta'] as const).some((field) => (!hasUnsavedBrief || proposal.sources[field] === 'user' || !draftValues[field].trim()) && draftValues[field] !== proposal.fields[field])) return 'Le brouillon reprend déjà ces valeurs.';
+    if (bundle?.project.status === 'producing') return 'Une production est en cours. Reprenez cette proposition après sa fin.';
+    return busy ? 'Une action est en cours.' : undefined;
   }
-
-  if (!bundle) {
-    return (
-      <div className="shell">
-        <main className="page narrow">
-          <p className="error">{error || 'Projet introuvable.'}</p>
-          <Link href="/" className="btn btn-secondary">Retour</Link>
-        </main>
-      </div>
-    );
+  function applyProposal(proposal: MessageProposal) {
+    const blocked = proposalBlockedReason(proposal); if (blocked) { notify(blocked, 'error'); return; }
+    if (proposal.kind === 'brief') {
+      const take = (field: keyof typeof draftValues, value: string) => !hasUnsavedBrief || proposal.sources[field] === 'user' || !value.trim() ? proposal.fields[field] : value;
+      setBriefEdited(true);
+      setBriefObjective((value) => take('objective', value)); setBriefAudience((value) => take('audience', value)); setBriefTone((value) => take('tone', value)); setBriefCta((value) => take('cta', value));
+      briefObjectiveRef.current?.focus(); notify('Proposition reprise dans le brouillon. Relisez et enregistrez cette version.');
+    } else {
+      setCorrectionScene(proposal.sceneKey); setPreviewMode('scene'); setCorrectionDrafts((current) => ({ ...current, [proposal.sceneKey]: { instruction: proposal.instruction, edited: true } })); correctionRef.current?.focus(); notify('Correction préremplie. Relisez la scène et le master avant le lancement.');
+    }
   }
-
-  const master = bundle.master;
-  const activeVersion = selectedVersion || (master ? master.version : 0);
-  const activeMaster = bundle.masterVersions.find((item) => item.version === activeVersion) || master;
-  const canProduce = bundle.scenes.length === 5 && !busy;
+  const planReady = !planError && plan?.ready && plan.briefVersion === bundle.brief?.version;
+  const activeRun = ['queued', 'running', 'waiting_approval', 'recovery_pending'].includes(bundle.jobRun?.status ?? '');
+  const canProduce = !!plan && bundle.scenes.length === plan.sceneCount && briefConfirmed && bundle.project.storyboardBriefVersion === bundle.brief?.version && planReady && !briefDirty && !busy && !activeRun && bundle.project.status !== 'producing';
   const job = bundle.job;
-  const checks = qaChecks(master);
-  const approval = master ? master.approval : null;
-  const approvalValid = Boolean(approval && !approval.invalidatedAt);
-  const transferRecord = approval && !approval.invalidatedAt ? approval.transfer : null;
   const totalDurationSeconds = bundle.scenes.reduce((sum, scene) => sum + scene.durationSeconds, 0);
+  const unavailableCorrections = Object.entries(correctionDrafts).filter(([sceneKey, draft]) => draft.instruction.trim() && !bundle.scenes.some((scene) => scene.sceneKey === sceneKey));
+  const correctionReason = busy ? 'Une action est en cours.'
+    : !selectedScene?.versions.length ? 'Produisez une image de cette scène avant de la corriger.'
+    : !bundle.master ? 'Produisez la vidéo complète avant de corriger une scène.'
+    : !briefConfirmed ? 'Confirmez le brief avant de corriger une scène.'
+    : briefDirty ? 'Enregistrez les modifications du brief avant de corriger.'
+    : bundle.project.status === 'producing' ? 'Attendez la fin de la production en cours.'
+    : correction.trim().length < 3 ? 'Saisissez une instruction d’au moins trois caractères.' : '';
+  const recommended = briefDirty || briefEdited ? { step: 'prepare', action: 'brief' } as const : projectJourney(bundle, planError ? null : plan).recommended;
+  if (preparationInitiallyOpen.current === null) preparationInitiallyOpen.current = recommended.action === 'brief' || recommended.action === 'storyboard';
+  const productionReason = busy ? 'Une action est en cours. Attendez sa fin.'
+    : activeRun || bundle.project.status === 'producing' ? 'Une production est déjà en cours.'
+    : briefDirty ? 'Enregistrez les modifications du brief avant de produire.'
+    : !briefConfirmed ? 'Enregistrez et confirmez le brief et son plafond avant de produire.'
+    : bundle.project.storyboardBriefVersion !== bundle.brief?.version || !bundle.scenes.length ? 'Préparez les scènes pour la version confirmée du brief.'
+    : planError ? 'Le plan est indisponible : réessayez son actualisation dans la préparation.'
+    : !plan ? 'Attendez le calcul du plan de production.'
+    : plan.briefVersion !== bundle.brief?.version ? 'Actualisez le plan pour la version actuelle du brief.'
+    : !plan.ready ? 'Le plan ne permet pas le lancement : consultez ses motifs dans la préparation.'
+    : bundle.scenes.length !== plan.sceneCount ? 'Préparez toutes les scènes prévues par le plan.' : '';
+  const storyboardReason = busy ? 'Une action est en cours. Attendez sa fin.'
+    : activeRun || bundle.project.status === 'producing' ? 'Attendez la fin de la production en cours.'
+    : briefDirty ? 'Enregistrez les modifications du brief avant de préparer les scènes.'
+    : !briefConfirmed ? 'Enregistrez puis confirmez le brief et son plafond pour préparer les scènes.' : '';
+  const next = recommended.action === 'brief' ? { target: 'brief-heading', label: 'Préparer et confirmer le brief' }
+    : recommended.action === 'storyboard' ? { target: 'storyboard-generate', label: 'Préparer les scènes' }
+    : recommended.action === 'produce' ? { target: 'produce', label: 'Produire la création' }
+    : { target: 'finalization-heading', label: 'Consulter et finaliser le résultat' };
+  function focusStudioSection(target: string) {
+    const element = document.getElementById(target);
+    let parent = element?.parentElement;
+    while (parent) { if (parent instanceof HTMLDetailsElement) parent.open = true; parent = parent.parentElement; }
+    element?.scrollIntoView({ block: 'center' });
+    element?.focus();
+  }
 
   return (
-    <div className="shell">
-      <header className="topbar">
-        <Link href="/" className="brand"><span className="brand-mark small">V</span><span>Vululu AI</span></Link>
-        <div className="topbar-actions">
-          <Link className="text-link" href="/">Accueil</Link>
-          <button className="btn btn-ghost" onClick={logout}>Sortir</button>
-        </div>
-      </header>
-
-      <main className="page studio-page">
+    <div className="shell project-studio-shell" data-vululu-theme="blue">
+      <a className="skip-link" href="#studio-main">Aller au contenu</a>
+      <StudioNav><button className="btn btn-ghost" onClick={logout}>Sortir</button></StudioNav>
+      <main id="studio-main" tabIndex={-1} className="page studio-page">
         <section className="studio-head">
           <div>
-            <p className="eyebrow">{bundle.context.name} / {bundle.project.platform} / {bundle.project.format}</p>
+            <p className="eyebrow">Studio · {bundle.project.platform} · {bundle.project.format === 'Video' ? 'Vidéo' : bundle.project.format}</p>
             <h1 data-testid="project-title-heading">{bundle.project.title}</h1>
             <p className="muted">{bundle.project.objective}</p>
+            <div className="studio-head-links">
+              <Link className="text-link" href={'/contexts?context=' + encodeURIComponent(bundle.context.id)}>Contexte : {bundle.context.name}</Link>
+              {bundle.master ? <a className="text-link" href="#preview-heading">Versions et téléchargement</a> : <a className="text-link" href="#storyboard-heading">Voir les scènes</a>}
+            </div>
           </div>
-          <span className={'badge status-' + bundle.project.status} data-testid="status-badge">{statusLabel(bundle.project.status)}</span>
+          <div className="studio-head-actions"><span className={'badge status-' + bundle.project.status} data-testid="status-badge">{statusLabel(bundle.project.status)}</span><div className="stack"><button id="produce" className="btn btn-primary" data-testid="produce" aria-describedby={!canProduce ? 'produce-reason' : undefined} onClick={produce} disabled={!canProduce || busy === 'produce'}>Produire la création</button>{!canProduce ? <p id="produce-reason" className="hint">{productionReason}</p> : null}</div></div>
         </section>
 
-        {error ? <p className="error" data-testid="studio-error">{error}</p> : null}
+        <details className="studio-demo">
+          <summary>Rendu sans IA générative · Transfert Postiz simulé</summary>
+          <div className="studio-demo-details">
+            <p data-testid="deterministic-banner">Rendu déterministe Sharp/FFmpeg — aucune IA générative</p>
+            <p data-testid="postiz-mock-banner">Postiz MOCK — aucun réseau, aucune publication</p>
+            <p data-testid="costs-mode">Coûts MOCK — {bundle.costs.totalCents} centimes simulés / {bundle.costs.events} événement(s)</p>
+          </div>
+        </details>
 
+        <div className="studio-live" aria-live="polite">
+          {toast ? (
+            <p className={'toast toast--' + toast.tone} role="status" data-testid="toast">{toast.message}</p>
+          ) : null}
+          {error ? <p className="error" role="alert" data-testid="studio-error">{error}</p> : null}
+          {refreshError ? <div role="alert" className="error"><p>Actualisation impossible : {refreshError} Le dernier résultat reçu reste affiché ; son état peut avoir évolué.</p><button className="btn btn-secondary" type="button" onClick={() => void load()}>Réessayer l’actualisation</button></div> : null}
+        </div>
+
+        <nav className="studio-steps" aria-label="Étapes du projet"><ol>
+          {[{ key: 'prepare', label: 'Préparer', target: 'brief-heading' }, { key: 'create', label: 'Créer', target: 'preview-heading' }, { key: 'finalize', label: 'Finaliser', target: 'finalization-heading' }].map((step) => <li key={step.key}><a href={'#' + step.target} aria-current={recommended.step === step.key ? 'step' : undefined} onClick={(event) => { event.preventDefault(); focusStudioSection(step.target); }}>{step.label}</a></li>)}
+        </ol></nav>
+        <section className="studio-next" aria-label="Prochaine étape" data-testid="studio-next"><p><strong>Prochaine étape</strong></p><a href={'#' + next.target} className="text-link" onClick={(event) => { event.preventDefault(); focusStudioSection(next.target); }}>{next.label}</a></section>
+
+        <details id="studio-preparation" className="studio-preparation" open={preparationInitiallyOpen.current || Boolean(draftConflict) || undefined} onToggle={(event) => { preparationInitiallyOpen.current = event.currentTarget.open; }}>
+          <summary>Préparer le brief et le storyboard</summary>
         <div className="studio-grid">
-          <section className="card chat-card">
+          <section className="card brief-entry" data-vululu-theme="blue" aria-labelledby="brief-heading">
+            <p className="eyebrow">Votre idée → Vos références → Votre destination → Votre création</p>
             <div className="section-head">
-              <h2>Conversation avec Vululu</h2>
-              <span className="pill">Interlocutrice unique</span>
+              <h2 id="brief-heading" tabIndex={-1}>Préparer et valider le brief</h2>
+              <span className="muted small">{bundle.brief ? 'Version ' + bundle.brief.version + ' / ' + bundle.brief.revisions.length + ' revision(s)' : 'A preparer'}</span>
             </div>
-            <div className="messages">
+            <p className="hint">L’idée et les références disponibles sont préremplies. Complétez le public, le ton et l’appel à l’action pour enregistrer le brief.</p>
+            <p className="hint" role="status">{briefEdited ? 'Modifications du brief non enregistrées.' : bundle.brief ? 'Brief enregistré sur le serveur. Relisez sa version avant confirmation.' : 'Projet enregistré ; brief à compléter et enregistrer.'}</p>
+            <p className="hint" data-testid="studio-draft-status" role="status">{draftStored ? (briefEdited || hasCorrectionDraft || chatInput.trim() ? (draftRestored ? 'Saisies locales reprises et conservées dans cet onglet.' : 'Saisies locales conservées dans cet onglet.') : 'Conservation locale active dans cet onglet.') : 'Conservation locale indisponible : copiez les instructions et messages avant de quitter.'} Cette copie locale n’est pas une révision serveur ; fermer l’onglet peut l’effacer.</p>
+            {draftConflict ? <div className="context-completeness stack" role="alert"><p>Un brouillon local repose sur une autre version du brief. Il n’a pas été appliqué à la version serveur actuelle. Reprenez-le explicitement ou enregistrez votre formulaire courant pour le remplacer.</p><details><summary>Consulter la saisie locale précédente</summary><dl className="journey-data"><dt>Objectif</dt><dd>{draftConflict.objective}</dd><dt>Public</dt><dd>{draftConflict.audience}</dd><dt>Ton</dt><dd>{draftConflict.tone}</dd><dt>Appel à l’action</dt><dd>{draftConflict.cta}</dd><dt>Instructions par scène</dt><dd>{draftConflict.correctionDrafts ? <ul>{Object.entries(draftConflict.correctionDrafts).map(([sceneKey, draft]) => <li key={sceneKey}><strong>{sceneKey}</strong> : {draft.instruction}</li>)}</ul> : draftConflict.correction || 'Aucune'}</dd><dt>Instruction non attribuée</dt><dd>{draftConflict.unassignedCorrection?.instruction || 'Aucune'}</dd><dt>Message non envoyé</dt><dd>{draftConflict.chatInput}</dd></dl></details><button className="btn btn-secondary" type="button" onClick={() => { preparationInitiallyOpen.current = true; restoreInputs(draftConflict); setBriefEdited(true); setDraftConflict(null); }}>Reprendre ces saisies comme brouillon à relire</button></div> : null}
+            <form className="stack" onSubmit={saveBrief} onChange={() => setBriefEdited(true)}>
+              <label className="label">Objectif
+                <input ref={briefObjectiveRef} className="input" data-testid="brief-objective" value={briefObjective} onChange={(event) => setBriefObjective(event.target.value)} placeholder="Faire connaitre l offre" required disabled={Boolean(busy)} />
+              </label>
+              <label className="label">Audience
+                <input className="input" data-testid="brief-audience" value={briefAudience} onChange={(event) => setBriefAudience(event.target.value)} placeholder="Createurs, jeunes actifs..." required disabled={Boolean(busy)} />
+              </label>
+              <label className="label">Ton
+                <input className="input" data-testid="brief-tone" value={briefTone} onChange={(event) => setBriefTone(event.target.value)} placeholder="Premium, direct..." required disabled={Boolean(busy)} />
+              </label>
+              <label className="label">Appel a action
+                <input className="input" data-testid="brief-cta" value={briefCta} onChange={(event) => setBriefCta(event.target.value)} placeholder="Decouvrir la collection" required disabled={Boolean(busy)} />
+              </label>
+              {productionSettings ? <fieldset className="stack production-profile" id="project-destination"><legend>Cadrage et réglages de production</legend>
+                <label className="label">Cadrage de la vidéo<select aria-label="Ratio de sortie" className="input" value={productionSettings.ratio} disabled={Boolean(busy)} onChange={(e) => setProductionSettings({ ...productionSettings, ratio: e.target.value as typeof productionSettings.ratio })}>{(bundle.project.platform === 'TikTok' ? ['9:16'] : bundle.project.platform === 'LinkedIn' ? ['1:1', '16:9'] : ['9:16', '4:5', '1:1']).map((ratio) => <option key={ratio} value={ratio}>{ratioLabels[ratio] ?? ratio}</option>)}</select></label>
+                <details data-testid="advanced-production"><summary>Style et direction simulés · réglages avancés</summary><div className="stack">
+                <label className="label">Style de simulation<select aria-label="Style de simulation" className="input" value={productionSettings.visualStyle} disabled={Boolean(busy)} onChange={(e) => setProductionSettings({ ...productionSettings, visualStyle: e.target.value as typeof productionSettings.visualStyle })}><option value="editorial">Éditorial</option><option value="minimal">Minimal</option><option value="bold">Contrasté</option></select></label>
+                <label className="label">Direction artistique simulée<textarea aria-label="Direction artistique simulée" className="input" value={productionSettings.direction} maxLength={1000} disabled={Boolean(busy)} onChange={(e) => setProductionSettings({ ...productionSettings, direction: e.target.value })} /></label>
+                <p className="hint">La direction fait varier le décor de façon déterministe. Aucun modèle IA n’interprète le texte.</p>
+                </div></details>
+                <label className="label">Durée par défaut d’une scène (secondes)<input className="input" type="number" min={1} max={15} value={productionSettings.defaultSceneDurationSeconds} disabled={Boolean(busy)} onChange={(e) => setProductionSettings({ ...productionSettings, defaultSceneDurationSeconds: Number(e.target.value) })} /></label>
+                <label className="label">Plafond du run en centimes MOCK<input className="input" type="number" min={0} max={100000} step={1} value={productionSettings.maxMockCents} disabled={Boolean(busy)} onChange={(e) => setProductionSettings({ ...productionSettings, maxMockCents: Number(e.target.value) })} /></label>
+                <p className="hint">Voix et musique : fichiers et mix en cours de qualification. Cette tranche produit une piste silencieuse.</p>
+              </fieldset> : null}
+              <button className="btn btn-secondary" data-testid="brief-save" type="submit" disabled={Boolean(busy)}>
+                {bundle.brief ? 'Enregistrer une nouvelle révision' : 'Enregistrer le brouillon du brief'}
+              </button>
+            </form>
+            {bundle.brief ? <section className="production-plan stack" aria-labelledby="production-plan-heading" data-testid="production-plan">
+              <h3 id="production-plan-heading">Plan et estimation MOCK</h3>
+              <button className="btn btn-ghost btn-small" type="button" disabled={Boolean(busy) || refreshingPlan} onClick={() => void refreshPlan()}>Recalculer le plan</button>
+              {briefDirty ? <p className="hint">Enregistrez vos modifications pour actualiser ce plan.</p> : null}
+              {planError ? <p className="error" role="alert">{planError}</p> : plan ? <>
+                <p><strong>{bundle.project.format === 'Video' ? 'Livrables prévus : aperçus des scènes, montage vidéo MP4 et rapport de contrôle qualité.' : 'Livrables indisponibles : la production de ce format n’est pas encore qualifiée.'}</strong></p>
+                <p>{plan.sceneCount} scènes · {plan.durationSeconds} s · {plan.ratio}</p>
+                <p data-testid="plan-estimate">Estimation indicative : {plan.pricing.estimatedCents} centimes MOCK. Plafond du brief : {plan.pricing.ceilingCents} centimes MOCK.</p>
+                <p className="hint">{plan.executionMode === 'local' ? 'Rendu local sans invocation fournisseur.' : 'Routage simulé avec fallback admissible. Maximum du scénario : ' + plan.pricing.maxPossibleCents + ' centimes MOCK.'} Aucun paiement réel.</p>
+                <ol>{plan.steps.map((step) => <li key={step.key}>{stepLabel(step.key)}<span className="hint">{step.dependsOn.length ? ' — après ' + step.dependsOn.map(stepLabel).join(', ') : ' — début du plan'}</span></li>)}</ol>
+                {!plan.ready ? <ul role="alert">{plan.issues.map((issue) => <li key={issue.code}>{issue.message}</li>)}</ul> : null}
+              </> : <p role="status">Calcul du plan…</p>}
+            </section> : null}
+            {bundle.brief ? <div className="stack"><p className="hint">{briefConfirmed ? 'Version exacte confirmée.' : 'Relisez le plan et cette version puis confirmez le brief et son plafond avant le lancement.'}{briefDirty ? ' Enregistrez d’abord vos modifications.' : ''}</p><button type="button" className="btn btn-secondary" data-testid="brief-confirm" disabled={briefConfirmed || briefDirty || Boolean(busy) || !planReady || !bundle.brief.revisions.length} onClick={confirmBrief}>Confirmer la version {bundle.brief.version} du brief et son plafond</button></div> : null}
+            {bundle.brief && bundle.brief.revisions.length > 0 ? (
+              <details className="history-details">
+                <summary>Historique des revisions ({bundle.brief.revisions.length})</summary>
+                <ul className="history-list">
+                  {bundle.brief.revisions.map((revision) => (
+                    <li key={revision.id}>
+                      <span className="pill">v{revision.version}</span>
+                      <span className="muted small">{formatDate(revision.createdAt)} / {shortChecksum(revision.checksum)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+            <button id="storyboard-generate" className="btn btn-primary full-width" data-testid="storyboard-generate" aria-describedby={storyboardReason ? 'storyboard-reason' : undefined} onClick={generateStoryboard} disabled={!briefConfirmed || briefDirty || Boolean(busy) || activeRun || bundle.project.status === 'producing'}>
+              Générer le storyboard
+            </button>
+            {storyboardReason ? <p id="storyboard-reason" className="hint">{storyboardReason}</p> : null}
+          </section>
+          <details className="card chat-card" data-testid="studio-assistance"><summary>Assistance MOCK facultative</summary>
+            <div className="section-head">
+              <h2 id="chat-heading">Conversation avec Vululu</h2>
+              <span className="pill">Simulation MOCK</span>
+            </div>
+            <div className="messages" ref={messagesRef}>
               {bundle.messages.length === 0 ? (
                 <div className="message assistant">
                   <span className="message-role">Vululu</span>
-                  <p>Bonjour. Je peux t aider a preparer le brief, produire cinq scenes et corriger la scene 3. Commence par le brief ci-dessous, ou ecris-moi.</p>
+                  <p>Simulation MOCK : je peux proposer un brief à relire ou préparer une correction par Scene ID. Commencez par une proposition ou déclarez Objectif:, Audience:, Ton: et CTA: dans le message.</p>
                 </div>
-              ) : (
-                bundle.messages.map((message) => (
-                  <div className={'message ' + message.role} key={message.id}>
-                    <span className="message-role">{message.role === 'assistant' ? 'Vululu' : 'Toi'}</span>
-                    <p>{message.content}</p>
-                  </div>
-                ))
-              )}
+              ) : bundle.messages.map((message) => (
+                <div className={'message ' + message.role} key={message.id}>
+                  <span className="message-role">{message.role === 'assistant' ? 'Vululu' : 'Toi'}</span>
+                  <p>{message.content}</p>
+                  {message.proposal ? <ConversationProposalCard messageId={message.id} proposal={message.proposal} blockedReason={proposalBlockedReason(message.proposal)} preserveDraft={hasUnsavedBrief} onApply={applyProposal} /> : null}
+                </div>
+              ))}
+            </div>
+            <div className="conversation-actions">
+              <button type="button" className="btn btn-ghost" disabled={Boolean(busy)} onClick={() => runAction('chat', () => postJson('/api/projects/' + id + '/messages', { content: '/brief' }))}>Proposer un brief MOCK</button>
+              <button type="button" className="btn btn-ghost" disabled={Boolean(busy)} onClick={() => runAction('chat', () => postJson('/api/projects/' + id + '/messages', { content: '/aide' }))}>Aide à la conversation</button>
             </div>
             <form className="composer" onSubmit={sendMessage}>
-              <input
-                className="input"
-                data-testid="chat-input"
-                value={chatInput}
-                onChange={(event) => setChatInput(event.target.value)}
-                placeholder="Ecris a Vululu..."
-              />
-              <button className="btn btn-secondary" data-testid="chat-send" type="submit" disabled={busy === 'chat'}>Envoyer</button>
+              <label className="label sr-only" htmlFor="chat-input-field">Message a Vululu</label>
+              <textarea id="chat-input-field" className="input" data-testid="chat-input" aria-describedby="chat-format-help" maxLength={2000} rows={3} value={chatInput} onChange={(event) => setChatInput(event.target.value)} placeholder={'Objectif: …\nAudience: …\nTon: …\nCTA: …'} disabled={Boolean(busy)} />
+              <button className="btn btn-secondary" data-testid="chat-send" type="submit" disabled={Boolean(busy)}>Envoyer</button>
             </form>
-          </section>
+            <p className="hint" id="chat-format-help">Scénarios MOCK : /brief, /aide ou SCENE-003: votre instruction. Les propositions préremplissent les formulaires après votre clic.</p>
+          </details>
 
-          <section className="card">
-            <div className="section-head">
-              <h2>Brief</h2>
-              <span className="muted small">{bundle.brief ? 'Version ' + bundle.brief.version + ' / ' + bundle.brief.revisions.length + ' revision(s)' : 'A preparer'}</span>
-            </div>
-            <form className="stack" onSubmit={saveBrief}>
-              <label className="label">Objectif
-                <input className="input" data-testid="brief-objective" value={briefObjective} onChange={(event) => setBriefObjective(event.target.value)} placeholder="Faire connaitre l offre" required />
-              </label>
-              <label className="label">Audience
-                <input className="input" data-testid="brief-audience" value={briefAudience} onChange={(event) => setBriefAudience(event.target.value)} placeholder="Createurs, jeunes actifs..." required />
-              </label>
-              <label className="label">Ton
-                <input className="input" data-testid="brief-tone" value={briefTone} onChange={(event) => setBriefTone(event.target.value)} placeholder="Premium, direct..." required />
-              </label>
-              <label className="label">Appel a action
-                <input className="input" data-testid="brief-cta" value={briefCta} onChange={(event) => setBriefCta(event.target.value)} placeholder="Decouvrir la collection" required />
-              </label>
-              <button className="btn btn-secondary" data-testid="brief-save" type="submit" disabled={busy === 'brief'}>
-                {bundle.brief ? 'Mettre a jour le brief' : 'Preparer le brief'}
-              </button>
-            </form>
-            <button className="btn btn-primary full-width" data-testid="storyboard-generate" onClick={generateStoryboard} disabled={!bundle.brief || busy === 'storyboard'}>
-              Generer le storyboard de 5 scenes
-            </button>
-          </section>
         </div>
 
-        <section className="card">
-          <div className="section-head">
-            <h2>Storyboard et production</h2>
-            <span className="muted small">{bundle.scenes.length} / 5 scenes</span>
-          </div>
-          {bundle.scenes.length === 0 ? (
-            <p className="muted">Le storyboard apparaitra apres la validation du brief.</p>
-          ) : (
-            <div className="scene-grid">
-              {bundle.scenes.map((scene) => {
-                const latest = scene.versions.length > 0 ? scene.versions[0] : null;
-                return (
-                  <article className="scene-card" data-testid={'scene-' + scene.sceneKey} key={scene.id}>
-                    <div className="scene-image-wrap">
-                      {latest ? (
-                        <img
-                          className="scene-image"
-                          alt={scene.title}
-                          src={'/api/projects/' + id + '/scenes/' + scene.sceneKey + '/image?v=' + latest.version}
-                        />
-                      ) : (
-                        <div className="scene-placeholder">Scene en attente</div>
-                      )}
-                    </div>
-                    <div className="scene-meta">
-                      <span className="scene-key">{scene.sceneKey}</span>
-                      <strong>{scene.title}</strong>
-                      <p className="muted small">{scene.description}</p>
-                      <label className="label duration-label">Duree
-                        <select
-                          className="input duration-select"
-                          data-testid={'duration-' + scene.sceneKey}
-                          value={scene.durationSeconds}
-                          onChange={(event) => updateDuration(scene.sceneKey, Number(event.target.value))}
-                          disabled={busy !== '' || bundle.project.status === 'producing'}
-                        >
-                          <option value={2}>2 s</option>
-                          <option value={5}>5 s</option>
-                          <option value={10}>10 s</option>
-                        </select>
-                      </label>
-                      {latest ? <span className="pill">v{latest.version} / {shortChecksum(latest.checksum)}</span> : null}
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          )}
-          <div className="actions">
-            <button className="btn btn-primary" data-testid="produce" onClick={produce} disabled={!canProduce || busy === 'produce'}>
-              Produire les 5 scenes
-            </button>
-            <span className="pill" data-testid="duration-summary">{bundle.scenes.length} scenes / {totalDurationSeconds} s</span>
-            {job ? (
-              <span className="muted small" data-testid="job-status">
-                {job.status} / {job.step} / {job.progress}%
-              </span>
-            ) : null}
-          </div>
+
+        </details>
+        <CreationDelivery bundle={bundle} refresh={load} blocked={Boolean(busy) || briefEdited || briefDirty || !!refreshError} correct={() => correctionRef.current?.focus()} studio={{ scene: selectedScene, mode: previewMode, onModeChange: setPreviewMode }} scenes={<>
+          <section className="studio-scenes" aria-labelledby="storyboard-heading">
+            <div className="section-head"><h2 id="storyboard-heading" tabIndex={-1}>Scènes</h2><span className="muted small" data-testid="duration-summary">{bundle.scenes.length} {bundle.scenes.length === 1 ? 'scène' : 'scènes'} · {totalDurationSeconds} s</span></div>
+            {bundle.scenes.length ? <ol className="studio-scene-strip" aria-label="Choisir une scène">
+              {bundle.scenes.map((scene) => <li key={scene.id}><button type="button" data-testid={'scene-' + scene.sceneKey} className="studio-scene-choice" aria-pressed={selectedScene?.id === scene.id} onClick={() => { setCorrectionScene(scene.sceneKey); setPreviewMode('scene'); }}>
+                {scene.versions.length ? <img alt="" src={'/api/projects/' + id + '/scenes/' + scene.sceneKey + '/image?v=' + scene.versions[0].version} /> : <span className="scene-placeholder">En attente</span>}
+                <span><strong>{scene.title}</strong><small>{scene.sceneKey} · {scene.durationSeconds} s</small></span>
+              </button></li>)}
+            </ol> : <p className="hint">Le storyboard apparaîtra après la préparation du brief.</p>}
+            {selectedScene ? <details><summary>Versions et détails de {selectedScene.title}</summary><div className="scene-versions" data-testid={'scene-versions-' + selectedScene.sceneKey}>
+              {selectedScene.versions.length ? selectedScene.versions.map((version) => <span className="scene-version" key={version.id}>v{version.version} / {shortChecksum(version.checksum)} / {formatDate(version.createdAt)}</span>) : <span className="hint">Aucune version rendue.</span>}
+            </div></details> : null}
+            {unavailableCorrections.length ? <details><summary>Instructions de scènes indisponibles ({unavailableCorrections.length})</summary><p className="hint">Ces scènes ne figurent plus dans le projet. Leurs instructions restent consultables dans cet onglet.</p><dl className="journey-data">{unavailableCorrections.map(([sceneKey, draft]) => <div key={sceneKey}><dt>{sceneKey}</dt><dd className="context-copy">{draft.instruction}</dd></div>)}</dl></details> : null}
+          {job && (job.status === 'queued' || job.status === 'running') ? <p className="hint">{job.status === 'queued' ? 'Traitement en attente' : 'Traitement en cours'} · {job.progress}%</p> : null}
           {job && job.progress > 0 && job.progress < 100 ? (
-            <div className="progress"><div className="progress-bar" style={{ width: job.progress + '%' }} /></div>
+            <div className="progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={job.progress}><div className="progress-bar" style={{ width: job.progress + '%' }} /></div>
           ) : null}
-          {job && job.error ? <p className="error">{job.error}</p> : null}
-        </section>
+          {job && job.error ? <p className="error" role="alert">{job.error}</p> : null}
 
-        {master ? (
-          <section className="card studio-card">
-            <div className="section-head">
-              <h2>Studio et preview</h2>
-              <span className="pill" data-testid="master-version">Master v{activeVersion}</span>
-            </div>
-            <div className="studio-preview">
-              <video
-                key={'master-' + activeVersion}
-                className="player"
-                data-testid="master-video"
-                controls
-                src={'/api/projects/' + id + '/master?v=' + activeVersion}
-              />
-              <div className="stack">
-                <label className="label">Version du master
-                  <select
-                    className="input"
-                    data-testid="version-select"
-                    value={activeVersion}
-                    onChange={(event) => setSelectedVersion(Number(event.target.value))}
-                  >
-                    {bundle.masterVersions.map((version) => (
-                      <option key={version.id} value={version.version}>Version {version.version} — {version.qaStatus || 'QA inconnue'}</option>
-                    ))}
-                  </select>
-                </label>
-                <p className="muted small">Checksum : {shortChecksum(activeMaster ? activeMaster.checksum : '')}</p>
-                <div className="divider" />
-                <label className="label">Corriger SCENE-003
-                  <input className="input" data-testid="correct-input" value={correction} onChange={(event) => setCorrection(event.target.value)} />
-                </label>
-                <button className="btn btn-secondary" data-testid="correct-submit" onClick={correctScene} disabled={busy === 'correct'}>
-                  Corriger la scene 3
-                </button>
-              </div>
-            </div>
-          </section>
-        ) : null}
+          </section></>} inspector={<aside className="card studio-inspector stack" aria-labelledby="correction-heading">
+          <div><p className="eyebrow">Scène sélectionnée</p><h2 id="correction-heading" tabIndex={-1}>{selectedScene ? selectedScene.title : 'Réglages de scène'}</h2></div>
+          {draftKey && !draftStored && hasCorrectionDraft ? <p className="context-completeness" role="status">Conservation locale indisponible : les instructions actuelles ne sont pas garanties après rechargement ou fermeture. Copiez-les avant de quitter.</p> : null}
+          {selectedScene ? <>
+            <p className="hint">{selectedScene.sceneKey} · {selectedScene.description}</p>
+            <label className="label">Durée de la scène
+              <select className="input" data-testid={'duration-' + selectedScene.sceneKey} value={selectedScene.durationSeconds} onChange={(event) => updateDuration(selectedScene.sceneKey, Number(event.target.value))} disabled={Boolean(busy) || bundle.project.status === 'producing'}>
+                {Array.from({ length: 15 }, (_, index) => index + 1).map((seconds) => <option key={seconds} value={seconds}>{seconds} s</option>)}
+              </select>
+            </label>
+            <p className="hint" data-testid={'duration-origin-' + selectedScene.sceneKey}>{selectedScene.usesBriefDuration === true ? 'Suit la durée du brief à la régénération.' : selectedScene.usesBriefDuration === false ? 'Durée personnalisée, conservée à la régénération.' : 'Durée historique, conservée à la régénération.'}</p>
+            {selectedScene.usesBriefDuration !== true ? <button type="button" className="btn btn-ghost" data-testid={'duration-reset-' + selectedScene.sceneKey} onClick={() => updateDuration(selectedScene.sceneKey, null)} disabled={Boolean(busy) || !bundle.brief || briefDirty || bundle.project.status === 'producing'}>Suivre la durée du brief</button> : null}
+            <label className="label">Instruction pour « {selectedScene.title} »
+              <input ref={correctionRef} className="input" data-testid="correct-input" maxLength={500} value={correction} onChange={(event) => { const instruction = event.currentTarget.value; setCorrectionDrafts((current) => ({ ...current, [selectedScene.sceneKey]: { instruction, edited: true } })); }} disabled={Boolean(busy)} />
+            </label>
+            <button className="btn btn-secondary" data-testid="correct-submit" aria-describedby="correction-help" onClick={correctScene} disabled={Boolean(busy) || !selectedScene.versions.length || !bundle.master || !briefConfirmed || briefDirty || bundle.project.status === 'producing' || correction.trim().length < 3}>Corriger « {selectedScene.title} » ({selectedScene.sceneKey})</button>
+            <p className="hint" id="correction-help">{correctionReason || 'La correction crée une nouvelle version avec le plafond MOCK enregistré.'}</p>
+            {unassignedCorrection.instruction ? <details><summary>Instruction non attribuée</summary><p className="context-copy">{unassignedCorrection.instruction}</p><p className="hint">Choisissez la scène à laquelle attribuer cette saisie. Une instruction déjà présente ne sera pas remplacée.</p><button type="button" className="btn btn-secondary" disabled={Boolean(busy) || !!correction} onClick={() => { setCorrectionDrafts((current) => ({ ...current, [selectedScene.sceneKey]: { instruction: unassignedCorrection.instruction, edited: true } })); setUnassignedCorrection({ instruction: '', edited: false }); }}>Attribuer à « {selectedScene.title} »</button>{correction ? <p className="hint">Effacez d’abord l’instruction de cette scène pour lui attribuer ce brouillon.</p> : null}</details> : null}
+          </> : <><p className="hint">Créez le storyboard pour sélectionner une scène. L’instruction préparée ici restera non attribuée jusqu’à votre choix.</p><label className="label">Instruction non attribuée<input ref={correctionRef} className="input" data-testid="correct-input" maxLength={500} value={unassignedCorrection.instruction} onChange={(event) => setUnassignedCorrection({ instruction: event.currentTarget.value, edited: true })} disabled={Boolean(busy)} /></label><button className="btn btn-secondary" data-testid="correct-submit" disabled>Correction indisponible</button></>}
+        </aside>} />
+        <details className="studio-preparation"><summary>Parcours et plan de production</summary>
+        {job ? <p className="hint" data-testid="job-status">État technique : {job.status} / {job.step} / {job.progress}%</p> : null}
+        <ProjectJourney bundle={bundle} plan={plan} planError={planError} briefDirty={briefEdited || briefDirty} refreshing={refreshingPlan} refresh={() => void refreshPlan()} />
 
-        {master ? (
-          <section className="card">
-            <div className="section-head">
-              <h2>Qualite, approbation et transfert</h2>
-              <span className={'badge ' + (master.qaStatus === 'PASS' ? 'status-approved' : 'status-failed')} data-testid="qa-status">
-                QA {master.qaStatus || 'NOT_RUN'}
-              </span>
-            </div>
-            <div className="qa-list" data-testid="qa-checks">
-              {checks.length === 0 ? <p className="muted">Aucun detail QA disponible.</p> : checks.map((check) => (
-                <div className="list-row" key={check.name}>
-                  <span className={'dot ' + (check.status === 'PASS' ? 'dot-pass' : 'dot-fail')} />
-                  <span>{check.name}</span>
-                  <span className="muted small">{check.detail}</span>
-                </div>
-              ))}
-            </div>
-            <div className="actions">
-              {approvalValid && approval ? (
-                <span className="pill" data-testid="approval-status">Master approuve / {shortChecksum(approval.checksum)}</span>
-              ) : (
-                <>
-                  {approval && approval.invalidatedAt ? (
-                    <span className="pill" data-testid="approval-invalidated">Approbation invalidee</span>
-                  ) : null}
-                  <button className="btn btn-primary" data-testid="approve" onClick={approveMaster} disabled={busy === 'approve'}>
-                    Valider le master v{master.version}
-                  </button>
-                </>
-              )}
-              {approvalValid && !transferRecord ? (
-                <button className="btn btn-secondary" data-testid="transfer" onClick={transferMaster} disabled={busy === 'transfer'}>
-                  Transferer vers Postiz (mock)
-                </button>
-              ) : null}
-              {transferRecord ? (
-                <span className="pill" data-testid="transfer-status">Transfert {transferRecord.status}</span>
-              ) : null}
-            </div>
-            <p className="hint">Postiz est simule localement. Aucun envoi reseau, aucune publication reelle.</p>
-          </section>
-        ) : null}
 
-        <section className="card">
-          <div className="section-head">
-            <h2>Historique des masters</h2>
-            <span className="muted small">{bundle.masterVersions.length} version(s)</span>
-          </div>
-          {bundle.masterVersions.length === 0 ? (
-            <p className="muted">Aucune version produite.</p>
-          ) : (
-            <div className="list">
-              {bundle.masterVersions.map((version) => (
-                <div className="list-row" key={version.id}>
-                  <strong>Version {version.version}</strong>
-                  <span className="muted small">{version.qaStatus || 'QA inconnue'} / {shortChecksum(version.checksum)}</span>
-                  {version.approval ? (
-                    version.approval.invalidatedAt
-                      ? <span className="pill">Approbation invalidee</span>
-                      : <span className="pill">Approuvee</span>
-                  ) : <span className="pill">Non approuvee</span>}
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+        </details>
       </main>
     </div>
   );

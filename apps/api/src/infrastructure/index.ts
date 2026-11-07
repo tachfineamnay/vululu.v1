@@ -28,6 +28,7 @@ export { PrismaAgentRepository } from './prisma/agentRepository';
 export { PrismaProviderCatalogRepository } from './prisma/providerCatalogRepository';
 export { PrismaRoutingRepository } from './prisma/routingRepository';
 export { PrismaCostRepository } from './prisma/costRepository';
+export { PrismaAdminQuery } from './prisma/adminQuery';
 export { MockCapabilityProvider } from './providers/mockCapabilityProvider';
 export { PrismaDurableProductionStore } from './durable/durableProductionStore';
 export { DurableRoutingService } from './durable/durableRoutingService';

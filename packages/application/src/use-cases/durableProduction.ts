@@ -7,6 +7,7 @@ import {
   type QaReport as DomainQaReport
 } from '@vululu/domain';
 import { ApplicationError } from '../errors';
+import { productionSourceChecksum } from '../productionSource';
 import type {
   AuditPort,
   Clock,
@@ -137,7 +138,7 @@ export class DurableProductionUseCases {
       jobRunId,
       projectId: run.projectId,
       capabilityKey: 'scene.generate',
-      budgetCents: this.budgetCents,
+      budgetCents: run.snapshot?.executionPolicy?.maxMockCents ?? this.budgetCents,
       input: { projectId: run.projectId, jobRunId },
       idempotencyKey: 'route:' + jobRunId
     });
@@ -171,7 +172,7 @@ export class DurableProductionUseCases {
   async renderScenes(jobRunId: string): Promise<StepScenes> {
     const existing = await this.store.getStepOutput<StepScenes>(jobRunId, 'render-scenes');
     const run = await this.store.loadRun(jobRunId);
-    const project = await this.store.loadExecutionProject(run.projectId);
+    const project = await this.store.loadExecutionProject(run.projectId, jobRunId);
     const target =
       run.type === 'correction' && run.snapshot?.correction
         ? run.snapshot.correction.targetSceneKey
@@ -201,6 +202,7 @@ export class DurableProductionUseCases {
           absolutePath: this.storage.resolve(scene.latestVersion.imagePath),
           prompt: scene.latestVersion.prompt,
           checksum: scene.latestVersion.checksum,
+          textLayout: scene.latestVersion.textLayout,
           width: 0,
           height: 0
         };
@@ -219,6 +221,7 @@ export class DurableProductionUseCases {
         brandName: project.context.name,
         colorPrimary: project.context.colorPrimary,
         colorSecondary: project.context.colorSecondary,
+        ...project.render,
         version,
         ...(target && target === scene.sceneKey && run.snapshot?.correction
           ? { instruction: run.snapshot.correction.instruction }
@@ -235,6 +238,7 @@ export class DurableProductionUseCases {
           ? 'Correction: ' + (run.snapshot?.correction?.instruction ?? '')
           : scene.sceneKey + ' - ' + scene.title,
         checksum: result.checksum,
+        textLayout: result.textLayout,
         width: result.width,
         height: result.height
       };
@@ -265,7 +269,7 @@ export class DurableProductionUseCases {
     const run = await this.store.loadRun(jobRunId);
     await this.store.transitionStep(jobRunId, 'assemble-master', 'running', 'worker');
     const version = await this.store.nextMasterVersion(run.projectId);
-    const project = await this.store.loadExecutionProject(run.projectId);
+    const project = await this.store.loadExecutionProject(run.projectId, jobRunId);
     const master = await this.media.assembleMaster({
       projectId: run.projectId,
       artifactRoot: this.artifactRoot,
@@ -302,15 +306,18 @@ export class DurableProductionUseCases {
       throw new ApplicationError('media_incomplete', 'Media incomplet pour QA.', 409);
     }
     await this.store.transitionStep(jobRunId, 'qa', 'running', 'worker');
+    const run = await this.store.loadRun(jobRunId);
     const qa = await this.media.runQa(
       rendered.scenes.map((scene) => ({
         relativePath: scene.imagePath,
         absolutePath: scene.absolutePath,
         checksum: scene.checksum,
         width: scene.width,
+        textLayout: scene.textLayout,
         height: scene.height
       })),
-      master.master
+      master.master,
+      run.snapshot?.render
     );
     const output = { qa };
     await this.finishStep(jobRunId, 'qa', output);
@@ -388,6 +395,9 @@ export class DurableProductionUseCases {
     const createdAt = this.clock.now().toISOString();
     const manifest = {
       schemaVersion: 1,
+      sourceBriefVersion: run.snapshot?.brief.version ?? null,
+      compositionVersion: run.snapshot?.render.compositionVersion ?? null,
+      sourceInputChecksum: run.snapshot ? productionSourceChecksum(run.snapshot) : null,
       createdAt,
       jobRunId,
       projectId: run.projectId,
@@ -425,6 +435,7 @@ export class DurableProductionUseCases {
       imagePath: scene.imagePath,
       prompt: scene.prompt,
       checksum: scene.checksum,
+      textLayout: scene.textLayout,
       ...(sceneStorage.get(scene.sceneKey)
         ? { storage: sceneStorage.get(scene.sceneKey) as ArtifactStorageMetadata }
         : {})

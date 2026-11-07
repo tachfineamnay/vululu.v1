@@ -77,7 +77,14 @@ playwright-report/
 blob-report/
 *.tsbuildinfo
 
+# Règles régénérées par next dev ; AGENTS.md racine reste la référence du dépôt.
+apps/web/AGENTS.md
+
 # Divers
 *.local
 *.bak
 *.orig
+
+# Preproduction locale (binaires, volumes, sauvegardes)
+infra/preprod/runtime/
+infra/preprod/backups/

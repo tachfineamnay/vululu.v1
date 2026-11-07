@@ -60,8 +60,8 @@ export class PrismaDurableProductionStore implements DurableProductionStore {
     };
   }
 
-  async loadExecutionProject(projectId: string): Promise<ExecutionProject> {
-    return this.execution.loadExecutionProject(projectId);
+  async loadExecutionProject(projectId: string, jobRunId?: string): Promise<ExecutionProject> {
+    return this.execution.loadExecutionProject(projectId, jobRunId);
   }
 
   async transitionJob(
@@ -225,6 +225,7 @@ export class PrismaDurableProductionStore implements DurableProductionStore {
                   imagePath: scene.imagePath,
                   prompt: scene.prompt,
                   checksum: scene.checksum,
+                  manifest: json({ ...input.manifest, textLayout: scene.textLayout ?? null }),
                   ...(scene.storage
                     ? {
                         storageKey: scene.storage.key,
@@ -232,8 +233,7 @@ export class PrismaDurableProductionStore implements DurableProductionStore {
                         mimeType: scene.storage.contentType,
                         sizeBytes: BigInt(scene.storage.sizeBytes),
                         sha256: scene.storage.sha256,
-                        finalizationState: 'ready',
-                        manifest: json(input.manifest ?? {})
+                        finalizationState: 'ready'
                       }
                     : {})
                 }
@@ -270,6 +270,7 @@ export class PrismaDurableProductionStore implements DurableProductionStore {
               checksum: input.master.checksum,
               qaStatus: input.qa.status,
               qaReport: json(input.qa),
+              manifest: json(input.manifest ?? {}),
               ...(input.master.storage
                 ? {
                     storageKey: input.master.storage.key,

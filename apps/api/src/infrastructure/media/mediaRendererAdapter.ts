@@ -24,7 +24,7 @@ export class MediaRendererAdapter implements MediaRendererPort {
     return assembleMaster(input);
   }
 
-  async runQa(scenes: SceneRenderResult[], master: MasterRenderResult): Promise<QaReport> {
-    return runQa(scenes, master);
+  async runQa(scenes: SceneRenderResult[], master: MasterRenderResult, expectedDimensions?: { width: number; height: number }): Promise<QaReport> {
+    return runQa(scenes, master, expectedDimensions);
   }
 }

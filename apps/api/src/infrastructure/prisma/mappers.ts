@@ -19,6 +19,7 @@ import type {
   ProjectRecord,
   SceneRecord,
   SceneVersionRecord,
+  SceneTextLayout,
   TransferRecord
 } from '@vululu/application';
 
@@ -50,6 +51,8 @@ export function toProjectRecord(row: PrismaProject): ProjectRecord {
     id: row.id,
     userId: row.userId,
     contextId: row.contextId,
+    campaignId: row.campaignId,
+    storyboardBriefVersion: row.storyboardBriefVersion,
     title: row.title,
     platform: row.platform,
     format: row.format,
@@ -84,6 +87,7 @@ export function toSceneRecord(row: PrismaScene): SceneRecord {
     title: row.title,
     description: row.description,
     durationSeconds: row.durationSeconds,
+    usesBriefDuration: row.usesBriefDuration,
     characterKey: row.characterKey,
     createdAt: row.createdAt
   };
@@ -96,8 +100,13 @@ export function toSceneVersionRecord(row: PrismaSceneVersion): SceneVersionRecor
     version: row.version,
     imagePath: row.imagePath,
     prompt: row.prompt,
-    checksum: row.checksum
+    checksum: row.checksum,
+    textLayout: readSceneTextLayout(row.manifest)
   };
+}
+
+export function readSceneTextLayout(manifest: unknown): SceneTextLayout | undefined {
+  return manifest && typeof manifest === 'object' && 'textLayout' in manifest && manifest.textLayout ? manifest.textLayout as SceneTextLayout : undefined;
 }
 
 export function toArtifactVersionRecord(row: PrismaArtifactVersion): ArtifactVersionRecord {

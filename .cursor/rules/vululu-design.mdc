@@ -1,0 +1,14 @@
+---
+description: "Design frontend Vululu : atelier bleu, expérience simple et maîtrise professionnelle."
+globs: "apps/web/**,docs/design-system/**,DESIGN.md"
+alwaysApply: false
+---
+
+Respecter AGENTS.md racine et apps/web/AGENTS.md.
+Lire DESIGN.md et docs/design-system/README.md, puis uniquement le contrat utile.
+Source de vérité visuelle : docs/design-system/tokens.json ; tokens.css est sa traduction de référence non activée.
+Atelier clair, bleu #2347BE, jaune ponctuel #F5D867, typographie lisible. Création au centre, un seul bandeau de scènes, inspecteur contextuel.
+Conserver les services existants et les capacités réelles ; guidage facultatif, flow avancé du même projet.
+Pas de dégradés IA, cartes décoratives imbriquées, modèles factices, endpoints inventés ou nouveaux packages UI injustifiés.
+Ne jamais remplacer une action indisponible par un succès simulé. Respecter le mode démonstration.
+Ne pas relire tout le kit à chaque changement ; suivre sa table de routage.

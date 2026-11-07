@@ -1,14 +1,20 @@
 import type { FastifyInstance } from 'fastify';
 import {
   briefInputSchema,
+  briefConfirmationSchema,
   messageInputSchema,
   projectInputSchema,
   sceneDurationInputSchema
 } from '@vululu/contracts';
-import { actorOf, briefs, bundles, messages, projects, scenes, storyboards } from '../application/container';
+import { actorOf, briefs, briefConfirmations, bundles, messages, projects, scenes, storyboards, productionPlanning } from '../application/container';
 import { rateLimitPreHandler, RATE_LIMITS } from '../infrastructure/security/rateLimiter';
 
 export async function projectRoutes(app: FastifyInstance): Promise<void> {
+  app.get('/api/projects/:id/production-plan', { preHandler: [app.authenticate] }, async (request) => ({ plan: await productionPlanning.preview(actorOf(request.currentUser), (request.params as { id: string }).id) }));
+  app.post('/api/projects/:id/brief/confirm', { preHandler: [app.authenticate] }, async (request) => {
+    const input = briefConfirmationSchema.parse(request.body);
+    return { brief: await briefConfirmations.confirm(actorOf(request.currentUser), (request.params as { id: string }).id, input.version, input.checksum) };
+  });
   app.get('/api/projects', { preHandler: [app.authenticate] }, async (request) => {
     const items = await projects.list(actorOf(request.currentUser));
     return { items };
@@ -51,7 +57,7 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
       actorOf(request.currentUser),
       params.id,
       params.sceneKey,
-      input.durationSeconds
+      'durationSeconds' in input ? input.durationSeconds : null
     );
     return { scene };
   });

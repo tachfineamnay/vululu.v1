@@ -87,6 +87,7 @@ export class PrismaStoryboardStore implements StoryboardStore {
     projectId: string;
     userId: string;
     projectStatus: string;
+    briefVersion?: number;
     character: StoryboardCharacterWrite;
     scenes: StoryboardSceneWrite[];
   }): Promise<void> {
@@ -112,10 +113,14 @@ export class PrismaStoryboardStore implements StoryboardStore {
         // Verrou conditionnel : serialise storyboard, brief et production.
         const locked = await tx.project.updateMany({
           where: { id: input.projectId, userId: input.userId, status: { not: 'producing' } },
-          data: { status: input.projectStatus }
+          data: { status: input.projectStatus, storyboardBriefVersion: input.briefVersion ?? null }
         });
         if (locked.count === 0) {
           throw new ApplicationError('project_busy', 'Le storyboard ne peut pas etre modifie pendant une production.', 409);
+        }
+        if (input.briefVersion !== undefined) {
+          const brief = await tx.brief.findUnique({ where: { projectId: input.projectId }, include: { revisions: { orderBy: { version: 'desc' }, take: 1 } } });
+          if (!brief || brief.version !== input.briefVersion || brief.confirmedVersion !== brief.version || brief.confirmedChecksum !== brief.revisions[0]?.checksum || brief.confirmedBy !== input.userId) throw new ApplicationError('brief_confirmation_conflict', 'Le brief a changé avant la génération du storyboard.', 409);
         }
 
         const existingCharacter = await tx.character.findUnique({
@@ -170,7 +175,7 @@ export class PrismaStoryboardStore implements StoryboardStore {
             where: {
               projectId_sceneKey: { projectId: input.projectId, sceneKey: scene.sceneKey }
             },
-            select: { id: true }
+            select: { id: true, usesBriefDuration: true }
           });
           if (existing) {
             await tx.scene.update({
@@ -179,7 +184,7 @@ export class PrismaStoryboardStore implements StoryboardStore {
                 position: scene.position,
                 title: scene.title,
                 description: scene.description,
-                // Une duree personnalisee existante est preservee.
+                ...(existing.usesBriefDuration === true ? { durationSeconds: scene.durationSeconds } : {}),
                 characterKey: scene.characterKey
               }
             });
@@ -193,6 +198,7 @@ export class PrismaStoryboardStore implements StoryboardStore {
                 title: scene.title,
                 description: scene.description,
                 durationSeconds: scene.durationSeconds,
+                usesBriefDuration: true,
                 characterKey: scene.characterKey
               }
             });

@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import fs from 'node:fs/promises';
 import { test, expect, Page } from '@playwright/test';
 
 test.describe.configure({ mode: 'serial' });
@@ -5,11 +7,22 @@ test.setTimeout(300000);
 
 const demoEmail = process.env.V0_DEMO_EMAIL || 'demo@vululu.local';
 const demoPassword = process.env.V0_DEMO_PASSWORD || 'vululu-demo';
+const captureStudio = process.env.CAPTURE_STUDIO === '1';
+
+async function shot(page: Page, name: string): Promise<void> {
+  if (!captureStudio) return;
+  await page.screenshot({ path: 'docs/reports/studio-v1-captures/' + name + '.png', fullPage: true });
+}
 
 async function login(page: Page) {
   await page.goto('/login');
   await page.waitForLoadState('domcontentloaded');
-  await page.waitForTimeout(1500);
+  await expect(page.getByLabel('Email')).toBeVisible();
+  await expect(page.getByLabel('Mot de passe')).toBeVisible();
+  await page.getByLabel('Email').focus();
+  await page.keyboard.press('Tab');
+  await expect(page.getByLabel('Mot de passe')).toBeFocused();
+  await page.waitForTimeout(500);
   await page.locator('[data-testid=login-email]').fill(demoEmail);
   await page.locator('[data-testid=login-password]').fill(demoPassword);
   await page.locator('[data-testid=login-submit]').click();
@@ -28,35 +41,63 @@ async function fetchBundle(page: Page, projectId: string) {
   return bundle as any;
 }
 
-test('verticale V0 complete', async ({ page }) => {
+test('verticale Studio V1 complete (deterministe, correction ciblee, MOCK)', async ({ page }) => {
   const stamp = Date.now().toString();
   const contextName = 'Contexte E2E ' + stamp;
   const projectTitle = 'Campagne E2E ' + stamp;
 
   await login(page);
+
+  await shot(page, '01-dashboard');
+  await page.getByTestId('nav-catalog').click();
+  await expect(page.getByTestId('catalog-page')).toBeVisible();
+  await shot(page, '02-catalog');
+  await expect(page.getByTestId('format-Video')).toContainText('DISPONIBLE');
+  await expect(page.getByTestId('format-Affiche')).toContainText('NON IMPLÉMENTÉ');
+  await expect(page.getByTestId('capability-audio')).toContainText('NON CONNECTÉ');
+  await page.getByTestId('nav-assets').click();
+  await expect(page.getByTestId('assets-page')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Ressources du contexte', exact: true })).toBeVisible();
+  await page.getByTestId('nav-home').click();
+  await expect(page.getByTestId('new-context')).toBeVisible();
+
   await page.locator('[data-testid=new-context]').click();
   await expect(page).toHaveURL(/\/contexts\/new$/);
 
   await page.locator('[data-testid=context-name]').fill(contextName);
+  await page.getByText('Références et couleurs (facultatif)', { exact: true }).click();
   await page.locator('[data-testid=context-website]').fill('https://example.com');
   await page.locator('[data-testid=context-description]').fill('Contexte de test E2E pour la verticale V0.');
+  await page.getByText('Préciser le public et le ton (facultatif)', { exact: true }).click();
   await page.locator('[data-testid=context-audience]').fill('Createurs francais');
   await page.locator('[data-testid=context-tone]').fill('Premium, direct, chaleureux');
   await page.locator('[data-testid=context-submit]').click();
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/contexts\?context=/);
   await page.waitForLoadState('networkidle');
   await page.waitForTimeout(600);
+
+  await page.getByTestId('nav-contexts').click();
+  await expect(page.getByTestId('contexts-page')).toBeVisible();
+  await expect(page.getByTestId('contexts-list')).toContainText(contextName);
+  await shot(page, '03-contexts');
+  await expect(page.getByTestId('context-detail')).toContainText(contextName);
+  await page.getByTestId('nav-home').click();
+  await expect(page.getByTestId('new-project')).toBeVisible();
 
   await page.locator('[data-testid=new-project]').click();
   await expect(page).toHaveURL(/\/projects\/new$/);
   await page.waitForLoadState('networkidle');
   await page.waitForTimeout(800);
-  await page.locator('[data-testid=project-context]').selectOption({ label: contextName });
   await page.locator('[data-testid=project-title]').fill(projectTitle);
+  await page.locator('[data-testid=project-objective]').fill('Faire connaitre la nouvelle offre et donner envie de decouvrir la marque.');
+  await page.getByTestId('project-next').click();
+  await page.locator('[data-testid=project-context]').selectOption({ label: contextName });
+  await page.getByTestId('project-next').click();
   await page.locator('[data-testid=project-platform]').selectOption('Instagram');
   await page.locator('[data-testid=project-format]').selectOption('Video');
+  await page.getByText('Durée et réglages différables', { exact: true }).click();
   await page.locator('[data-testid=project-scene-duration]').selectOption('2');
-  await page.locator('[data-testid=project-objective]').fill('Faire connaitre la nouvelle offre et donner envie de decouvrir la marque.');
+  await page.getByTestId('project-next').click();
   await page.locator('[data-testid=project-submit]').click();
   await page.waitForURL((url) => url.pathname.startsWith('/projects/') && !url.pathname.endsWith('/new'), { timeout: 30000 });
 
@@ -69,16 +110,27 @@ test('verticale V0 complete', async ({ page }) => {
   await page.locator('[data-testid=brief-tone]').fill('Premium et direct');
   await page.locator('[data-testid=brief-cta]').fill('Decouvrir la collection');
   await page.locator('[data-testid=brief-save]').click();
+  await expect(page.getByTestId('toast')).toContainText('Brief enregistre', { timeout: 15000 });
+  await page.getByTestId('brief-confirm').click();
+  await expect(page.getByTestId('toast')).toContainText('Version exacte du brief confirmée');
   await expect(page.locator('[data-testid=storyboard-generate]')).toBeEnabled();
 
   await page.locator('[data-testid=storyboard-generate]').click();
   await expect(page.locator('[data-testid=scene-SCENE-001]')).toBeVisible();
   await expect(page.locator('[data-testid=scene-SCENE-005]')).toBeVisible();
-  await expect(page.locator('[data-testid=duration-summary]')).toHaveText('5 scenes / 10 s');
+  await expect(page.locator('[data-testid=duration-summary]')).toHaveText('5 scènes · 10 s');
 
   await page.locator('[data-testid=produce]').click();
-  await expect(page.locator('[data-testid=status-badge]')).toHaveText('Aperçu pret', { timeout: 240000 });
+  await expect(page.locator('[data-testid=status-badge]')).toHaveText('Aperçu prêt', { timeout: 240000 });
+  await page.getByRole('button', { name: 'Vidéo complète', exact: true }).click();
   await expect(page.locator('[data-testid=master-video]')).toBeVisible();
+  await expect(page.getByTestId('deterministic-banner')).toContainText('aucune IA générative');
+  await expect(page.getByTestId('postiz-mock-banner')).toContainText('Postiz MOCK');
+  await expect(page.getByTestId('costs-mode')).toContainText('Coûts MOCK');
+  await expect(page.getByTestId('job-steps')).toContainText('Rendre les scènes');
+  await expect(page.getByTestId('job-steps')).toContainText('Assembler la vidéo');
+  await expect(page.getByTestId('job-steps')).toContainText('Contrôler la qualité');
+  await shot(page, '04-studio-production');
 
   const before = await fetchBundle(page, projectId);
   expect(before.scenes.length).toBe(5);
@@ -109,14 +161,34 @@ test('verticale V0 complete', async ({ page }) => {
   });
   expect(videoDuration).toBeGreaterThanOrEqual(9);
   expect(videoDuration).toBeLessThanOrEqual(11);
+  const masterUrl = await masterVideo.evaluate((element) => (element as HTMLVideoElement).currentSrc);
+  const range = await page.request.get(masterUrl, { headers: { Range: 'bytes=0-31' } });
+  expect(range.status()).toBe(206);
+  expect(range.headers()['content-range']).toMatch(/^bytes 0-31\/\d+$/);
+  expect((await range.body()).length).toBe(32);
+  const byteLength = Number(range.headers()['content-range'].split('/')[1]);
+  expect((await page.request.get(masterUrl, { headers: { Range: `bytes=${byteLength}-` } })).status()).toBe(416);
 
+  await page.getByRole('navigation', { name: 'Étapes du projet' }).getByRole('link', { name: 'Finaliser', exact: true }).click();
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByTestId('download-master').click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe(projectId + '-v1.mp4');
+  const downloadedPath = await download.path();
+  expect(downloadedPath).toBeTruthy();
+  expect(createHash('sha256').update(await fs.readFile(downloadedPath!)).digest('hex')).toBe(before.master.checksum);
   await page.locator('[data-testid=approve]').click();
   await expect(page.locator('[data-testid=approval-status]')).toBeVisible();
 
+  await page.getByTestId('scene-SCENE-002').click();
   await page.locator('[data-testid=correct-input]').fill('Rends le produit plus visible et garde le personnage.');
   await page.locator('[data-testid=correct-submit]').click();
   await expect(page.locator('[data-testid=master-version]')).toHaveText('Master v2', { timeout: 240000 });
-  await expect(page.locator('[data-testid=status-badge]')).toHaveText('Aperçu pret', { timeout: 240000 });
+  await expect(page.locator('[data-testid=status-badge]')).toHaveText('Aperçu prêt', { timeout: 240000 });
+  await expect(page.locator('[data-testid=scene-versions-SCENE-002]')).toContainText('v2');
+  await page.locator('[data-testid=compare-version]').selectOption('1');
+  await expect(page.getByTestId('master-video-compare')).toBeVisible();
+  await shot(page, '05-studio-comparison');
 
   const after = await fetchBundle(page, projectId);
   const checksumsAfter: Record<string, string> = {};
@@ -127,9 +199,9 @@ test('verticale V0 complete', async ({ page }) => {
   expect(after.master.version).toBe(2);
   expect(after.master.qaStatus).toBe('PASS');
   expect(after.masterVersions.length).toBeGreaterThanOrEqual(2);
-  expect(checksumsAfter['SCENE-003']).not.toBe(checksumsBefore['SCENE-003']);
+  expect(checksumsAfter['SCENE-002']).not.toBe(checksumsBefore['SCENE-002']);
   expect(checksumsAfter['SCENE-001']).toBe(checksumsBefore['SCENE-001']);
-  expect(checksumsAfter['SCENE-002']).toBe(checksumsBefore['SCENE-002']);
+  expect(checksumsAfter['SCENE-003']).toBe(checksumsBefore['SCENE-003']);
   expect(checksumsAfter['SCENE-004']).toBe(checksumsBefore['SCENE-004']);
   expect(checksumsAfter['SCENE-005']).toBe(checksumsBefore['SCENE-005']);
   for (const scene of after.scenes) {
@@ -177,6 +249,8 @@ test('verticale V0 complete', async ({ page }) => {
   }
 
   await page.reload();
+  await page.getByRole('button', { name: 'Vidéo complète', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Étapes du projet' }).getByRole('link', { name: 'Finaliser', exact: true }).click();
   await expect(page.locator('[data-testid=master-video]')).toBeVisible();
   await expect(page.locator('[data-testid=transfer-status]')).toContainText('acknowledged');
 

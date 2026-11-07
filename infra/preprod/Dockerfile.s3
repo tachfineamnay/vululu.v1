@@ -1,0 +1,15 @@
+# Serveur S3-compatible de preproduction : rclone serve s3 (choix explicite de repli).
+# MinIO n'est plus distribue sur Docker Hub/Quay au moment de la mission ; voir ADR-0015.
+FROM node:24-bookworm-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl unzip \
+    && rm -rf /var/lib/apt/lists/*
+ARG RCLONE_VERSION=v1.75.2
+RUN curl -fsSL -o /tmp/rclone.zip "https://downloads.rclone.org/${RCLONE_VERSION}/rclone-${RCLONE_VERSION}-linux-amd64.zip" \
+    && unzip -q /tmp/rclone.zip -d /opt \
+    && mv /opt/rclone-${RCLONE_VERSION}-linux-amd64/rclone /usr/local/bin/rclone \
+    && chmod 0755 /usr/local/bin/rclone \
+    && rm -rf /tmp/rclone.zip /opt/rclone-${RCLONE_VERSION}-linux-amd64
+VOLUME ["/data", "/certs"]
+EXPOSE 9000
+CMD ["sh", "-c", "rclone serve s3 /data --addr :9000 --auth-key \"${S3_ACCESS_KEY_ID},${S3_SECRET_ACCESS_KEY}\" --cert /certs/server.crt --key /certs/server.key --vfs-cache-mode writes --log-level INFO"]

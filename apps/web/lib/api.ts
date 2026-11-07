@@ -1,3 +1,13 @@
+import type { ProductionSettings } from '@vululu/contracts';
+import type { MessageProposal } from '@vululu/application';
+export type { MessageProposal } from '@vululu/application';
+export type ProductionPlanView = {
+  mode: 'MOCK'; executionMode: 'local' | 'hatchet'; briefVersion: number; checksum: string;
+  ready: boolean; sceneCount: number; durationSeconds: number; ratio: string;
+  pricing: { estimatedCents: number; maxPossibleCents: number; ceilingCents: number };
+  steps: Array<{ key: string; dependsOn: string[]; capability: string }>;
+  issues: Array<{ code: string; message: string }>;
+};
 export type SessionUser = {
   id: string;
   email: string;
@@ -18,6 +28,8 @@ export type BrandContext = {
 
 export type ProjectSummary = {
   id: string;
+  contextId: string;
+  campaignId?: string | null;
   title: string;
   status: string;
   platform: string;
@@ -43,6 +55,7 @@ export type Scene = {
   title: string;
   description: string;
   durationSeconds: number;
+  usesBriefDuration?: boolean | null;
   characterKey: string | null;
   versions: SceneVersion[];
 };
@@ -51,6 +64,7 @@ export type Message = {
   id: string;
   role: string;
   content: string;
+  proposal?: MessageProposal;
   createdAt: string;
 };
 
@@ -89,6 +103,32 @@ export type ProductionJob = {
   error: string | null;
 };
 
+export type JobStep = {
+  name: string;
+  status: string;
+  attempts: number;
+  error: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+};
+
+export type JobRunTracking = {
+  id: string;
+  status: string;
+  orchestrator: string | null;
+  workflowRunId: string | null;
+  traceId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  steps: JobStep[];
+};
+
+export type MockCostSummary = {
+  totalCents: number;
+  events: number;
+  mode: 'MOCK';
+};
+
 export type ProjectBundle = {
   project: {
     id: string;
@@ -99,6 +139,7 @@ export type ProjectBundle = {
     objective: string;
     sceneDurationSeconds: number;
     contextId: string;
+    storyboardBriefVersion?: number | null;
     createdAt: string;
     updatedAt: string;
   };
@@ -124,6 +165,9 @@ export type ProjectBundle = {
       checksum: string;
       createdAt: string;
     }>;
+    confirmedVersion?: number | null;
+    confirmedChecksum?: string | null;
+    settings?: ProductionSettings;
   } | null;
   messages: Message[];
   scenes: Scene[];
@@ -131,6 +175,15 @@ export type ProjectBundle = {
   master: MasterVersion | null;
   masterVersions: MasterVersion[];
   job: ProductionJob | null;
+  jobRun: JobRunTracking | null;
+  costs: MockCostSummary;
+};
+
+export type CampaignSummary = {
+  id: string;
+  name: string;
+  description: string;
+  createdAt: string;
 };
 
 function readCookie(name: string): string {

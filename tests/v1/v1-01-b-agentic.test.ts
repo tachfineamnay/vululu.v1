@@ -214,6 +214,14 @@ describe('V1-01-B Agentic Capabilities', () => {
     expect(provider.calls).toEqual(['model-primary', 'model-fallback']);
   });
 
+  it('refuse aussi un cout retourne superieur au plafond sans comptabiliser de succes', async () => {
+    const catalog = new FakeCatalog(); catalog.models = [model('primary', 95, 1), model('fallback', 80, 1)];
+    const costs = new FakeCosts(); const provider = new FakeProvider();
+    const useCases = new RoutingUseCases(catalog, new FakeRoutes(), provider, costs, clock, new FakeAudit());
+    await expect(useCases.execute(admin, { capabilityKey: 'copy' }, {}, { budgetCents: 1 })).rejects.toMatchObject({ code: 'budget_exceeded' });
+    expect(costs.entries).toEqual([]); expect(provider.calls).toEqual(['model-primary', 'model-fallback']);
+  });
+
   it('refuse un budget inferieur au cout du modele', async () => {
     const catalog = new FakeCatalog();
     catalog.models = [model('expensive', 90, 50)];

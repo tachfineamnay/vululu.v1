@@ -1,3 +1,4 @@
+import type { ProductionSettings, ProductionSettingsInput } from '@vululu/domain';
 export type Role = 'super_admin' | 'user';
 
 export interface Clock {
@@ -39,6 +40,8 @@ export type ProjectRecord = {
   id: string;
   userId: string;
   contextId: string;
+  campaignId?: string | null;
+  storyboardBriefVersion?: number | null;
   title: string;
   platform: string;
   format: string;
@@ -48,6 +51,22 @@ export type ProjectRecord = {
   createdAt?: Date;
   updatedAt?: Date;
 };
+
+export type CampaignRecord = {
+  id: string;
+  userId: string;
+  name: string;
+  description: string;
+  createdAt: Date;
+};
+
+export interface CampaignRepository {
+  create(input: CampaignRecord): Promise<CampaignRecord>;
+  listOwned(userId: string): Promise<CampaignRecord[]>;
+  findOwned(campaignId: string, userId: string): Promise<CampaignRecord | null>;
+  listProjectsOwned(campaignId: string, userId: string): Promise<ProjectRecord[]>;
+  assignProjectOwned(projectId: string, campaignId: string | null, userId: string): Promise<boolean>;
+}
 
 export type BriefRecord = {
   id: string;
@@ -59,6 +78,11 @@ export type BriefRecord = {
   platform: string;
   format: string;
   version: number;
+  settings?: ProductionSettings;
+  confirmedVersion?: number | null;
+  confirmedChecksum?: string | null;
+  confirmedBy?: string | null;
+  confirmedAt?: Date | null;
 };
 
 export type SceneRecord = {
@@ -69,11 +93,13 @@ export type SceneRecord = {
   title: string;
   description: string;
   durationSeconds: number;
+  usesBriefDuration?: boolean | null;
   characterKey: string | null;
   createdAt?: Date;
 };
 
 export type SceneVersionRecord = {
+  textLayout?: SceneTextLayout;
   id: string;
   sceneId: string;
   version: number;
@@ -134,9 +160,18 @@ export type SceneRenderRequest = {
   colorSecondary: string;
   version: number;
   instruction?: string;
+  width?: number;
+  height?: number;
+  visualStyle?: ProductionSettings['visualStyle'];
+  direction?: string;
 };
 
+export type SceneTextLayout = {
+  compositionVersion: string; complete: boolean; artifactSha256: string; width: number; height: number;
+  boxes: Array<{ field: 'brand' | 'title' | 'description' | 'label'; contentSha256: string; x: number; y: number; width: number; height: number; fontSize: number; minFontSize: number }>;
+};
 export type SceneRenderResult = {
+  textLayout?: SceneTextLayout;
   relativePath: string;
   absolutePath: string;
   checksum: string;
@@ -197,7 +232,7 @@ export interface SceneRepository {
   listByProject(projectId: string): Promise<SceneRecord[]>;
   findOwned(projectId: string, sceneKey: string, userId: string): Promise<SceneRecord | null>;
   upsertMany(projectId: string, scenes: Array<Omit<SceneRecord, 'id' | 'projectId'>>): Promise<SceneRecord[]>;
-  updateDuration(projectId: string, sceneKey: string, durationSeconds: number): Promise<SceneRecord>;
+  updateDuration(projectId: string, sceneKey: string, durationSeconds: number | null, userId: string): Promise<SceneRecord>;
 }
 
 export interface MasterRepository {
@@ -226,7 +261,7 @@ export interface StoragePort {
 export interface MediaRendererPort {
   renderScene(input: SceneRenderRequest): Promise<SceneRenderResult>;
   assembleMaster(input: MasterRenderRequest): Promise<MasterRenderResult>;
-  runQa(scenes: SceneRenderResult[], master: MasterRenderResult): Promise<QaReport>;
+  runQa(scenes: SceneRenderResult[], master: MasterRenderResult, expectedDimensions?: { width: number; height: number }): Promise<QaReport>;
 }
 
 export interface ProviderPort {
@@ -255,9 +290,12 @@ export type BriefInput = {
   cta: string;
   platform: 'TikTok' | 'Instagram' | 'LinkedIn';
   format: 'Affiche' | 'Carrousel' | 'Video' | 'Reel' | 'Motion';
+  settings?: ProductionSettingsInput;
 };
 
 export type ReproducibilitySnapshot = {
+  plan?: ProductionPlan;
+  executionPolicy?: RunExecutionPolicy;
   schemaVersion: 1;
   capturedAt: string;
   project: {
@@ -266,7 +304,9 @@ export type ReproducibilitySnapshot = {
     format: string;
     sceneDurationSeconds: number;
     status: string;
+    usage?: string;
   };
+  assets?: Array<{ assetId: string; versionId: string; version: number; kind: string; mimeType: string; sha256: string; license: string; provenance: string; storageProvider: string; storageKey: string }>;
   context: {
     revisionId: string | null;
     checksum: string | null;
@@ -285,6 +325,9 @@ export type ReproducibilitySnapshot = {
     durationSeconds: number;
     version: number;
     checksum: string;
+    title?: string;
+    description?: string;
+    characterKey?: string | null;
   }>;
   characters: Array<{
     characterId: string;
@@ -300,6 +343,7 @@ export type ReproducibilitySnapshot = {
     deterministic: boolean;
   };
   render: {
+    compositionVersion?: string;
     width: number;
     height: number;
     fps: number;
@@ -324,6 +368,7 @@ export type BriefContentRecord = {
   cta: string;
   platform: 'TikTok' | 'Instagram' | 'LinkedIn';
   format: 'Affiche' | 'Carrousel' | 'Video' | 'Reel' | 'Motion';
+  settings?: ProductionSettings;
 };
 
 export type BriefRevisionRecord = BriefContentRecord & {
@@ -340,11 +385,20 @@ export type BriefWithRevisions = BriefRecord & {
   revisions: BriefRevisionRecord[];
 };
 
+export type BriefProposalFields = Pick<BriefInput, 'objective' | 'audience' | 'tone' | 'cta'>;
+export type MessageProposal = {
+  schemaVersion: 1; mode: 'MOCK'; kind: 'brief'; baseBriefVersion: number | null; baseBriefChecksum: string | null;
+  fields: BriefProposalFields; sources: Record<keyof BriefProposalFields, 'user' | 'brief' | 'context' | 'project' | 'example'>; hypotheses: Array<keyof BriefProposalFields>;
+} | {
+  schemaVersion: 1; mode: 'MOCK'; kind: 'correction'; baseBriefVersion: number | null;
+  sceneKey: string; sceneVersion: number; sceneChecksum: string; masterVersion: number; masterChecksum: string; instruction: string;
+};
 export type MessageRecord = {
   id: string;
   projectId: string;
   role: 'user' | 'assistant';
   content: string;
+  proposal?: MessageProposal;
   createdAt: Date;
 };
 
@@ -410,6 +464,7 @@ export type ProjectBundleRecord = {
     format: string;
     objective: string;
     sceneDurationSeconds: number;
+    storyboardBriefVersion: number | null;
     contextId: string;
     createdAt: Date;
     updatedAt: Date;
@@ -433,6 +488,28 @@ export type ProjectBundleRecord = {
   master: MasterVersionView | null;
   masterVersions: MasterVersionView[];
   job: ProductionJobRecord | null;
+  jobRun: {
+    id: string;
+    status: string;
+    orchestrator: string | null;
+    workflowRunId: string | null;
+    traceId: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+    steps: Array<{
+      name: string;
+      status: string;
+      attempts: number;
+      error: string | null;
+      startedAt: Date | null;
+      finishedAt: Date | null;
+    }>;
+  } | null;
+  costs: {
+    totalCents: number;
+    events: number;
+    mode: 'MOCK';
+  };
 };
 
 export type QaView = {
@@ -454,6 +531,10 @@ export interface BriefStore {
     createdAt: Date;
     projectStatus: string;
   }): Promise<BriefWithRevisions>;
+}
+
+export interface BriefConfirmationStore {
+  confirmOwned(input: { projectId: string; userId: string; version: number; checksum: string; confirmedAt: Date }): Promise<{ brief: BriefWithRevisions; changed: boolean }>;
 }
 
 export type StoryboardCharacterWrite = {
@@ -489,6 +570,7 @@ export interface StoryboardStore {
     projectId: string;
     userId: string;
     projectStatus: string;
+    briefVersion?: number;
     character: StoryboardCharacterWrite;
     scenes: StoryboardSceneWrite[];
   }): Promise<void>;
@@ -499,6 +581,7 @@ export interface MessageStore {
     projectId: string;
     userContent: string;
     assistantContent: string;
+    assistantProposal?: MessageProposal;
   }): Promise<{ userMessage: MessageRecord; assistantMessage: MessageRecord }>;
 }
 
@@ -537,6 +620,9 @@ export type ExecutionProject = {
     colorSecondary: string;
   };
   scenes: ExecutionScene[];
+  render?: { width: number; height: number; visualStyle: ProductionSettings['visualStyle']; direction: string };
+  briefVersion?: number | null;
+  sourceInputChecksum?: string;
 };
 
 export type ProductionFinalization = {
@@ -565,6 +651,7 @@ export type ProductionFinalization = {
     prompt: string;
     checksum: string;
     storage?: ArtifactStorageMetadata;
+    textLayout?: SceneTextLayout;
   }>;
   outputs: Record<string, unknown>;
   manifest?: Record<string, unknown>;
@@ -574,7 +661,7 @@ export interface ProductionExecutionStore {
   markRunning(jobRunId: string): Promise<void>;
   updateJob(jobId: string, input: { status?: string; step?: string; progress?: number; error?: string | null }): Promise<void>;
   updateStep(jobRunId: string, name: string, status: string, error?: string): Promise<void>;
-  loadExecutionProject(projectId: string): Promise<ExecutionProject>;
+  loadExecutionProject(projectId: string, jobRunId?: string): Promise<ExecutionProject>;
   nextMasterVersion(projectId: string): Promise<number>;
   finalizeRun(input: ProductionFinalization): Promise<void>;
   failRun(input: {
@@ -674,6 +761,31 @@ export type ModelRecord = {
   createdAt: Date;
 };
 
+export type RunExecutionPolicy = {
+  schemaVersion: 1;
+  mode: 'MOCK';
+  mockFailedModelKeys: string[];
+  mockTimeoutModelKeys?: string[];
+  mockInvalidModelKeys?: string[];
+  invocationTimeoutMs?: number;
+  workflow: { version: 'v1-demo-workflow-2026-11-04'; engine: 'local' | 'hatchet'; steps: Array<{ key: string; dependsOn: string[] }> };
+  usage: 'organic' | 'sponsored';
+  maxMockCents: number;
+  agent: { definitionId: string | null; key: string; config: Omit<AgentConfigVersionRecord, 'createdAt'> | null; capabilityRequirements: AgentCapabilityRequirementRecord[] };
+  models: Array<Omit<ModelRecord, 'createdAt'>>;
+};
+
+export type ProductionPlan = {
+  schemaVersion: 1; mode: 'MOCK'; executionMode: 'local' | 'hatchet'; workflowVersion: string;
+  briefVersion: number; format: string; ratio: string; sceneCount: number; durationSeconds: number;
+  steps: Array<{ key: string; dependsOn: string[]; capability: string }>;
+  pricing: { estimatedCents: number; maxPossibleCents: number; ceilingCents: number };
+  ready: boolean; issues: Array<{ code: string; message: string }>; checksum: string;
+};
+export interface ProductionPlanningPort {
+  previewOwned(userId: string, projectId: string): Promise<ProductionPlan>;
+}
+
 export type RouteDecisionRecord = {
   id: string;
   capabilityKey: string;
@@ -686,6 +798,7 @@ export type RouteDecisionRecord = {
 };
 
 export type CapabilityInvocation = {
+  signal?: AbortSignal;
   providerKey: string;
   modelKey: string;
   capabilityKey: string;
@@ -783,6 +896,7 @@ export type DurableRunRecord = {
 };
 
 export type RenderedScene = {
+  textLayout?: SceneTextLayout;
   sceneId: string;
   sceneKey: string;
   position: number;
@@ -839,7 +953,7 @@ export interface DurableRoutingPort {
 
 export interface DurableProductionStore {
   loadRun(jobRunId: string): Promise<DurableRunRecord>;
-  loadExecutionProject(projectId: string): Promise<ExecutionProject>;
+  loadExecutionProject(projectId: string, jobRunId?: string): Promise<ExecutionProject>;
   transitionJob(
     jobRunId: string,
     toState: string,
@@ -1020,4 +1134,229 @@ export type ArtifactPublishRequest = {
 export interface ArtifactPublisherPort {
   publish(input: ArtifactPublishRequest): Promise<ArtifactStorageMetadata>;
   verifyPublished(input: ArtifactStorageMetadata): Promise<boolean>;
+}
+
+// ---------------------------------------------------------------------------
+// Administration — lectures agrégées (Mission 03)
+// Le port ne porte aucune écriture métier : les mutations existantes gardent
+// leurs use cases et routes. Ces lectures sont réservées au super_admin.
+// ---------------------------------------------------------------------------
+
+export type AdminPageInput = {
+  page: number;
+  pageSize: number;
+  q?: string;
+};
+
+export type AdminRunQuery = AdminPageInput & { status?: string };
+export type AdminAuditQuery = AdminPageInput & {
+  action?: string;
+  actorId?: string;
+  targetType?: string;
+  from?: string;
+  to?: string;
+};
+export type AdminCostQuery = AdminPageInput & { provider?: string; from?: string; to?: string };
+
+export type AdminPageRecord<T> = {
+  items: T[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+};
+
+export type AdminFlagStatusRecord = 'CONNECTED' | 'MOCK' | 'NOT_CONNECTED';
+
+export type AdminFlagRecord = {
+  key: string;
+  label: string;
+  status: AdminFlagStatusRecord;
+  detail: string;
+};
+
+export type AdminOverviewRecord = {
+  generatedAt: string;
+  counts: {
+    users: number;
+    superAdmins: number;
+    invitations: number;
+    pendingInvitations: number;
+    contexts: number;
+    projects: number;
+    jobRuns: number;
+    failedRuns: number;
+    auditEvents24h: number;
+    rbacDenied24h: number;
+    costEvents: number;
+    costCents: number;
+  };
+  runsByStatus: Record<string, number>;
+  stepsByStatus: Record<string, number>;
+  outboxByStatus: Record<string, number>;
+  artifactsByState: Record<string, number>;
+  workers: { active: number; stale: number; total: number };
+  database: 'ok' | 'error';
+  storage: { backend: string; ok: boolean; detail: string };
+  orchestrator: { mode: 'local' | 'hatchet'; detail: string };
+  providers: { mode: 'MOCK' | 'REAL'; detail: string };
+  postiz: { mode: 'MOCK' | 'REAL'; detail: string };
+  flags: AdminFlagRecord[];
+  recentErrors: Array<{
+    id: string;
+    source: 'job_run' | 'step_run' | 'outbox';
+    status: string;
+    error: string;
+    createdAt: string;
+    jobRunId: string | null;
+    projectId: string | null;
+  }>;
+};
+
+export type AdminUserRecord = {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  createdAt: string;
+  projectsCount: number;
+  sessionsCount: number;
+  lastSessionAt: string | null;
+  lastSessionStatus: 'active' | 'expired' | 'revoked' | 'none';
+};
+
+export type AdminProjectRecord = {
+  id: string;
+  title: string;
+  ownerEmail: string;
+  status: string;
+  platform: string;
+  format: string;
+  contextName: string;
+  scenesCount: number;
+  runsCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AdminRunRecord = {
+  id: string;
+  projectId: string;
+  projectTitle: string;
+  ownerEmail: string;
+  type: string;
+  status: string;
+  orchestrator: string | null;
+  workflowRunId: string | null;
+  traceId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  stepsTotal: number;
+  stepsFailed: number;
+  currentStep: string | null;
+  error: string | null;
+  productionStatus: string | null;
+  progress: number | null;
+};
+
+export type AdminStepRecord = {
+  name: string;
+  status: string;
+  attempts: number;
+  error: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+};
+
+export type AdminRunDetailRecord = AdminRunRecord & {
+  steps: AdminStepRecord[];
+  outbox: Array<{
+    id: string;
+    kind: string;
+    status: string;
+    attempts: number;
+    lastError: string | null;
+    workflowRunId: string | null;
+    createdAt: string;
+  }>;
+  artifact: {
+    id: string;
+    artifactVersionId: string;
+    masterVersion: number;
+    checksum: string;
+    createdAt: string;
+  } | null;
+};
+
+export type AdminAuditEventRecord = {
+  id: string;
+  actorId: string | null;
+  action: string;
+  targetType: string;
+  targetId: string | null;
+  metadata: unknown;
+  traceId: string | null;
+  requestId: string | null;
+  createdAt: string;
+};
+
+export type AdminCostEventRecord = {
+  id: string;
+  projectId: string | null;
+  projectTitle: string | null;
+  jobRunId: string | null;
+  provider: string;
+  model: string | null;
+  units: number;
+  amountCents: number;
+  createdAt: string;
+};
+
+export type AdminCostsRecord = {
+  items: AdminCostEventRecord[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  totalCents: number;
+  totalEvents: number;
+  byProvider: Array<{ provider: string; events: number; cents: number }>;
+  mode: 'MOCK' | 'REAL';
+};
+
+export type AdminRoutingDecisionRecord = {
+  id: string;
+  capabilityKey: string;
+  candidateModelIds: string[];
+  selectedModelId: string;
+  fallbackModelId: string | null;
+  criteria: unknown;
+  reason: string;
+  createdAt: string;
+};
+
+export type AdminRuntimeRecord = {
+  generatedAt: string;
+  appEnv: string;
+  orchestratorMode: 'local' | 'hatchet';
+  storageBackend: 'local' | 's3';
+  s3TlsRequired: boolean;
+  sessionTtlHours: number;
+  invitationTtlHours: number;
+  budget: { durableBudgetCents: number | null; maxRunCostCents: number | null };
+  flags: AdminFlagRecord[];
+  versions: { node: string; prisma: string };
+};
+
+/** Lectures agrégées d'administration. Aucune écriture, aucun secret. */
+export interface AdminQueryPort {
+  overview(): Promise<AdminOverviewRecord>;
+  listUsers(input: AdminPageInput): Promise<AdminPageRecord<AdminUserRecord>>;
+  listProjects(input: AdminPageInput): Promise<AdminPageRecord<AdminProjectRecord>>;
+  listRuns(input: AdminRunQuery): Promise<AdminPageRecord<AdminRunRecord>>;
+  getRun(jobRunId: string): Promise<AdminRunDetailRecord | null>;
+  listAudit(input: AdminAuditQuery): Promise<AdminPageRecord<AdminAuditEventRecord>>;
+  listCosts(input: AdminCostQuery): Promise<AdminCostsRecord>;
+  listRoutingDecisions(input: AdminPageInput): Promise<AdminPageRecord<AdminRoutingDecisionRecord>>;
+  runtime(): Promise<AdminRuntimeRecord>;
 }

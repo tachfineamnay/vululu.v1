@@ -14,17 +14,18 @@ export class SceneUseCases {
     actor: Actor,
     projectId: string,
     sceneKey: string,
-    durationSeconds: number
+    durationSeconds: number | null
   ): Promise<SceneRecord> {
     const project = await this.projects.findOwned(projectId, actor.id);
     if (!project) {
       throw new ApplicationError('project_not_found', 'Projet introuvable.', 404);
     }
+    if (project.status === 'producing') throw new ApplicationError('project_busy', 'La durée ne peut pas changer pendant une production.', 409);
     const scene = await this.scenes.findOwned(projectId, sceneKey, actor.id);
     if (!scene) {
       throw new ApplicationError('scene_not_found', 'Scene introuvable: ' + sceneKey, 404);
     }
-    applyDuration(
+    if (durationSeconds !== null) applyDuration(
       {
         id: scene.id,
         projectId: scene.projectId,
@@ -37,13 +38,13 @@ export class SceneUseCases {
       },
       durationSeconds
     );
-    const updated = await this.scenes.updateDuration(projectId, sceneKey, durationSeconds);
+    const updated = await this.scenes.updateDuration(projectId, sceneKey, durationSeconds, actor.id);
     await this.audit.record({
       actorId: actor.id,
       action: 'scene.duration_updated',
       targetType: 'scene',
       targetId: sceneKey,
-      metadata: { projectId, durationSeconds }
+      metadata: { projectId, durationSeconds: updated.durationSeconds, usesBriefDuration: updated.usesBriefDuration }
     });
     return updated;
   }

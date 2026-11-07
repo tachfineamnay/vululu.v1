@@ -1,0 +1,206 @@
+/*
+ * Vululu Atelier Bleu — source de référence, non importée par l'application.
+ * Valeurs canoniques : tokens.json. Vérification : scripts/check.mjs.
+ * L'attribut data-vululu-theme="blue" doit être ajouté volontairement au shell migré.
+ */
+[data-vululu-theme="blue"] {
+  --v-color-background: #F4F5F1;
+  --v-color-surface: #FFFFFF;
+  --v-color-text: #172536;
+  --v-color-text-muted: #596579;
+  --v-color-action: #2347BE;
+  --v-color-action-hover: #1C3898;
+  --v-color-selected: #EDF1FF;
+  --v-color-accent: #F5D867;
+  --v-color-border: #D7DCE4;
+  --v-color-control-border: #7A8798;
+  --v-color-success: #216347;
+  --v-color-success-bg: #EBF6EF;
+  --v-color-warning: #77520B;
+  --v-color-warning-bg: #FFF3CF;
+  --v-color-danger: #B1372F;
+  --v-color-danger-bg: #FFF0EE;
+  --v-color-media: #172536;
+  --v-color-on-action: #FFFFFF;
+  --v-font-family: "DM Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --v-font-size-label: 14px;
+  --v-font-size-body: 16px;
+  --v-font-size-section: 20px;
+  --v-font-size-title: 28px;
+  --v-font-size-welcome: 36px;
+  --v-font-weight-normal: 400;
+  --v-font-weight-medium: 500;
+  --v-font-weight-semibold: 600;
+  --v-font-weight-bold: 700;
+  --v-font-line-body: 1.5;
+  --v-font-line-heading: 1.2;
+  --v-font-line-section: 1.3;
+  --v-space-0: 0px;
+  --v-space-4: 4px;
+  --v-space-8: 8px;
+  --v-space-12: 12px;
+  --v-space-16: 16px;
+  --v-space-24: 24px;
+  --v-space-32: 32px;
+  --v-space-48: 48px;
+  --v-space-64: 64px;
+  --v-radius-small: 6px;
+  --v-radius-control: 8px;
+  --v-radius-dialog: 12px;
+  --v-layout-sidebar: 216px;
+  --v-layout-inspector: 320px;
+  --v-layout-content-max: 1600px;
+  --v-layout-control: 48px;
+  --v-layout-target: 44px;
+  --v-breakpoint-compact: 640px;
+  --v-breakpoint-stack: 1024px;
+  --v-breakpoint-wide: 1280px;
+  --v-focus-width: 2px;
+  --v-focus-offset: 3px;
+  --v-motion-fast: 120ms;
+  --v-motion-normal: 180ms;
+  --v-motion-easing: cubic-bezier(0.2, 0, 0, 1);
+  --v-shadow-overlay: 0 8px 24px rgb(23 37 54 / 0.12);
+}
+
+[data-vululu-theme="blue"],
+[data-vululu-theme="blue"] * {
+  box-sizing: border-box;
+}
+
+[data-vululu-theme="blue"] .v-shell {
+  min-height: 100dvh;
+  background: var(--v-color-background);
+  color: var(--v-color-text);
+  font-family: var(--v-font-family);
+  font-size: var(--v-font-size-body);
+  line-height: var(--v-font-line-body);
+}
+
+[data-vululu-theme="blue"] :focus-visible {
+  outline: var(--v-focus-width) solid var(--v-color-action);
+  outline-offset: var(--v-focus-offset);
+}
+
+[data-vululu-theme="blue"] .v-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--v-space-8);
+  min-block-size: var(--v-layout-control);
+  padding: var(--v-space-12) var(--v-space-24);
+  border: 1px solid transparent;
+  border-radius: var(--v-radius-control);
+  font: inherit;
+  font-weight: var(--v-font-weight-semibold);
+  cursor: pointer;
+  transition: background-color var(--v-motion-fast) var(--v-motion-easing);
+}
+
+[data-vululu-theme="blue"] .v-button--primary {
+  background: var(--v-color-action);
+  color: var(--v-color-on-action);
+}
+
+[data-vululu-theme="blue"] .v-button--primary:hover:not(:disabled) {
+  background: var(--v-color-action-hover);
+}
+
+[data-vululu-theme="blue"] .v-button--secondary {
+  background: var(--v-color-surface);
+  color: var(--v-color-action);
+  border-color: var(--v-color-action);
+}
+
+[data-vululu-theme="blue"] .v-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+[data-vululu-theme="blue"] .v-field {
+  display: grid;
+  gap: var(--v-space-8);
+}
+
+[data-vululu-theme="blue"] .v-label {
+  font-size: var(--v-font-size-body);
+  font-weight: var(--v-font-weight-semibold);
+}
+
+[data-vululu-theme="blue"] .v-input {
+  inline-size: 100%;
+  min-block-size: var(--v-layout-control);
+  padding: var(--v-space-12) var(--v-space-16);
+  border: 1px solid var(--v-color-control-border);
+  border-radius: var(--v-radius-control);
+  background: var(--v-color-surface);
+  color: var(--v-color-text);
+  font: inherit;
+}
+
+[data-vululu-theme="blue"] .v-input::placeholder {
+  color: var(--v-color-text-muted);
+  opacity: 1;
+}
+
+[data-vululu-theme="blue"] .v-input[aria-invalid="true"] {
+  border-color: var(--v-color-danger);
+}
+
+[data-vululu-theme="blue"] .v-hint,
+[data-vululu-theme="blue"] .v-error {
+  margin: 0;
+  font-size: var(--v-font-size-label);
+}
+
+[data-vululu-theme="blue"] .v-hint {
+  color: var(--v-color-text-muted);
+}
+
+[data-vululu-theme="blue"] .v-error {
+  color: var(--v-color-danger);
+}
+
+[data-vululu-theme="blue"] .v-link {
+  color: var(--v-color-action);
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+[data-vululu-theme="blue"] .v-studio-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--v-layout-inspector);
+  gap: var(--v-space-32);
+}
+
+[data-vululu-theme="blue"] .v-studio-layout > * {
+  min-inline-size: 0;
+}
+
+[data-vululu-theme="blue"] .v-scene-strip {
+  display: flex;
+  gap: var(--v-space-16);
+  overflow-x: auto;
+  padding: var(--v-space-8);
+  scroll-padding-inline: var(--v-space-8);
+}
+
+[data-vululu-theme="blue"] .v-scene-strip > * {
+  flex: 0 0 144px;
+}
+
+@media (max-width: 1023px) {
+  [data-vululu-theme="blue"] .v-studio-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-vululu-theme="blue"] *,
+  [data-vululu-theme="blue"] *::before,
+  [data-vululu-theme="blue"] *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

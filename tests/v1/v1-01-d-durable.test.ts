@@ -23,6 +23,7 @@ import {
   DURABLE_PRODUCTION_STEPS
 } from '@vululu/application';
 import { env } from '../../apps/api/src/env';
+import { ensureMockSceneCatalog } from '../helpers/mockSceneCatalog';
 import {
   DurableRoutingService,
   OutboxDispatcher,
@@ -177,7 +178,7 @@ async function createProject(title: string) {
           format: 'Video',
           version: 1,
           revisions: {
-            create: [{ version: 1, checksum: sha('brief:' + title), objective: 'Objectif', audience: 'Audience', tone: 'Direct', cta: 'CTA', platform: 'Instagram', format: 'Video' }]
+            create: [{ version: 1, checksum: briefChecksum({ objective: 'Objectif', audience: 'Audience', tone: 'Direct', cta: 'CTA', platform: 'Instagram', format: 'Video' }), objective: 'Objectif', audience: 'Audience', tone: 'Direct', cta: 'CTA', platform: 'Instagram', format: 'Video' }]
           }
         }
       },
@@ -193,6 +194,7 @@ async function createProject(title: string) {
     },
     include: { scenes: true, brief: true, context: true }
   });
+  await confirmFixtureBrief(prisma, project.id);
   return project;
 }
 
@@ -211,6 +213,7 @@ beforeAll(async () => {
     }
   });
   userId = user.id;
+  await ensureMockSceneCatalog(prisma);
   const project = await createProject('Projet D ' + RUN_ID);
   projectId = project.id;
 });
@@ -406,28 +409,37 @@ describe('V1-01-D orchestration durable', () => {
         qualified: true
       }
     });
+    const oldAgentKey = process.env.DURABLE_AGENT_KEY;
+    delete process.env.DURABLE_AGENT_KEY;
+    const routingProject = await createProject('Routage ' + RUN_ID);
+    const queued = await new PrismaProductionRunRepository(prisma).startRun({ userId, projectId: routingProject.id, type: 'produce', targetSceneKey: null, instruction: null, steps: [...DURABLE_PRODUCTION_STEPS], outbox: { kind: 'start_run', payload: {} } });
     process.env.DURABLE_AGENT_KEY = 'missing-agent-' + RUN_ID;
-    const routing = new DurableRoutingService(prisma, new Set(['d-primary-' + RUN_ID]));
-    const decision = await routing.resolve({
-      jobRunId: 'job-route-' + RUN_ID,
-      projectId,
-      capabilityKey: 'd.scene.generate.' + RUN_ID,
-      budgetCents: 10,
-      input: {},
-      idempotencyKey: 'route:test'
-    });
-    expect(decision.usedFallback).toBe(true);
-    expect(decision.modelKey).toBe('d-fallback-' + RUN_ID);
-    expect(decision.actualCents).toBe(2);
-    await expect(
-      routing.resolve({
-        jobRunId: 'job-budget-' + RUN_ID,
-        projectId,
+    try {
+      const routing = new DurableRoutingService(prisma, new Set(['d-primary-' + RUN_ID]));
+      const decision = await routing.resolve({
+        jobRunId: queued.jobRun.id,
+        projectId: routingProject.id,
         capabilityKey: 'd.scene.generate.' + RUN_ID,
-        budgetCents: 1,
+        budgetCents: 10,
         input: {},
-        idempotencyKey: 'route:budget'
-      })
-    ).rejects.toThrow(/No eligible model/);
+        idempotencyKey: 'route:test'
+      });
+      expect(decision.usedFallback).toBe(true);
+      expect(decision.modelKey).toBe('d-fallback-' + RUN_ID);
+      expect(decision.actualCents).toBe(2);
+      await expect(
+        routing.resolve({
+          jobRunId: queued.jobRun.id,
+          projectId: routingProject.id,
+          capabilityKey: 'd.scene.generate.' + RUN_ID,
+          budgetCents: 1,
+          input: {},
+          idempotencyKey: 'route:budget'
+        })
+      ).rejects.toThrow(/No eligible model/);
+    } finally {
+      if (oldAgentKey === undefined) delete process.env.DURABLE_AGENT_KEY; else process.env.DURABLE_AGENT_KEY = oldAgentKey;
+    }
   });
 });
+import { confirmFixtureBrief, briefChecksum } from '../helpers/confirmFixtureBrief';
