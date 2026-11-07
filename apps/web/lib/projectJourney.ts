@@ -1,16 +1,21 @@
-import type { ProjectBundle } from './api';
+import type { ProjectBundle, ProductionPlanView } from './api';
 
 /** Repères de lecture dérivés du bundle ; aucun état de workflow conservé côté client. */
-export function projectJourney(bundle: ProjectBundle) {
+export function projectJourney(bundle: ProjectBundle, plan?: ProductionPlanView | null) {
   const { brief, project, scenes, master } = bundle;
   const revision = brief?.revisions.find((item) => item.version === brief.version);
   const confirmed = !!(brief && revision && brief.confirmedVersion === brief.version && brief.confirmedChecksum === revision.checksum);
   const storyboardCurrent = !!(brief && scenes.length && project.storyboardBriefVersion === brief.version);
+  const storyboardComplete = storyboardCurrent && (!plan || plan.briefVersion !== brief?.version || scenes.length === plan.sceneCount);
   const approval = master?.approval;
   const approved = !!(master && approval && !approval.invalidatedAt && approval.checksum === master.checksum);
   const current = !confirmed ? 'brief' : !storyboardCurrent ? 'storyboard' : !master || project.status === 'producing' || bundle.job?.status === 'failed' ? 'production' : 'finalization';
   return {
     current,
+    recommended: !confirmed ? { step: 'prepare', action: 'brief' } as const
+      : !storyboardComplete ? { step: 'create', action: 'storyboard' } as const
+      : master ? { step: 'finalize', action: 'review' } as const
+      : { step: 'create', action: 'produce' } as const,
     stages: [
       { key: 'brief', title: 'Préparer le brief', target: 'brief-heading', action: 'Relire et compléter le brief',
         state: !brief ? 'À préparer' : confirmed ? `Version ${brief.version} confirmée` : `Version ${brief.version} à confirmer`,

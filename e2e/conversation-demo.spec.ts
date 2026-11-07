@@ -29,7 +29,7 @@ test('conversation MOCK : brouillon relu, proposition obsolete et correction exp
   await page.getByTestId('brief-confirm').click(); await page.getByTestId('storyboard-generate').click();
   await page.getByTestId('scene-SCENE-001').click(); await expect(page.locator('.studio-inspector')).toContainText('Présenter une lampe fictive');
   await page.getByTestId('scene-SCENE-005').click(); await expect(page.locator('.studio-inspector')).toContainText('Découvrir la lampe');
-  await page.getByTestId('produce').click(); await expect(page.getByTestId('status-badge')).toHaveText('Aperçu pret', { timeout: 180000 });
+  await page.getByTestId('produce').click(); await expect(page.getByTestId('status-badge')).toHaveText('Aperçu prêt', { timeout: 180000 });
   const before = await bundle();
   await page.getByTestId('chat-input').fill('SCENE-003: Mettre le produit au premier plan.'); await page.getByTestId('chat-send').click();
   const correctionButton = page.getByRole('button', { name: 'Préremplir la correction', exact: true }); await expect(correctionButton).toBeEnabled();

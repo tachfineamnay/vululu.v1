@@ -34,10 +34,10 @@ export default function DashboardPage() {
   }
   return <div className="shell" data-vululu-theme="blue">
     <a className="skip-link" href="#projects-main">Aller au contenu</a>
-    <header className="topbar"><Link href="/" className="brand" aria-label="Vululu, mes projets">vululu</Link><StudioNav /><div className="topbar-actions">
+    <StudioNav><div className="topbar-actions">
       {user?.role === 'super_admin' ? <Link className="text-link" href="/admin" data-testid="admin-link">Administration</Link> : null}
       <span className="muted small">{user?.name}</span><button type="button" className="btn btn-ghost" disabled={leaving} onClick={logout}>{leaving ? 'Déconnexion…' : 'Sortir'}</button>
-    </div></header>
+    </div></StudioNav>
     <main id="projects-main" tabIndex={-1} className="page stack" data-testid="projects-page">
       <section className="studio-head"><div><p className="eyebrow">Votre atelier</p><h1>Mes projets</h1><p className="muted">Retrouvez votre travail ou donnez forme à une nouvelle idée.</p></div><Link className="btn btn-primary" data-testid="new-project" href="/projects/new">Nouveau projet</Link></section>
       {loading ? <p role="status">Chargement de vos projets…</p> : null}

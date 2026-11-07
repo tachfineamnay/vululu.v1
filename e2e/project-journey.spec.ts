@@ -26,6 +26,11 @@ test('parcours et flow : mêmes données, dépendances, indisponibilités et rep
   await expect(journey).toContainText('modifications non enregistrées');
   await page.getByTestId('brief-save').click();
   await expect(journey.getByTestId('journey-state-brief')).toHaveText('Version 1 à confirmer');
+  await page.reload();
+  await expect(page.locator('#studio-preparation')).toHaveAttribute('open', '');
+  await expect(page.getByTestId('brief-confirm')).toBeVisible();
+  await page.getByText('Parcours et plan de production', { exact: true }).click();
+  await journey.getByRole('link', { name: 'Consulter le flow', exact: true }).click();
   await expect(flow).toContainText('Plan admissible');
   const plan = (await (await page.request.get('/api/projects/' + project.id + '/production-plan')).json()).plan;
   expect(await flow.locator('.flow-step-list').first().locator('li').count()).toBe(plan.steps.length);

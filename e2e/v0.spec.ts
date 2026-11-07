@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import fs from 'node:fs/promises';
 import { test, expect, Page } from '@playwright/test';
 
 test.describe.configure({ mode: 'serial' });
@@ -51,11 +53,11 @@ test('verticale Studio V1 complete (deterministe, correction ciblee, MOCK)', asy
   await expect(page.getByTestId('catalog-page')).toBeVisible();
   await shot(page, '02-catalog');
   await expect(page.getByTestId('format-Video')).toContainText('DISPONIBLE');
-  await expect(page.getByTestId('format-Affiche')).toContainText('NON IMPLEMENTE');
-  await expect(page.getByTestId('capability-audio')).toContainText('NON CONNECTE');
+  await expect(page.getByTestId('format-Affiche')).toContainText('NON IMPLÉMENTÉ');
+  await expect(page.getByTestId('capability-audio')).toContainText('NON CONNECTÉ');
   await page.getByTestId('nav-assets').click();
   await expect(page.getByTestId('assets-page')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Actifs de marque', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Ressources du contexte', exact: true })).toBeVisible();
   await page.getByTestId('nav-home').click();
   await expect(page.getByTestId('new-context')).toBeVisible();
 
@@ -116,18 +118,18 @@ test('verticale Studio V1 complete (deterministe, correction ciblee, MOCK)', asy
   await page.locator('[data-testid=storyboard-generate]').click();
   await expect(page.locator('[data-testid=scene-SCENE-001]')).toBeVisible();
   await expect(page.locator('[data-testid=scene-SCENE-005]')).toBeVisible();
-  await expect(page.locator('[data-testid=duration-summary]')).toHaveText('5 scenes / 10 s');
+  await expect(page.locator('[data-testid=duration-summary]')).toHaveText('5 scènes · 10 s');
 
   await page.locator('[data-testid=produce]').click();
-  await expect(page.locator('[data-testid=status-badge]')).toHaveText('Aperçu pret', { timeout: 240000 });
+  await expect(page.locator('[data-testid=status-badge]')).toHaveText('Aperçu prêt', { timeout: 240000 });
+  await page.getByRole('button', { name: 'Vidéo complète', exact: true }).click();
   await expect(page.locator('[data-testid=master-video]')).toBeVisible();
-  await expect(page.getByTestId('deterministic-banner')).toContainText('aucune IA generative');
+  await expect(page.getByTestId('deterministic-banner')).toContainText('aucune IA générative');
   await expect(page.getByTestId('postiz-mock-banner')).toContainText('Postiz MOCK');
-  await expect(page.getByTestId('costs-mode')).toContainText('Couts MOCK');
-  await expect(page.getByTestId('job-steps')).toContainText('Rendu des 5 scenes');
-  await expect(page.getByTestId('job-steps')).toContainText('Assemblage du master');
-  await expect(page.getByTestId('job-steps')).toContainText('Controle qualite');
-  await expect(page.getByTestId('provenance')).toContainText('Deterministe');
+  await expect(page.getByTestId('costs-mode')).toContainText('Coûts MOCK');
+  await expect(page.getByTestId('job-steps')).toContainText('Rendre les scènes');
+  await expect(page.getByTestId('job-steps')).toContainText('Assembler la vidéo');
+  await expect(page.getByTestId('job-steps')).toContainText('Contrôler la qualité');
   await shot(page, '04-studio-production');
 
   const before = await fetchBundle(page, projectId);
@@ -167,6 +169,14 @@ test('verticale Studio V1 complete (deterministe, correction ciblee, MOCK)', asy
   const byteLength = Number(range.headers()['content-range'].split('/')[1]);
   expect((await page.request.get(masterUrl, { headers: { Range: `bytes=${byteLength}-` } })).status()).toBe(416);
 
+  await page.getByRole('navigation', { name: 'Étapes du projet' }).getByRole('link', { name: 'Finaliser', exact: true }).click();
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByTestId('download-master').click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe(projectId + '-v1.mp4');
+  const downloadedPath = await download.path();
+  expect(downloadedPath).toBeTruthy();
+  expect(createHash('sha256').update(await fs.readFile(downloadedPath!)).digest('hex')).toBe(before.master.checksum);
   await page.locator('[data-testid=approve]').click();
   await expect(page.locator('[data-testid=approval-status]')).toBeVisible();
 
@@ -174,7 +184,7 @@ test('verticale Studio V1 complete (deterministe, correction ciblee, MOCK)', asy
   await page.locator('[data-testid=correct-input]').fill('Rends le produit plus visible et garde le personnage.');
   await page.locator('[data-testid=correct-submit]').click();
   await expect(page.locator('[data-testid=master-version]')).toHaveText('Master v2', { timeout: 240000 });
-  await expect(page.locator('[data-testid=status-badge]')).toHaveText('Aperçu pret', { timeout: 240000 });
+  await expect(page.locator('[data-testid=status-badge]')).toHaveText('Aperçu prêt', { timeout: 240000 });
   await expect(page.locator('[data-testid=scene-versions-SCENE-002]')).toContainText('v2');
   await page.locator('[data-testid=compare-version]').selectOption('1');
   await expect(page.getByTestId('master-video-compare')).toBeVisible();
@@ -239,6 +249,8 @@ test('verticale Studio V1 complete (deterministe, correction ciblee, MOCK)', asy
   }
 
   await page.reload();
+  await page.getByRole('button', { name: 'Vidéo complète', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Étapes du projet' }).getByRole('link', { name: 'Finaliser', exact: true }).click();
   await expect(page.locator('[data-testid=master-video]')).toBeVisible();
   await expect(page.locator('[data-testid=transfer-status]')).toContainText('acknowledged');
 

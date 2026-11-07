@@ -48,7 +48,7 @@ export default function ContextsPage() {
   }
   return <div className="shell" data-vululu-theme="blue">
     <a className="skip-link" href="#contexts-main">Aller au contenu</a>
-    <header className="topbar"><Link href="/" className="brand" aria-label="Vululu, mes projets">vululu</Link><StudioNav /></header>
+    <StudioNav />
     <main id="contexts-main" tabIndex={-1} className="page" data-testid="contexts-page">
       <section className="studio-head"><div><p className="eyebrow">Votre bibliothèque de contextes</p><h1>Marques et références</h1><p className="muted">Une marque, votre activité ou un univers créatif. Rassemblez ce que Vululu doit connaître pour vos prochains projets.</p></div><Link className="btn btn-primary" href="/contexts/new" data-testid="contexts-new">Nouveau contexte</Link></section>
       {loading ? <p className="muted" role="status">Chargement des contextes…</p> : null}

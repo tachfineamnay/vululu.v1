@@ -36,7 +36,7 @@ test('brief confirme : profil reel, revisions et storyboard perime', async ({ pa
   await page.getByTestId('brief-confirm').click();
   await expect(page.getByTestId('storyboard-generate')).toBeEnabled();
   await page.getByTestId('storyboard-generate').click();
-  await expect(page.getByTestId('duration-summary')).toHaveText('5 scenes / 5 s');
+  await expect(page.getByTestId('duration-summary')).toHaveText('5 scènes · 5 s');
   for (let i = 1; i <= 5; i++) {
     await page.getByTestId('scene-SCENE-00' + i).click();
     await expect(page.getByTestId('scene-SCENE-00' + i)).toHaveAttribute('aria-pressed', 'true');
@@ -58,7 +58,7 @@ test('brief confirme : profil reel, revisions et storyboard perime', async ({ pa
   await expect(page.getByTestId('storyboard-generate')).toBeEnabled();
   await expect(page.getByTestId('produce')).toBeDisabled();
   await page.getByTestId('storyboard-generate').click();
-  await expect(page.getByTestId('duration-summary')).toHaveText('5 scenes / 11 s');
+  await expect(page.getByTestId('duration-summary')).toHaveText('5 scènes · 11 s');
   const regenerated = (await (await page.request.get('/api/projects/' + project.id)).json()).scenes;
   expect(regenerated.map((scene: { id: string }) => scene.id)).toEqual(initialScenes.map((scene: { id: string }) => scene.id));
   expect(regenerated.map((scene: { durationSeconds: number }) => scene.durationSeconds)).toEqual([2, 2, 3, 2, 2]);
@@ -67,14 +67,15 @@ test('brief confirme : profil reel, revisions et storyboard perime', async ({ pa
   await page.getByTestId('duration-reset-SCENE-003').click();
   await expect(page.getByTestId('duration-origin-SCENE-003')).toContainText('Suit la durée du brief');
   await expect(page.getByTestId('duration-reset-SCENE-003')).toHaveCount(0);
-  await expect(page.getByTestId('duration-summary')).toHaveText('5 scenes / 10 s');
+  await expect(page.getByTestId('duration-summary')).toHaveText('5 scènes · 10 s');
   await expect(page.getByTestId('production-plan')).toContainText('5 scènes · 10 s');
   await page.reload();
   await page.getByTestId('scene-SCENE-003').click();
   await expect(page.getByTestId('duration-origin-SCENE-003')).toContainText('Suit la durée du brief');
   await expect(page.getByTestId('produce')).toBeEnabled();
   await page.getByTestId('produce').click();
-  await expect(page.getByTestId('status-badge')).toHaveText('Aperçu pret', { timeout: 180000 });
+  await expect(page.getByTestId('status-badge')).toHaveText('Aperçu prêt', { timeout: 180000 });
+  await page.getByRole('button', { name: 'Vidéo complète', exact: true }).click();
   const video = page.getByTestId('master-video');
   await expect.poll(() => video.evaluate((element) => (element as HTMLVideoElement).readyState)).toBeGreaterThanOrEqual(2);
   await expect.poll(() => video.evaluate((element) => (element as HTMLVideoElement).videoHeight)).toBe(1350);

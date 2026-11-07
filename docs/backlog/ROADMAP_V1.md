@@ -97,3 +97,27 @@ Chaque décision est explicite, écrite et horodatée ; aucun GO implicite.
 ## 7. Prochaine action de la proposition initiale (historique)
 
 Proposer et obtenir un **GO P0-0**, exécuter l'audit et les fondations, puis décider GO P0-A. Aucun développement métier n'est autorisé avant la clôture de P0-0.
+
+## Suivi de la tranche cadre de navigation — 2026-11-06
+
+Cadre commun et liens secondaires implémentés ; recette authentifiée du Studio **NOT_RUN** en attente d'une session de recette. Détails et retour arrière : [rapport de tranche](../reports/CADRE_NAVIGATION_2026-11-06.md).
+
+## Suivi du parcours Studio — 2026-11-06
+
+Étapes guidées et reprise du brief vérifiées avec API MOCK ; recette E2E authentifiée **NOT_RUN** en attente d'un environnement de recette. Voir le [rapport](../reports/PARCOURS_STUDIO_2026-11-06.md).
+
+## Suivi de la zone Création — 2026-11-06
+
+Aperçu de scène, inspecteur et finalisation réorganisés et vérifiés avec API MOCK ; recette E2E authentifiée **NOT_RUN**. Voir le [rapport](../reports/CREATION_STUDIO_2026-11-06.md).
+
+## Suivi des brouillons de correction — 2026-11-07
+
+Brouillons distincts par scène et reprise du format local précédent vérifiés avec API MOCK ; recette authentifiée **NOT_RUN**. Voir le [rapport](../reports/BROUILLONS_CORRECTION_2026-11-07.md).
+
+## Suivi de la finition visuelle — 2026-11-07
+
+Contrastes, en-tête et hiérarchie du média ajustés ; contrôles responsive avec API **MOCK** et recette authentifiée sur base locale isolée. La base locale initiale présente des migrations en attente. Voir le [rapport](../reports/FINITION_VISUELLE_2026-11-07.md).
+
+## Suivi de la recette des parcours — 2026-11-07
+
+Parcours débutant et professionnel, reprise des saisies, clavier et téléchargements vérifiés sur base locale isolée ; reprise ajoutée pour une image momentanément indisponible. Voir le [rapport](../reports/RECETTE_PARCOURS_2026-11-07.md).

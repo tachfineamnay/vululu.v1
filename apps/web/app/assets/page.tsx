@@ -107,7 +107,7 @@ export default function AssetsPage() {
   }
   return <div className="shell" data-vululu-theme="blue">
     <a className="skip-link" href="#assets-main">Aller au contenu</a>
-    <header className="topbar"><Link href="/" className="brand" aria-label="Vululu, mes projets">vululu</Link><StudioNav /><Link href={contextId ? '/contexts?context=' + encodeURIComponent(contextId) : '/contexts'} className="btn btn-secondary">Retour à la fiche</Link></header>
+    <StudioNav><Link href={contextId ? '/contexts?context=' + encodeURIComponent(contextId) : '/contexts'} className="btn btn-secondary">Retour à la fiche</Link></StudioNav>
     <main id="assets-main" tabIndex={-1} className="page" data-testid="assets-page">
       <section className="studio-head"><div><p className="eyebrow">Marques et références</p><h1>Ressources du contexte</h1><p className="muted">Vos fichiers, leurs droits et leurs versions. Choisissez explicitement ceux à utiliser dans un projet.</p></div></section>
       {error ? <div className="error" role="alert"><p>{error}</p><p>Opération non confirmée. Corrigez les informations ou réessayez.</p><button type="button" className="btn btn-secondary" disabled={busy} onClick={() => {

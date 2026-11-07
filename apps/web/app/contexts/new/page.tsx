@@ -28,7 +28,7 @@ export default function NewContextPage() {
   }
   return <div className="shell" data-vululu-theme="blue">
     <a className="skip-link" href="#new-context-main">Aller au contenu</a>
-    <header className="topbar"><Link href="/" className="brand" aria-label="Vululu, mes projets">vululu</Link><StudioNav /><Link href={returnToProject ? '/projects/new' : '/contexts'} className="text-link">{returnToProject ? 'Retour au nouveau projet' : 'Retour aux contextes'}</Link></header>
+    <StudioNav><Link href={returnToProject ? '/projects/new' : '/contexts'} className="text-link">{returnToProject ? 'Retour au nouveau projet' : 'Retour aux contextes'}</Link></StudioNav>
     <main id="new-context-main" tabIndex={-1} className="page narrow stack">
       <p className="eyebrow">Marques et références</p><h1>Créer un contexte</h1><p className="muted">Une marque, une activité, un univers créatif : commencez par ce qui compte. Seuls le nom et la description sont obligatoires.</p>
       <form className="card stack" onSubmit={submit} aria-busy={busy}>

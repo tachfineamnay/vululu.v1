@@ -73,7 +73,7 @@ export default function NewProjectPage() {
   }
   return <div className="shell" data-vululu-theme="blue">
     <a className="skip-link" href="#project-start-main">Aller au contenu</a>
-    <header className="topbar"><Link href="/" className="brand" aria-label="Vululu, mes projets">vululu</Link><StudioNav /><Link href="/" className="text-link">Retour aux projets</Link></header>
+    <StudioNav><Link href="/" className="text-link">Retour aux projets</Link></StudioNav>
     <main id="project-start-main" tabIndex={-1} className="page project-start stack">
       <p className="eyebrow">Nouveau projet</p><h1>De votre idée à votre création</h1>
       {loading ? <p role="status">Chargement de vos références et du brouillon de cet onglet…</p> : loadError ? <div className="stack"><p className="error" role="alert">{loadError}</p><button type="button" className="btn btn-secondary" onClick={() => setRetry((n) => n + 1)}>Réessayer</button><Link className="text-link" href="/login?next=/projects/new">Se connecter</Link></div> : <>

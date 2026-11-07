@@ -20,3 +20,11 @@ it('refuse stockage corrompu, réglages incomplets et champs hors limites', () =
   expect(readStudioDraft(JSON.stringify({ ...draft, baseVersion: null }))).toBeNull();
   expect(readStudioDraft(JSON.stringify({ ...draft, settings: { ...draft.settings, ratio: 'unknown' } }))).toBeNull();
 });
+it('conserve et valide des instructions distinctes par scène, y compris une saisie non attribuée', () => {
+  const withScenes = { ...draft, correctionDrafts: { 'SCENE-001': { instruction: 'Instruction A', edited: true }, 'SCENE-002': { instruction: 'Instruction B', edited: false } }, unassignedCorrection: { instruction: 'À attribuer', edited: true } };
+  expect(readStudioDraft(JSON.stringify(withScenes))).toEqual(withScenes);
+  expect(readStudioDraft(JSON.stringify({ ...withScenes, correctionDrafts: { 'SCENE-001': { instruction: 'x'.repeat(501), edited: true } } }))).toBeNull();
+  expect(readStudioDraft(JSON.stringify({ ...withScenes, correctionDrafts: { 'SCENE-001': { instruction: 'A', edited: 'yes' } } }))).toBeNull();
+  expect(readStudioDraft(JSON.stringify({ ...withScenes, unassignedCorrection: { instruction: 'x'.repeat(501), edited: true } }))).toBeNull();
+  expect(readStudioDraft(JSON.stringify({ ...withScenes, correctionDrafts: [] }))).toBeNull();
+});

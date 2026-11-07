@@ -74,13 +74,10 @@ export default function CampaignsPage() {
   const candidates = projects.filter((project) => project.campaignId !== selectedId);
 
   return (
-    <div className="shell campaigns-page">
-      <header className="topbar">
-        <Link href="/" className="brand"><span className="brand-mark small">V</span><span>Vululu AI</span></Link>
-        <StudioNav />
-        <Link href="/projects/new" className="btn btn-secondary btn-small">Nouvelle création</Link>
-      </header>
-      <main className="page">
+    <div className="shell campaigns-page" data-vululu-theme="blue">
+      <a className="skip-link" href="#campaigns-main">Aller au contenu</a>
+      <StudioNav><Link href="/projects/new" className="btn btn-secondary btn-small">Nouvelle création</Link></StudioNav>
+      <main id="campaigns-main" tabIndex={-1} className="page">
         <section className="studio-head">
           <div><p className="eyebrow">Vos opérations créatives</p><h1>Campagnes</h1><p className="muted">Regroupez vos projets pour retrouver les créations d’une même opération.</p></div>
         </section>

@@ -32,6 +32,22 @@ describe('parcours dérivé du même projet serveur', () => {
     expect(result.stages[2].output).toContain('Master v7');
     expect(result.stages[3].state).toBe('Approbation exacte requise');
   });
+  it('propose la reprise du brief enregistré mais non confirmé', () => {
+    const value = bundle();
+    value.brief = { version: 1, confirmedVersion: null, confirmedChecksum: null, revisions: [{ version: 1, checksum: 'v1' }] } as ProjectBundle['brief'];
+    expect(projectJourney(value).recommended).toEqual({ step: 'prepare', action: 'brief' });
+  });
+  it('propose les scènes, puis la production, puis la finalisation selon les données', () => {
+    const value = bundle();
+    value.brief = { version: 1, confirmedVersion: 1, confirmedChecksum: 'v1', revisions: [{ version: 1, checksum: 'v1' }] } as ProjectBundle['brief'];
+    expect(projectJourney(value).recommended).toEqual({ step: 'create', action: 'storyboard' });
+    value.scenes = [{ id: 'scene' }] as ProjectBundle['scenes'];
+    value.project.storyboardBriefVersion = 1;
+    expect(projectJourney(value).recommended).toEqual({ step: 'create', action: 'produce' });
+    expect(projectJourney(value, { briefVersion: 1, sceneCount: 3 } as import('../apps/web/lib/api').ProductionPlanView).recommended).toEqual({ step: 'create', action: 'storyboard' });
+    value.master = { version: 1, checksum: 'master' } as ProjectBundle['master'];
+    expect(projectJourney(value).recommended).toEqual({ step: 'finalize', action: 'review' });
+  });
   it('ne confond pas transfert et publication et conserve les valeurs inconnues', () => {
     const value = bundle();
     value.master = { version: 9, checksum: 'exact', approval: { checksum: 'exact', invalidatedAt: null, transfer: { status: 'acknowledged' } } } as ProjectBundle['master'];
