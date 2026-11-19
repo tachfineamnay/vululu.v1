@@ -150,6 +150,8 @@ services:
     restart: unless-stopped
     environment:
       <<: *api-env
+      POSTIZ_ANALYTICS_ENABLED: ${POSTIZ_ANALYTICS_ENABLED:-0}
+      PUBLISHING_ENCRYPTION_KEY: ${PUBLISHING_ENCRYPTION_KEY:-}
       DEMO_EMAIL: ${DEMO_EMAIL:-demo@vululu.example}
       DEMO_PASSWORD: ${SERVICE_PASSWORD_64_DEMO}
     expose:

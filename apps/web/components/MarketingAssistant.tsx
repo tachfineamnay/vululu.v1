@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect,useRef,useState } from 'react';
 import type { MarketingContext, MarketingOutput } from '@vululu/contracts';
 import { api, postJson } from '../lib/api';
 type Revision = {
@@ -11,16 +11,16 @@ type Revision = {
   origin: string;
   reason: string;
 };
-function monday() {
+function monday(next=false) {
   const d = new Date();
-  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+  d.setUTCDate(d.getUTCDate() + (next?7:0) - ((d.getUTCDay() + 6) % 7));
   return d.toISOString().slice(0, 10);
 }
 export function MarketingAssistant({ project, context }: { project: string; context: string }) {
   const base = `/api/projects/${project}/marketing`;
   const [offers, setOffers] = useState<{ id: string; name: string }[]>([]),
     [offer, setOffer] = useState(''),
-    [week, setWeek] = useState(monday),
+    [week, setWeek] = useState(()=>monday()),
     [regulated, setRegulated] = useState(false),
     [review, attest] = useState(false),
     [r, show] = useState<Revision>(),
@@ -28,6 +28,8 @@ export function MarketingAssistant({ project, context }: { project: string; cont
     [busy, work] = useState(false),
     [error, fail] = useState(''),
     [op, operation] = useState<{ id: string; digest: string; maxCents: number; state: string }>();
+  const details=useRef<HTMLDetailsElement>(null);
+  useEffect(()=>{const q=new URLSearchParams(location.search);if(q.get('plan')==='next'){setWeek(monday(true));setOffer(q.get('offer')??'');if(details.current)details.current.open=true;}},[project]);
   function display(v: Revision) {
     show(v);
     attest(false);
@@ -55,7 +57,7 @@ export function MarketingAssistant({ project, context }: { project: string; cont
     if (h.length) display(await api<Revision>(base + '/' + h[0].version));
   }
   return (
-    <details
+    <details ref={details}
       className="card stack"
       onToggle={(e) => {
         if (e.currentTarget === e.target && e.currentTarget.open) void act(load);

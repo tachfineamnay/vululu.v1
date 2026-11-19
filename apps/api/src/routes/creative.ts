@@ -1,3 +1,4 @@
+import {markExport} from '../infrastructure/results/exports';
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '@vululu/db';
 import { Prisma } from '@prisma/client';
@@ -178,6 +179,7 @@ export async function creativeRoutes(app: FastifyInstance) {
       files['manifest.json'] = strToU8(JSON.stringify(index, null, 2));
       return Buffer.from(zipSync(files, { level: 0 }));
     });
+    markExport(r,reply,campaignId,null,'Lot campagne');
     return reply
       .type('application/zip')
       .header('Content-Disposition', 'attachment; filename="campagne.zip"')
@@ -214,6 +216,7 @@ export async function creativeRoutes(app: FastifyInstance) {
   });
   app.get(base + '/:version/master', auth, async (r, reply) => {
     const p = revision.parse(r.params);
+    if((r.query as {export?:string}).export==='1')markExport(r,reply,p.id,p.version,'Master créatif');
     return sendArtifact(r, reply, await service.file(r.currentUser!.id, p.id, p.version));
   });
   app.get(base + '/:version/scenes/:key', auth, async (r, reply) => {

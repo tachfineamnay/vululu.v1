@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, type ProjectSummary, type SessionUser } from '../lib/api';
 import { projectProgress, projectFormatLabels } from '../lib/projectPresentation';
+import { WeeklyReminder } from '../components/WeeklyReminder';
 import StudioNav from '../components/StudioNav';
 
 export default function DashboardPage() {
@@ -39,6 +40,7 @@ export default function DashboardPage() {
       <span className="muted small">{user?.name}</span><button type="button" className="btn btn-ghost" disabled={leaving} onClick={logout}>{leaving ? 'Déconnexion…' : 'Sortir'}</button>
     </div></StudioNav>
     <main id="projects-main" tabIndex={-1} className="page stack" data-testid="projects-page">
+      {user && <WeeklyReminder/>}
       <section className="studio-head"><div><p className="eyebrow">Votre atelier</p><h1>Mes projets</h1><p className="muted">Retrouvez votre travail ou donnez forme à une nouvelle idée.</p></div><Link className="btn btn-primary" data-testid="new-project" href="/projects/new">Nouveau projet</Link></section>
       {loading ? <p role="status">Chargement de vos projets…</p> : null}
       {error ? <div className="stack"><p className="error" role="alert">{error}</p><div className="actions"><button type="button" className="btn btn-secondary" onClick={() => setRetry((n) => n + 1)}>Réessayer</button>{!user ? <Link className="text-link" href="/login">Se connecter</Link> : null}</div></div> : null}

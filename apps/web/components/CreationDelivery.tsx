@@ -58,7 +58,7 @@ export default function CreationDelivery({ bundle, refresh, blocked = false, cor
   async function download() {
     setBusy('download'); setError(''); setMessage(null);
     try {
-      const response = await fetch(mediaUrl(viewed.version), { credentials: 'include', cache: 'no-store' });
+      const response = await fetch(mediaUrl(viewed.version)+'&export=1', { credentials: 'include', cache: 'no-store' });
       if (!response.ok || !response.headers.get('content-type')?.includes('video/mp4')) throw new Error('Téléchargement impossible (' + response.status + '). Le résultat consulté et votre sélection sont conservés.');
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);

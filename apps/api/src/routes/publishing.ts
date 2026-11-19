@@ -1,3 +1,4 @@
+import {markExport} from '../infrastructure/results/exports';
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -142,6 +143,7 @@ export async function publishingRoutes(app: FastifyInstance) {
     if (activePackages >= 2) return problem(429, 'package_busy');
     activePackages++;
     try {
+      markExport(r,reply,id,rev,'Lot de publication');
       return reply
         .header('Cache-Control', 'private, no-store')
         .header('Content-Disposition', `attachment; filename="${p.platform}-v${rev}.zip"`)

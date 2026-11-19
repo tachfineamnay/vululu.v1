@@ -1,3 +1,4 @@
+import {markExport} from '../infrastructure/results/exports';
 import fs from 'node:fs';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { approvalInputSchema, correctionInputSchema } from '@vululu/contracts';
@@ -105,6 +106,7 @@ export async function productionRoutes(app: FastifyInstance): Promise<void> {
       }
     }
     const file = await artifacts.getMaster(actorOf(request.currentUser), params.id, requested);
+    if(requested && (request.query as {export?:string}).export==='1')markExport(request,reply,params.id,requested,'Master vidéo');
     return sendArtifact(request, reply, file);
   });
 
