@@ -58,6 +58,7 @@ model Campaign {
 }
 
 model Project {
+  creativeRevisions CreativeRevision[]
   contentItems ContentItem[]
   id          String   @id @default(cuid())
   userId      String
@@ -686,4 +687,15 @@ model ContentRevision {
   item ContentItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
   @@id([itemId, version])
   @@unique([itemId, requestId])
+}
+
+model CreativeRevision {
+  projectId String
+  version Int
+  spec Json
+  manifest Json?
+  approvedAt DateTime?
+  createdAt DateTime @default(now())
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  @@id([projectId, version])
 }

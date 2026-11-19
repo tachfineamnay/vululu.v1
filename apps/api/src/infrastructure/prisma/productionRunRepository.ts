@@ -144,8 +144,8 @@ export class PrismaProductionRunRepository implements ProductionRunRepository {
             if (!project.brief) {
               throw new ApplicationError('brief_required', 'Le brief est requis.', 400);
             }
-            if (project.scenes.length !== 5) {
-              throw new ApplicationError('storyboard_required', 'Le storyboard de cinq scenes est requis.', 400);
+            if (project.scenes.length === 0) {
+              throw new ApplicationError('storyboard_required', 'Le storyboard doit contenir au moins une scène.', 400);
             }
           } else {
             const target = project.scenes.find((scene) => scene.sceneKey === input.targetSceneKey);

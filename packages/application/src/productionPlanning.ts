@@ -37,7 +37,7 @@ export function createProductionPlan(input: { settings: ProductionSettings; form
       issues.push({ code: error.code, message: error.code === 'no_route' ? 'Aucun modèle MOCK admissible pour les droits et capacités de ce run.' : error.message });
     }
   }
-  const sceneCount = plannedSceneCount(input.format);
+  const sceneCount = input.sceneDurationsSeconds?.length || plannedSceneCount(input.format);
   const content = {
     schemaVersion: 1 as const, mode: 'MOCK' as const, executionMode: policy.workflow.engine, workflowVersion: policy.workflow.version,
     briefVersion: input.briefVersion, format: input.format, ratio: settings.ratio, sceneCount,

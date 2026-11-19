@@ -694,12 +694,12 @@ export type ArtifactFile = {
 };
 
 export interface ArtifactAccessPort {
-  getSceneImage(userId: string, projectId: string, sceneKey: string): Promise<ArtifactFile>;
+  getSceneImage(userId: string, projectId: string, sceneKey: string, requested?: number): Promise<ArtifactFile>;
   getMaster(userId: string, projectId: string, version?: number): Promise<ArtifactFile>;
 }
 
 export interface ArtifactAccessUseCasesPort {
-  getSceneImage(actor: Actor, projectId: string, sceneKey: string): Promise<ArtifactFile>;
+  getSceneImage(actor: Actor, projectId: string, sceneKey: string, requested?: number): Promise<ArtifactFile>;
   getMaster(actor: Actor, projectId: string, version?: number): Promise<ArtifactFile>;
 }
 // ---------------------------------------------------------------------------

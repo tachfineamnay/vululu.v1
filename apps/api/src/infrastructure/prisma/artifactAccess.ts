@@ -56,10 +56,10 @@ export class PrismaArtifactAccess implements ArtifactAccessPort {
     };
   }
 
-  async getSceneImage(userId: string, projectId: string, sceneKey: string): Promise<ArtifactFile> {
+  async getSceneImage(userId: string, projectId: string, sceneKey: string, requested?: number): Promise<ArtifactFile> {
     const scene = await this.db.scene.findFirst({
       where: { projectId, sceneKey, project: { is: { userId } } },
-      include: { versions: { orderBy: { version: 'desc' }, take: 1 } }
+      include: { versions: { where: { version: requested }, orderBy: { version: 'desc' }, take: 1 } }
     });
     const version = scene?.versions[0];
     if (!version) {

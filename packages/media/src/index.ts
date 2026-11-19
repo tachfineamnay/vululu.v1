@@ -189,6 +189,8 @@ export async function assembleMaster(input: MasterInput): Promise<MasterOutput> 
     concatLines.push("file '" + toPosix(frame) + "'");
     concatLines.push('duration ' + input.sceneDurationsSeconds[index]);
   }
+  // The concat demuxer needs a terminal frame to honor the final still's duration.
+  concatLines.push("file '" + toPosix(path.join(frameDir, 'frame-' + input.scenePaths.length + '.png')) + "'");
   const concatPath = path.join(frameDir, 'concat.txt');
   await fsp.writeFile(concatPath, concatLines.join(String.fromCharCode(10)) + String.fromCharCode(10), 'utf8');
   const file = path.join(masterDir, 'v' + input.version + '.mp4');
@@ -204,6 +206,7 @@ export async function assembleMaster(input: MasterInput): Promise<MasterOutput> 
     '-r', '30',
     '-c:a', 'aac',
     '-b:a', '128k',
+    '-t', String(expectedDurationSeconds),
     '-shortest',
     file
   ]);
@@ -281,3 +284,5 @@ export async function runQa(scenes: SceneRenderOutput[], master: MasterOutput, e
     checks
   };
 }
+
+export { creativeFrame } from './creativeFrame';

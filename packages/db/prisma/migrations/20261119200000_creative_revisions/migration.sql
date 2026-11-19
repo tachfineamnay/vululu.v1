@@ -1,0 +1,6 @@
+CREATE TABLE "CreativeRevision" (
+  "projectId" TEXT NOT NULL REFERENCES "Project"(id) ON DELETE CASCADE ON UPDATE CASCADE,
+  version INTEGER NOT NULL, spec JSONB NOT NULL, manifest JSONB,
+  "approvedAt" TIMESTAMP(3), "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY ("projectId", version)
+);

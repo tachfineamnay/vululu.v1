@@ -26,7 +26,7 @@ function sendVideo(request: FastifyRequest, reply: FastifyReply, file: string, s
   return reply.send(fs.createReadStream(file));
 }
 
-async function sendArtifact(
+export async function sendArtifact(
   request: FastifyRequest,
   reply: FastifyReply,
   file: ArtifactFile
@@ -80,7 +80,10 @@ export async function productionRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/projects/:id/scenes/:sceneKey/image', { preHandler: [app.authenticate] }, async (request, reply) => {
     const params = request.params as { id: string; sceneKey: string };
-    const file = await artifacts.getSceneImage(actorOf(request.currentUser), params.id, params.sceneKey);
+    const query = request.query as { version?: string; v?: string };
+    const value = query.version ?? query.v;
+    if (value !== undefined && (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(Number(value)))) throw new HttpError(400,'invalid_version','Version de scène invalide.');
+    const file = await artifacts.getSceneImage(actorOf(request.currentUser), params.id, params.sceneKey, value === undefined ? undefined : Number(value));
     reply.header('Cache-Control', 'no-store');
     if (file.openRead) {
       reply.type(file.contentType);
