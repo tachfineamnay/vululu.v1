@@ -678,6 +678,7 @@ model ContentItem {
 }
 
 model ContentRevision {
+  creativeVersions CreativeRevision[]
   itemId String
   version Int
   requestId String
@@ -690,6 +691,10 @@ model ContentRevision {
 }
 
 model CreativeRevision {
+  contentItemId String?
+  contentVersion Int?
+  calendarRevision ContentRevision? @relation(fields:[contentItemId,contentVersion],references:[itemId,version],onDelete:Restrict,map:"CreativeRevision_calendar_fkey")
+  @@index([contentItemId,contentVersion])
   projectId String
   version Int
   spec Json

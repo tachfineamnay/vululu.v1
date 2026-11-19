@@ -1,12 +1,16 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { FormatGuide, type Destination } from './FormatGuide';
 import { useUnsavedChanges } from '../lib/useUnsavedChanges';
-import { creativeSpec, type CreativeSpec, type CreativeLayer } from '@vululu/contracts';
+import { readableInk, creativeSpec, type CreativeSpec, type CreativeLayer } from '@vululu/contracts';
 import { api, apiResponse, postJson, type ProjectBundle } from '../lib/api';
 
 type Rev = { version: number; approvedAt: string | null };
-type Revision = Rev & { spec: CreativeSpec; manifest: { master: { sha256: string } } | null };
-type Source = { id: string; name: string; kind: string };
+type Revision = Rev & {
+  spec: CreativeSpec;
+  manifest: { approvalSha256?: string; master: { sha256: string } } | null;
+};
+type Source = { metadata?: { width?: number; height?: number }; id: string; name: string; kind: string };
 const copy = (text: string, role: 'headline' | 'body' | 'cta'): CreativeLayer => ({
   type: 'text',
   role,
@@ -61,6 +65,8 @@ export function CreativeEditor({ bundle }: { bundle: ProjectBundle }) {
     [versions, history] = useState<Rev[]>([]),
     [view, show] = useState<Revision | null>(null),
     [expected, setExpected] = useState(0);
+  const [assets, allMedia] = useState<Source[]>([]),
+    [items, destinations] = useState<Destination[]>([]);
   const [sources, library] = useState<Source[]>([]),
     [index, focus] = useState(0),
     [busy, work] = useState(false),
@@ -93,16 +99,19 @@ export function CreativeEditor({ bundle }: { bundle: ProjectBundle }) {
     mark(false);
   }
   async function load() {
-    const [revs, assets, selected] = await Promise.all([
+    const [revs, assets, selected, linked] = await Promise.all([
       api<Rev[]>(base),
       api<{ items: { kind: string; versions: { id: string; name: string; mimeType: string }[] }[] }>(
         '/api/contexts/' + bundle.context.id + '/assets'
       ),
-      api<{ versionIds: string[] }>(`/api/projects/${bundle.project.id}/assets`)
+      api<{ versionIds: string[] }>(`/api/projects/${bundle.project.id}/assets`),
+      api<Destination[]>(base + '/destinations')
     ]);
     const all = assets.items.flatMap((a) =>
       a.versions.filter((v) => v.mimeType.startsWith('image/')).map((v) => ({ ...v, kind: a.kind }))
     );
+    destinations(linked);
+    allMedia(assets.items.flatMap((a) => a.versions.map((v) => ({ ...v, kind: a.kind }))));
     library(all);
     history(revs);
     setExpected(revs[0]?.version ?? 0);
@@ -183,6 +192,25 @@ export function CreativeEditor({ bundle }: { bundle: ProjectBundle }) {
         >
           Recharger la dernière version
         </button>
+        {spec && (
+          <FormatGuide
+            bundle={bundle}
+            assets={assets}
+            items={items}
+            apply={(fn) =>
+              void action(async () => {
+                const next = fn();
+                change(next);
+                focus(0);
+              })
+            }
+          />
+        )}
+        {bundle.project.campaignId && (
+          <a href={`/api/campaigns/${bundle.project.campaignId}/creative-package`} download>
+            Télécharger le lot de campagne
+          </a>
+        )}
         {spec && scene && (
           <>
             <button
@@ -212,6 +240,7 @@ export function CreativeEditor({ bundle }: { bundle: ProjectBundle }) {
                 Format
                 <select
                   className="input"
+                  disabled={!!spec.delivery}
                   value={spec.width + '/' + spec.height}
                   onChange={(e) => {
                     const [width, height] = e.target.value.split('/').map(Number);
@@ -238,7 +267,21 @@ export function CreativeEditor({ bundle }: { bundle: ProjectBundle }) {
                 <input
                   type="color"
                   value={spec.brand[k]}
-                  onChange={(e) => change({ ...spec, brand: { ...spec.brand, [k]: e.target.value } })}
+                  onChange={(e) => {
+                    const color = e.target.value;
+                    change({
+                      ...spec,
+                      brand: { ...spec.brand, [k]: color },
+                      scenes: spec.scenes.map((s) => ({
+                        ...s,
+                        layers: s.layers.map((l) =>
+                          l.type === 'text' && l.plate === spec.brand[k]
+                            ? { ...l, plate: color, color: readableInk(color) }
+                            : l
+                        )
+                      }))
+                    });
+                  }}
                 />
               </label>
             ))}
@@ -267,6 +310,7 @@ export function CreativeEditor({ bundle }: { bundle: ProjectBundle }) {
               </button>{' '}
               <button
                 type="button"
+                disabled={!!spec.delivery && !['carousel', 'short'].includes(spec.delivery.kind)}
                 onClick={() => {
                   const n = Math.max(...spec.scenes.map((s) => Number(s.key.slice(6)))) + 1;
                   change({
@@ -297,6 +341,48 @@ export function CreativeEditor({ bundle }: { bundle: ProjectBundle }) {
                 change({ ...spec, scenes: spec.scenes.map((s, i) => (i === index ? { ...s, seconds } : s)) })
               }
             />
+            {scene.clip && (
+              <NumberField
+                label="Début du clip (secondes)"
+                value={scene.clip.start}
+                step={0.5}
+                change={(start) =>
+                  change({
+                    ...spec,
+                    scenes: spec.scenes.map((s, i) =>
+                      i === index && s.clip ? { ...s, clip: { ...s.clip, start } } : s
+                    )
+                  })
+                }
+              />
+            )}
+            {spec.delivery?.audio && (
+              <NumberField
+                label="Volume de la piste (0–1)"
+                step={0.05}
+                value={spec.delivery.audio.gain}
+                change={(gain) =>
+                  change({
+                    ...spec,
+                    delivery: { ...spec.delivery!, audio: { ...spec.delivery!.audio!, gain } }
+                  })
+                }
+              />
+            )}
+            {scene.layers.some((l) => {
+              if (l.type !== 'image') return false;
+              const m = sources.find((a) => a.id === l.versionId)?.metadata;
+              return (
+                m?.width &&
+                m?.height &&
+                Math.max((l.w * spec.width) / m.width, (l.h * spec.height) / m.height) > 2
+              );
+            }) && (
+              <p role="status">
+                Image agrandie de plus de 2× : vérifiez sa netteté dans l’aperçu ou choisissez une source plus
+                grande.
+              </p>
+            )}
             {scene.layers.map((l, i) => (
               <details key={scene.key + ':' + i}>
                 <summary>
@@ -325,7 +411,13 @@ export function CreativeEditor({ bundle }: { bundle: ProjectBundle }) {
                           <option value="monospace">Chasse fixe</option>
                         </select>
                       </label>
-                      <NumberField label="Corps" value={l.size} change={(size) => update(i, { size })} />
+                      <NumberField
+                        label="Corps"
+                        value={l.size}
+                        change={(size) =>
+                          update(i, { size, minSize: l.minSize ? Math.min(size, l.minSize) : undefined })
+                        }
+                      />
                       <label>
                         Couleur
                         <input
@@ -347,7 +439,10 @@ export function CreativeEditor({ bundle }: { bundle: ProjectBundle }) {
                     <>
                       <label>
                         Cadrage
-                        <select value={l.fit} onChange={(e) => update(i, { fit: e.target.value as typeof l.fit })}>
+                        <select
+                          value={l.fit}
+                          onChange={(e) => update(i, { fit: e.target.value as typeof l.fit })}
+                        >
                           <option value="cover">Remplir</option>
                           <option value="contain">Contenir</option>
                         </select>
@@ -471,16 +566,27 @@ export function CreativeEditor({ bundle }: { bundle: ProjectBundle }) {
                 )}
                 {view.manifest ? (
                   <>
-                    <video
-                      controls
-                      preload="metadata"
-                      style={{ maxWidth: '100%', maxHeight: 440 }}
-                      src={`${base}/${view.version}/master`}
-                    />
-                    <a href={`${base}/${view.version}/master`} download>
+                    {view.spec.delivery && view.spec.delivery.kind !== 'short' ? (
+                      <img
+                        alt="Export rendu"
+                        style={{ maxWidth: '100%', maxHeight: 440 }}
+                        src={`${base}/${view.version}/scenes/${scene.key}`}
+                      />
+                    ) : (
+                      <video
+                        controls
+                        preload="metadata"
+                        style={{ maxWidth: '100%', maxHeight: 440 }}
+                        src={`${base}/${view.version}/master`}
+                      />
+                    )}
+                    <a
+                      href={`${base}/${view.version}/master`}
+                      download={`v${view.version}.${view.spec.delivery && view.spec.delivery.kind !== 'short' ? 'png' : 'mp4'}`}
+                    >
                       Exporter le master v{view.version}
                     </a>
-                    <a href={`${base}/${view.version}/scenes/${scene.key}`} download>
+                    <a href={`${base}/${view.version}/scenes/${scene.key}`} download={`${scene.key}.png`}>
                       Exporter la scène {index + 1}
                     </a>
                     <button
@@ -490,7 +596,7 @@ export function CreativeEditor({ bundle }: { bundle: ProjectBundle }) {
                         void action(async () => {
                           display(
                             await postJson<Revision>(`${base}/${view.version}/approve`, {
-                              checksum: view.manifest!.master.sha256
+                              checksum: view.manifest!.approvalSha256 ?? view.manifest!.master.sha256
                             })
                           );
                           history(await api<Rev[]>(base));

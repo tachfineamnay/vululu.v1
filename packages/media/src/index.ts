@@ -1,3 +1,4 @@
+import { clipCrop, encodeMotion } from './motion';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
@@ -41,6 +42,11 @@ export type MasterInput = {
   artifactRoot: string;
   version: number;
   scenePaths: string[];
+  motion?: {
+    width: number; height: number; dip: boolean;
+    clips: ({ path: string; overlay: string; start: number; height: number } | undefined)[];
+    audio?: { path: string; gain: number };
+  };
   sceneDurationsSeconds: number[];
 };
 
@@ -168,6 +174,11 @@ async function probe(file: string): Promise<{ duration: number; videoCodec: stri
   };
 }
 
+export async function clipPoster(file: string, start: number, width: number, height: number, out: string) {
+  await run(findFfmpeg(), ['-loglevel', 'error', '-y', '-ss', String(start), '-protocol_whitelist', 'file,pipe',
+    '-i', file, '-vf', clipCrop(width, height), '-frames:v', '1', out]);
+  return fsp.readFile(out);
+}
 export async function assembleMaster(input: MasterInput): Promise<MasterOutput> {
   if (input.scenePaths.length === 0) {
     throw new Error('Au moins une scene est requise pour le master.');
@@ -179,37 +190,42 @@ export async function assembleMaster(input: MasterInput): Promise<MasterOutput> 
   const masterDir = path.join(input.artifactRoot, input.projectId, 'master');
   const frameDir = path.join(masterDir, 'v' + input.version + '-frames');
   await fsp.mkdir(frameDir, { recursive: true });
-  for (let index = 0; index < input.scenePaths.length; index += 1) {
-    const target = path.join(frameDir, 'frame-' + (index + 1) + '.png');
-    await fsp.copyFile(input.scenePaths[index], target);
-  }
-  const concatLines: string[] = [];
-  for (let index = 0; index < input.scenePaths.length; index += 1) {
-    const frame = path.join(frameDir, 'frame-' + (index + 1) + '.png');
-    concatLines.push("file '" + toPosix(frame) + "'");
-    concatLines.push('duration ' + input.sceneDurationsSeconds[index]);
-  }
-  // The concat demuxer needs a terminal frame to honor the final still's duration.
-  concatLines.push("file '" + toPosix(path.join(frameDir, 'frame-' + input.scenePaths.length + '.png')) + "'");
-  const concatPath = path.join(frameDir, 'concat.txt');
-  await fsp.writeFile(concatPath, concatLines.join(String.fromCharCode(10)) + String.fromCharCode(10), 'utf8');
   const file = path.join(masterDir, 'v' + input.version + '.mp4');
-  await run(findFfmpeg(), [
-    '-y',
-    '-f', 'concat',
-    '-safe', '0',
-    '-i', concatPath,
-    '-f', 'lavfi',
-    '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
-    '-c:v', 'libx264',
-    '-pix_fmt', 'yuv420p',
-    '-r', '30',
-    '-c:a', 'aac',
-    '-b:a', '128k',
-    '-t', String(expectedDurationSeconds),
-    '-shortest',
-    file
-  ]);
+  const motion = input.motion;
+  if (motion) {
+    await encodeMotion(input, motion, frameDir, file, expectedDurationSeconds, args => run(findFfmpeg(), args));
+  } else {
+    for (let index = 0; index < input.scenePaths.length; index += 1) {
+      const target = path.join(frameDir, 'frame-' + (index + 1) + '.png');
+      await fsp.copyFile(input.scenePaths[index], target);
+    }
+    const concatLines: string[] = [];
+    for (let index = 0; index < input.scenePaths.length; index += 1) {
+      const frame = path.join(frameDir, 'frame-' + (index + 1) + '.png');
+      concatLines.push("file '" + toPosix(frame) + "'");
+      concatLines.push('duration ' + input.sceneDurationsSeconds[index]);
+    }
+    // The concat demuxer needs a terminal frame to honor the final still's duration.
+    concatLines.push("file '" + toPosix(path.join(frameDir, 'frame-' + input.scenePaths.length + '.png')) + "'");
+    const concatPath = path.join(frameDir, 'concat.txt');
+    await fsp.writeFile(concatPath, concatLines.join(String.fromCharCode(10)) + String.fromCharCode(10), 'utf8');
+    await run(findFfmpeg(), [
+      '-y',
+      '-f', 'concat',
+      '-safe', '0',
+      '-i', concatPath,
+      '-f', 'lavfi',
+      '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+      '-c:v', 'libx264',
+      '-pix_fmt', 'yuv420p',
+      '-r', '30',
+      '-c:a', 'aac',
+      '-b:a', '128k',
+      '-t', String(expectedDurationSeconds),
+      '-shortest',
+      file
+    ]);
+  }
   const meta = await probe(file);
   return {
     relativePath: toPosix(path.relative(input.artifactRoot, file)),
