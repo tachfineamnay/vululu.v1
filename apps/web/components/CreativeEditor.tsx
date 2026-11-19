@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { MediaGenerationPanel } from './MediaGenerationPanel';
 import { CreativeActionPanel } from './CreativeActionPanel';
 import { FormatGuide, type Destination } from './FormatGuide';
 import { useUnsavedChanges } from '../lib/useUnsavedChanges';
@@ -235,6 +236,19 @@ export function CreativeEditor({ bundle }: { bundle: ProjectBundle }) {
           <>
             {!dirty && view?.version === expected && (
               <>
+                <MediaGenerationPanel
+                  key={`media:${expected}:${scene.key}`}
+                  project={bundle.project.id}
+                  revision={expected}
+                  sceneKey={scene.key}
+                  images={sources}
+                  short={spec.delivery?.kind === 'short' && scene.seconds <= 5}
+                  run={action}
+                  reload={async () => {
+                    await load();
+                    focus(index);
+                  }}
+                />
                 <CreativeActionPanel
                   key={`${expected}:${scene.key}`}
                   scene={scene}

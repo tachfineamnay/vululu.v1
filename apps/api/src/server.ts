@@ -19,6 +19,7 @@ import { assetRoutes } from './routes/assets';
 import { projectRoutes } from './routes/projects';
 import { creativeRoutes } from "./routes/creative";
 import {publishingRoutes} from './routes/publishing';
+import {mediaGenerationRoutes} from "./routes/mediaGeneration";
 import {marketingRoutes} from "./routes/marketing";
 import { executionRoutes } from './routes/execution';
 import { productionRoutes } from './routes/production';
@@ -125,6 +126,7 @@ export async function buildServer() {
   await app.register(creativeRoutes);
   await app.register(executionRoutes);
   await app.register(marketingRoutes);
+  await app.register(mediaGenerationRoutes);
   await app.register(publishingRoutes);
   await app.register(opsRoutes);
 

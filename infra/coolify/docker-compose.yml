@@ -109,6 +109,10 @@ services:
     restart: unless-stopped
     environment:
       <<: *api-env
+      MEDIA_GENERATION_ENABLED: ${MEDIA_GENERATION_ENABLED:-0}
+      # Presence hints only: provider secrets are injected into the worker, not the API/web.
+      MEDIA_IMAGE_CONFIGURED: ${REPLICATE_API_TOKEN:+1}
+      MEDIA_VIDEO_CONFIGURED: ${RUNWAYML_API_SECRET:+1}
     expose:
       - "3101"
     volumes:
@@ -167,6 +171,11 @@ services:
       <<: *api-env
       ORCHESTRATOR_MODE: hatchet
       HATCHET_CLIENT_TOKEN: ${HATCHET_CLIENT_TOKEN:-}
+      MEDIA_GENERATION_ENABLED: ${MEDIA_GENERATION_ENABLED:-0}
+      REPLICATE_API_TOKEN: ${REPLICATE_API_TOKEN:-}
+      RUNWAYML_API_SECRET: ${RUNWAYML_API_SECRET:-}
+    volumes:
+      - artifacts:/data/artifacts
     depends_on:
       migrate:
         condition: service_completed_successfully
