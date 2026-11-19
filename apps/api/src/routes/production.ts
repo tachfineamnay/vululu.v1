@@ -1,3 +1,4 @@
+import {requireDemo} from '../releaseMode';
 import {markExport} from '../infrastructure/results/exports';
 import fs from 'node:fs';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -8,7 +9,7 @@ import { parseByteRange } from '../infrastructure/http/byteRange';
 import { HttpError } from '../errors';
 import { actorOf, artifacts, bundles, durableStore, production } from '../application/container';
 
-function sendVideo(request: FastifyRequest, reply: FastifyReply, file: string, size: number) {
+function sendVideo(request: FastifyRequest, reply: FastifyReply, file: string, size: number, mime='video/mp4') {
   const range = parseByteRange(request.headers.range, size);
   if (range === null) {
     return reply.code(416).header('Content-Range', 'bytes */' + size).send();
@@ -18,12 +19,12 @@ function sendVideo(request: FastifyRequest, reply: FastifyReply, file: string, s
     reply.header('Content-Range', 'bytes ' + range.start + '-' + range.end + '/' + size);
     reply.header('Accept-Ranges', 'bytes');
     reply.header('Content-Length', String(range.end - range.start + 1));
-    reply.type('video/mp4');
+    reply.type(mime);
     return reply.send(fs.createReadStream(file, { start: range.start, end: range.end }));
   }
   reply.header('Content-Length', String(size));
   reply.header('Accept-Ranges', 'bytes');
-  reply.type('video/mp4');
+  reply.type(mime);
   return reply.send(fs.createReadStream(file));
 }
 
@@ -32,8 +33,9 @@ export async function sendArtifact(
   reply: FastifyReply,
   file: ArtifactFile
 ) {
+  reply.header('Cache-Control','private, no-store').header('X-Content-Type-Options','nosniff');
   if (file.absolutePath) {
-    return sendVideo(request, reply, file.absolutePath, file.size);
+    return sendVideo(request, reply, file.absolutePath, file.size,file.contentType);
   }
   if (!file.openRead) {
     return reply.code(404).send({ error: 'artifact_not_found' });
@@ -55,7 +57,7 @@ export async function sendArtifact(
 }
 
 export async function productionRoutes(app: FastifyInstance): Promise<void> {
-  app.post('/api/projects/:id/produce', { preHandler: [app.authenticate, rateLimitPreHandler(RATE_LIMITS.productionStart, (request) => 'produce:' + (request.currentUser?.id ?? 'anon') + ':' + String((request.params as { id?: string }).id ?? ''))] }, async (request, reply) => {
+  app.post('/api/projects/:id/produce', { preHandler: [app.authenticate, requireDemo, rateLimitPreHandler(RATE_LIMITS.productionStart, (request) => 'produce:' + (request.currentUser?.id ?? 'anon') + ':' + String((request.params as { id?: string }).id ?? ''))] }, async (request, reply) => {
     const params = request.params as { id: string };
     const result = await production.startProduction(actorOf(request.currentUser), params.id, { traceId: request.traceId, requestId: request.requestId });
     return reply.code(202).send({ job: result.job, jobRun: result.jobRun });
@@ -66,7 +68,7 @@ export async function productionRoutes(app: FastifyInstance): Promise<void> {
     return bundles.get(actorOf(request.currentUser), params.id);
   });
 
-  app.post('/api/projects/:id/scenes/:sceneKey/correct', { preHandler: [app.authenticate, rateLimitPreHandler(RATE_LIMITS.productionStart, (request) => 'correct:' + (request.currentUser?.id ?? 'anon') + ':' + String((request.params as { id?: string }).id ?? ''))] }, async (request, reply) => {
+  app.post('/api/projects/:id/scenes/:sceneKey/correct', { preHandler: [app.authenticate, requireDemo, rateLimitPreHandler(RATE_LIMITS.productionStart, (request) => 'correct:' + (request.currentUser?.id ?? 'anon') + ':' + String((request.params as { id?: string }).id ?? ''))] }, async (request, reply) => {
     const params = request.params as { id: string; sceneKey: string };
     const input = correctionInputSchema.parse(request.body);
     const result = await production.startCorrection(
@@ -121,7 +123,7 @@ export async function productionRoutes(app: FastifyInstance): Promise<void> {
     );
   });
 
-  app.post('/api/projects/:id/transfer', { preHandler: [app.authenticate, rateLimitPreHandler(RATE_LIMITS.productionApprove, (request) => 'transfer:' + (request.currentUser?.id ?? 'anon') + ':' + String((request.params as { id?: string }).id ?? ''))] }, async (request, reply) => {
+  app.post('/api/projects/:id/transfer', { preHandler: [app.authenticate, requireDemo, rateLimitPreHandler(RATE_LIMITS.productionApprove, (request) => 'transfer:' + (request.currentUser?.id ?? 'anon') + ':' + String((request.params as { id?: string }).id ?? ''))] }, async (request, reply) => {
     const params = request.params as { id: string };
     const result = await production.transfer(actorOf(request.currentUser), params.id);
     return reply.code(202).send(result);

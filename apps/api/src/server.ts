@@ -76,7 +76,7 @@ export async function buildServer() {
       requestId: request.requestId,
       traceId: request.traceId,
       method: request.method,
-      route: request.routeOptions?.url ?? request.url,
+      route: request.routeOptions?.url ?? 'unmatched',
       statusCode: reply.statusCode,
       durationMs: request.startAt ? Date.now() - request.startAt : undefined
     });
@@ -86,7 +86,7 @@ export async function buildServer() {
 
   app.setErrorHandler((error, request, reply) => {
     const respond = (statusCode: number, body: { error: string; message: string; issues?: unknown }) => {
-      logEvent('error', 'http.request.failed', { requestId: request.requestId, traceId: request.traceId, method: request.method, route: request.routeOptions?.url ?? request.url, statusCode, errorCode: body.error });
+      logEvent('error', 'http.request.failed', { requestId: request.requestId, traceId: request.traceId, method: request.method, route: request.routeOptions?.url ?? 'unmatched', statusCode, errorCode: body.error });
       return reply.code(statusCode).send(body);
     };
     const dbError = error as { name?: string; message?: string };

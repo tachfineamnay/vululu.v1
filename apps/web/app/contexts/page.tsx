@@ -1,5 +1,6 @@
 'use client';
 
+import {useWorkspace} from '../../components/WorkspacePreferences';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { api, type BrandContext, type ProjectSummary } from '../../lib/api';
@@ -7,6 +8,7 @@ import StudioNav from '../../components/StudioNav';
 import ContextReviewPanel from '../../components/ContextReviewPanel';
 
 export default function ContextsPage() {
+  const {t}=useWorkspace();
   const [items, setItems] = useState<BrandContext[]>([]);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [projectError, setProjectError] = useState('');
@@ -47,15 +49,15 @@ export default function ContextsPage() {
     const url = new URL(window.location.href); url.searchParams.set('context', id); window.history.replaceState(null, '', url);
   }
   return <div className="shell" data-vululu-theme="blue">
-    <a className="skip-link" href="#contexts-main">Aller au contenu</a>
+    <a className="skip-link" href="#contexts-main">{t("Aller au contenu","Skip to content")}</a>
     <StudioNav />
     <main id="contexts-main" tabIndex={-1} className="page" data-testid="contexts-page">
-      <section className="studio-head"><div><p className="eyebrow">Votre bibliothèque de contextes</p><h1>Marques et références</h1><p className="muted">Une marque, votre activité ou un univers créatif. Rassemblez ce que Vululu doit connaître pour vos prochains projets.</p></div><Link className="btn btn-primary" href="/contexts/new" data-testid="contexts-new">Nouveau contexte</Link></section>
+      <section className="studio-head"><div><p className="eyebrow">Votre bibliothèque de contextes</p><h1>{t("Marques et références","Business profiles")}</h1><p className="muted">Une marque, votre activité ou un univers créatif. Rassemblez ce que Vululu doit connaître pour vos prochains projets.</p></div><Link className="btn btn-primary" href="/contexts/new" data-testid="contexts-new">{t("Nouveau contexte","New profile")}</Link></section>
       {loading ? <p className="muted" role="status">Chargement des contextes…</p> : null}
-      {error ? <div className="stack"><p className="error" role="alert">{error}</p><button className="btn btn-secondary" type="button" onClick={() => setRetry((n) => n + 1)}>Réessayer</button><Link href="/login?next=/contexts" className="text-link">Se connecter</Link></div> : null}
-      {!loading && !error && !items.length ? <section className="card empty-state" data-testid="contexts-empty"><p className="eyebrow">Pour votre premier projet</p><h2>Vos idées ont un point de départ.</h2><p className="muted">Donnez un nom et une courte description à votre marque, activité ou univers. Vous pourrez ajouter vos références ensuite.</p><Link className="btn btn-primary" href="/contexts/new">Créer mon premier contexte</Link></section> : null}
+      {error ? <div className="stack"><p className="error" role="alert">{error}</p><button className="btn btn-secondary" type="button" onClick={() => setRetry((n) => n + 1)}>{t("Réessayer","Retry")}</button><Link href="/login?next=/contexts" className="text-link">{t("Se connecter","Sign in")}</Link></div> : null}
+      {!loading && !error && !items.length ? <section className="card empty-state" data-testid="contexts-empty"><p className="eyebrow">Pour votre premier projet</p><h2>{t("Vos idées ont un point de départ.","Give your ideas a starting point.")}</h2><p className="muted">Donnez un nom et une courte description à votre marque, activité ou univers. Vous pourrez ajouter vos références ensuite.</p><Link className="btn btn-primary" href="/contexts/new">{t("Créer mon premier contexte","Create my first profile")}</Link></section> : null}
       {!loading && !error && items.length ? <div className="contexts-layout">
-        <section className="card stack" aria-labelledby="contexts-list-heading"><div className="section-head"><h2 id="contexts-list-heading">Vos contextes</h2><span className="muted small">{items.length}</span></div>
+        <section className="card stack" aria-labelledby="contexts-list-heading"><div className="section-head"><h2 id="contexts-list-heading">{t("Vos contextes","Your profiles")}</h2><span className="muted small">{items.length}</span></div>
           <label className="label" htmlFor="context-search">Retrouver un contexte</label><input id="context-search" className="input" type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Nom, activité ou public" />
           <p className="hint" role="status">{filtered.length} résultat{filtered.length > 1 ? 's' : ''}</p>
           <ul className="contexts-list" data-testid="contexts-list">{filtered.map((context) => <li key={context.id}><button type="button" className={'context-card' + (context.id === selectedId ? ' is-active' : '')} disabled={busy} data-testid={'context-card-' + context.id} onClick={() => select(context.id)} aria-pressed={context.id === selectedId} aria-controls="context-detail"><span><strong>{context.name}</strong><span className="muted small context-excerpt">{context.description}</span></span></button></li>)}</ul>
@@ -67,7 +69,7 @@ export default function ContextsPage() {
             <section className="context-section stack" aria-label="Projets de ce contexte"><h3>Projets associés</h3>{projectsLoading ? <p role="status">Chargement des projets associés…</p> : projectError ? <p className="hint">{projectError}</p> : projects.some((p) => p.contextId === selected.id) ? <ul className="context-projects">{projects.filter((p) => p.contextId === selected.id).map((p) => <li key={p.id}><Link href={'/projects/' + encodeURIComponent(p.id)}>{p.title}</Link></li>)}</ul> : <p className="muted">Aucun projet associé. Votre contexte est prêt pour un premier brief.</p>}
               <Link className="btn btn-secondary" href={'/projects/new?context=' + encodeURIComponent(selected.id)}>Créer un projet avec ce contexte</Link>
             </section>
-          </> : <h2 id="context-detail-heading">Sélectionnez un contexte</h2>}
+          </> : <h2 id="context-detail-heading">{t("Sélectionnez un contexte","Select a profile")}</h2>}
         </section>
       </div> : null}
     </main>

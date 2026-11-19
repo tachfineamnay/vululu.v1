@@ -46,7 +46,7 @@ export async function inspectAsset(bytes: Buffer, mimeType: string): Promise<Ass
       const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'vululu-asset-'));
       try {
         const file = path.join(directory, 'input.' + extension);
-        await fs.writeFile(file, bytes);
+        await fs.writeFile(file, bytes,{mode:0o600});
         const ffmpeg = process.env.FFMPEG_PATH;
         const probe = process.env.FFPROBE_PATH || (ffmpeg ? path.join(path.dirname(ffmpeg), path.extname(ffmpeg) === '.exe' ? 'ffprobe.exe' : 'ffprobe') : 'ffprobe');
         const args = ['-v', 'error', '-protocol_whitelist', 'file,pipe', '-probesize', '2097152', '-analyzeduration', '2000000'];
@@ -58,10 +58,10 @@ export async function inspectAsset(bytes: Buffer, mimeType: string): Promise<Ass
         if (!Number.isFinite(duration) || duration <= 0 || duration > 600 || result.streams.length > 8) throw new Error('invalid');
         const stream = result.streams.find((item) => item.codec_type === (mimeType === 'video/mp4' ? 'video' : 'audio'));
         if (!stream || (mimeType === 'video/mp4' && stream.codec_name !== 'h264') || (mimeType === 'audio/mpeg' && (stream.codec_name !== 'mp3' || result.format.format_name !== 'mp3')) || (mimeType === 'audio/wav' && (!stream.codec_name.startsWith('pcm_') || result.format.format_name !== 'wav'))) throw new Error('invalid');
+        if(mimeType==='video/mp4'&&(!stream.width||!stream.height||stream.width*stream.height>16_000_000))throw new Error('invalid');
         metadata = { duration, codec: stream.codec_name, ...(stream.width ? { width: stream.width, height: stream.height! } : {}) };
       } finally {
-        await fs.rm(path.join(directory, 'input.' + extension), { force: true });
-        await fs.rmdir(directory);
+        await fs.rm(directory, { recursive:true, force: true });
       }
     }
   } catch (error) {

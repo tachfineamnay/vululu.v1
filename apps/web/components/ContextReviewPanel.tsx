@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { api, type BrandContext } from '../lib/api';
+import {useWorkspace} from './WorkspacePreferences';
 import { useUnsavedChanges } from '../lib/useUnsavedChanges';
 import ContextFields, { type ContextDraft } from './ContextFields';
 
@@ -18,6 +19,7 @@ function formOf(context: BrandContext): ContextDraft {
 export default function ContextReviewPanel({ contextId, onSaved, onBusy, onDirty }: {
   contextId: string; onSaved: (context: BrandContext) => void; onBusy: (busy: boolean) => void; onDirty: (dirty: boolean) => void;
 }) {
+  const {demo}=useWorkspace();
   const [review, setReview] = useState<Review | null>(null);
   const [draft, setDraft] = useState<ContextDraft | null>(null);
   const [proposal, setProposal] = useState<Proposal | null>(null);
@@ -86,7 +88,7 @@ export default function ContextReviewPanel({ contextId, onSaved, onBusy, onDirty
       <h3>Modifier les informations</h3>
       <p className="hint">Une confirmation crée une révision si le contenu change. Les productions déjà lancées gardent leur contexte figé.</p>
       <ContextFields value={draft} onChange={edit} disabled={busy} />
-      <details className="context-section"><summary>Proposition assistée de démonstration</summary><div className="stack">
+      {demo&&<details className="context-section"><summary>Proposition assistée de démonstration</summary><div className="stack">
         <p className="hint">MOCK : utilise la fiche enregistrée, sans consulter de site ni remplacer votre brouillon.</p>
         <button className="btn btn-secondary" type="button" onClick={analyze} disabled={busy}>Préparer une proposition démo</button>
         {proposal ? <section className="context-proposal stack" aria-label="Proposition simulée">
@@ -96,7 +98,7 @@ export default function ContextReviewPanel({ contextId, onSaved, onBusy, onDirty
           <h4>Hypothèses proposées</h4>
           {proposal.hypotheses.length ? <><ul className="list">{proposal.hypotheses.map((h) => <li key={h.field}><strong>{labels[h.field]} : {h.value}</strong><p className="hint">{h.reason}</p></li>)}</ul><button type="button" className="btn btn-secondary" disabled={busy} onClick={() => { setDraft((v) => v ? { ...v, ...Object.fromEntries(proposal.hypotheses.filter((h) => !v[h.field]?.trim()).map((h) => [h.field, h.value])) } : null); setConfirmed(false); setFeedback('Hypothèses ajoutées aux champs vides. Relisez-les avant confirmation.'); }}>Reprendre les hypothèses dans le brouillon</button></> : <p>Aucune hypothèse supplémentaire proposée.</p>}
         </section> : null}
-      </div></details>
+      </div></details>}
       <p className="hint" role="status">{busy ? 'Opération en cours…' : dirty ? 'Modifications non enregistrées.' : 'Relisez la fiche avant de la confirmer.'}</p>
       <label className="check-row"><input type="checkbox" checked={confirmed} disabled={busy} onChange={(e) => setConfirmed(e.target.checked)} />J’ai relu les informations et les hypothèses ; je confirme cette fiche.</label>
       <div className="actions"><button type="submit" className="btn btn-primary" disabled={busy || !confirmed}>{busy ? 'Enregistrement…' : 'Confirmer et enregistrer la fiche'}</button><button type="button" className="btn btn-ghost" disabled={busy} onClick={closeEditor}>Annuler les modifications</button></div>

@@ -81,3 +81,5 @@ Depuis la racine du dépôt :
 
     pwsh -File scripts/verify-foundation-docs.ps1
     pwsh -File scripts/check-secrets.ps1
+
+- [C13 · Revue de livraison, qualification et blocages](delivery/C13.md)

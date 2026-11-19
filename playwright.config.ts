@@ -7,6 +7,7 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   use: {
+    launchOptions: { executablePath: process.env.CHROMIUM_EXECUTABLE },
     baseURL: 'http://127.0.0.1:3100',
     trace: 'retain-on-failure'
   },
