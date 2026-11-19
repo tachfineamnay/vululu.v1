@@ -13,6 +13,7 @@ import { adminRoutes } from './routes/admin';
 import { adminReadRoutes } from './routes/adminRead';
 import { adminAgentRoutes } from './routes/adminAgents';
 import { contextRoutes } from './routes/contexts';
+import { calendarRoutes } from "./routes/calendar";
 import { campaignRoutes } from './routes/campaigns';
 import { assetRoutes } from './routes/assets';
 import { projectRoutes } from './routes/projects';
@@ -113,6 +114,7 @@ export async function buildServer() {
   await app.register(adminAgentRoutes);
   await app.register(contextRoutes);
   await app.register(campaignRoutes);
+  await app.register(calendarRoutes);
   await app.register(assetRoutes);
   await app.register(projectRoutes);
   await app.register(productionRoutes);

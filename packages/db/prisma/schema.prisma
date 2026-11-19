@@ -8,6 +8,7 @@ datasource db {
 }
 
 model User {
+  contentItems ContentItem[]
   id           String         @id @default(cuid())
   email        String         @unique
   passwordHash String
@@ -23,6 +24,7 @@ model User {
 }
 
 model BrandContext {
+  offers ConfirmedOffer[]
   id             String   @id @default(cuid())
   userId         String
   name           String
@@ -43,6 +45,7 @@ model BrandContext {
 }
 
 model Campaign {
+  contentItems ContentItem[]
   id          String   @id @default(cuid())
   userId      String
   name        String
@@ -55,6 +58,7 @@ model Campaign {
 }
 
 model Project {
+  contentItems ContentItem[]
   id          String   @id @default(cuid())
   userId      String
   contextId   String
@@ -637,4 +641,49 @@ model WorkerHeartbeat {
   updatedAt  DateTime @updatedAt
 
   @@index([lastSeenAt])
+}
+
+// An offer exists only after explicit owner confirmation. No inferred offers.
+model ConfirmedOffer {
+  id String @id @default(cuid())
+  contextId String
+  name String
+  context BrandContext @relation(fields: [contextId], references: [id], onDelete: Cascade)
+  items ContentItem[]
+  @@unique([contextId, name])
+}
+
+model ContentItem {
+  id String @id
+  userId String
+  offerId String
+  campaignId String?
+  projectId String?
+  title String
+  audience String
+  objective String
+  status String
+  plannedAt DateTime @db.Timestamptz(3)
+  timeZone String
+  variants Json
+  archived Boolean @default(false)
+  version Int
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  offer ConfirmedOffer @relation(fields: [offerId], references: [id], onDelete: Restrict)
+  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  revisions ContentRevision[]
+  @@index([userId, plannedAt])
+}
+
+model ContentRevision {
+  itemId String
+  version Int
+  requestId String
+  digest String
+  snapshot Json
+  createdAt DateTime @default(now())
+  item ContentItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  @@id([itemId, version])
+  @@unique([itemId, requestId])
 }

@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 
 const PRIMARY = [
   { key: 'home', href: '/', label: 'Mes projets' },
+  { key: 'calendar', href: '/calendar', label: 'Calendrier' },
   { key: 'contexts', href: '/contexts', label: 'Marques et références' },
   { key: 'creations', href: '/creations', label: 'Mes créations' }
 ];
