@@ -17,12 +17,7 @@ export function modelInput(c: MarketingContext) {
     hasTone: c.toneDeclared
   };
 }
-export interface LlmProvider {
-  generate(
-    input: ReturnType<typeof modelInput>,
-    options: { signal: AbortSignal; maxCostCents: number; idempotencyKey: string }
-  ): Promise<unknown>;
-}
+export type LlmProvider = import('../../application/structuredGeneration').LlmProvider<ReturnType<typeof modelInput>>;
 const response = z.discriminatedUnion('status', [
   z.object({ status: z.literal('complete'), recipe: z.unknown(), costCents: z.int().nonnegative() }).strict(),
   z

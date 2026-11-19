@@ -106,3 +106,4 @@ export * from './creative';
 export * from './compositionGuide';
 
 export * from './marketing';
+export * from './creativeAction';

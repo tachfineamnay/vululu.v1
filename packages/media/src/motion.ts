@@ -24,7 +24,7 @@ export async function encodeMotion(
         ? `[0:v]${clipCrop(motion.width, clip.height)},pad=${motion.width}:${motion.height}:0:0[b];[b][1:v]overlay=0:0,`
         : '[0:v]') +
       'fps=30,setsar=1' +
-      (motion.dip ? `,fade=t=in:d=0.12,fade=t=out:st=${seconds - 0.12}:d=0.12` : '') +
+      ((motion.sceneDip?.[i] ?? motion.dip) ? `,fade=t=in:d=0.12,fade=t=out:st=${seconds - 0.12}:d=0.12` : '') +
       '[out]';
     await run([
       '-loglevel',

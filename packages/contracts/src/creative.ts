@@ -55,6 +55,8 @@ export const creativeSpec = z
       .array(
         z.object({
           key: z.string().regex(/^SCENE-\d{3,8}$/),
+          background: color.optional(),
+          transition: z.enum(['cut', 'dip']).optional(),
           seconds: z.number().min(0.5).max(30).multipleOf(0.5),
           clip: z
             .object({ versionId: mediaId, start: z.number().min(0).max(600), height: unit.min(0.1) })
@@ -66,7 +68,8 @@ export const creativeSpec = z
   })
   .superRefine((s, ctx) => {
     const invalid = (message: string) => ctx.addIssue({ code: 'custom', message });
-    if (new Set(s.scenes.map((v) => v.key)).size !== s.scenes.length) invalid('Identifiants de scène répétés.');
+    if (new Set(s.scenes.map((v) => v.key)).size !== s.scenes.length)
+      invalid('Identifiants de scène répétés.');
     if (s.scenes.reduce((n, v) => n + v.seconds, 0) > 180) invalid('Durée totale maximale : 180 secondes.');
     if (s.delivery) {
       const [w, h] = outputSize[s.delivery.kind];
@@ -79,6 +82,9 @@ export const creativeSpec = z
       if (s.delivery.kind !== 'short' && s.delivery.kind !== 'carousel' && s.scenes.length !== 1)
         invalid('Une seule image par publication.');
     } else if (s.scenes.some((scene) => scene.clip)) invalid('Sélectionnez le format vidéo courte.');
+    for (const scene of s.scenes)
+      if (scene.transition && s.delivery?.kind !== 'short')
+        invalid('Transition réservée au format vidéo courte.');
     for (const scene of s.scenes)
       for (const l of scene.layers) {
         if (l.type === 'text' && l.minSize && l.minSize > l.size)

@@ -5,7 +5,9 @@ import { createRequire } from 'node:module';
 import { expect, it, vi } from 'vitest';
 import bcrypt from 'bcryptjs';
 vi.hoisted(() => {
-  const url = new URL(process.env.DATABASE_URL_TEST || 'postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test');
+  const url = new URL(
+    process.env.DATABASE_URL_TEST || 'postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test'
+  );
   if (!['localhost', '127.0.0.1'].includes(url.hostname) || !url.pathname.endsWith('_test'))
     throw new Error('Disposable local test DB required');
   Object.assign(process.env, {
@@ -167,8 +169,30 @@ it('seals an approved master, changes only CTA 2, retrieves both masters and res
     await post(base, { expectedVersion: 0, spec });
     const m1 = await post(base + '/1/render', {});
     await post(base + '/1/approve', { checksum: m1.master.sha256 });
-    (spec.scenes[1].layers[3] as Extract<CreativeLayer, { type: 'text' }>).text = 'Réserver une dégustation';
-    await post(base, { expectedVersion: 1, spec });
+    const target = { projectId: project.id, sceneKey: 'SCENE-001' };
+    const proposal = await post(base + '/actions/translate', {
+      target,
+      expectedRevision: 1,
+      prompt: 'Scène 2 : CTA "Réserver une dégustation" ; couleur #224466'
+    });
+    expect(proposal.after.background).toBe('#224466');
+    expect(proposal.after.layers[3].text).toBe('Réserver une dégustation');
+    const payload = {
+      action: proposal.action,
+      surface: proposal.surface,
+      digest: proposal.digest,
+      approved: true
+    };
+    const apply = (body: object, who = headers) =>
+      app.inject({ method: 'POST', url: base + '/actions/apply', headers: who, payload: body });
+    expect((await apply(payload, other)).statusCode).toBe(404);
+    expect((await apply({ ...payload, approved: false })).statusCode).toBe(400);
+    expect(
+      (await apply({ ...payload, surface: { ...proposal.surface, html: '<script>no</script>' } })).statusCode
+    ).toBe(400);
+    expect((await apply({ ...payload, digest: '0'.repeat(64) })).statusCode).toBe(409);
+    const concurrent = await Promise.all([apply(payload), apply(payload)]);
+    expect(concurrent.map((r) => r.statusCode).sort()).toEqual([200, 409]);
     const writes = vi.spyOn(LocalFilesystemArtifactStorage.prototype, 'putObject');
     const m2 = await post(base + '/2/render', {});
     expect(
@@ -195,18 +219,24 @@ it('seals an approved master, changes only CTA 2, retrieves both masters and res
         if (evidence) await fs.writeFile(path.join(evidence, `${f.sceneKey}-v${v}.png`), png);
       }
     }
-    if (evidence) await fs.writeFile(path.join(evidence, 'manifests.json'), JSON.stringify([m1, m2], null, 2));
+    if (evidence)
+      await fs.writeFile(path.join(evidence, 'manifests.json'), JSON.stringify([m1, m2], null, 2));
     expect(
-      (await app.inject({ method: 'POST', url: base, headers, payload: { spec, expectedVersion: 1 } })).statusCode
+      (await app.inject({ method: 'POST', url: base, headers, payload: { spec, expectedVersion: 1 } }))
+        .statusCode
     ).toBe(409);
-    expect((await app.inject({ method: 'GET', url: base + '/1/master', headers: other })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: base + '/1/master', headers: other })).statusCode).toBe(
+      404
+    );
     const original = JSON.parse((await get(base + '/1')).toString());
     expect(original.approvedAt).toBeTruthy();
     const restored = await post(base + '/1/restore', { expectedVersion: 2 });
     expect(restored.version).toBe(3);
     expect(restored.spec).toEqual(original.spec);
     const raced = await Promise.all(
-      [1, 2].map(() => app.inject({ method: 'POST', url: base, headers, payload: { expectedVersion: 3, spec } }))
+      [1, 2].map(() =>
+        app.inject({ method: 'POST', url: base, headers, payload: { expectedVersion: 3, spec } })
+      )
     );
     expect(raced.map((r) => r.statusCode).sort()).toEqual([200, 409]);
     expect(
