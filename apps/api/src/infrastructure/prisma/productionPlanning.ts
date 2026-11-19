@@ -16,7 +16,9 @@ export class PrismaProductionPlanning implements ProductionPlanningPort {
       const settings = normalizeProductionSettings(project.platform as Platform, project.format as ProjectFormat, (brief.settings as unknown as ProductionSettings | null) ?? { defaultSceneDurationSeconds: project.sceneDurationSeconds, maxMockCents: 100 });
       const durable = env.orchestratorMode === 'hatchet';
       const policy = await captureRunPolicy(tx, { steps: durable ? [...DURABLE_PRODUCTION_STEPS] : ['snapshot', 'render-scenes', 'assemble-master', 'qa'], durable, usage: project.usage, maxMockCents: settings.maxMockCents });
-      const sceneDurationsSeconds = Array.from({ length: plannedSceneCount(project.format as ProjectFormat) }, (_, index) => {
+      const sceneDurationsSeconds = project.storyboardBriefVersion === brief.version && project.scenes.length
+        ? project.scenes.map((s) => s.durationSeconds)
+        : Array.from({ length: plannedSceneCount(project.format as ProjectFormat) }, (_, index) => {
         const scene = project.scenes.find((value) => value.sceneKey === 'SCENE-' + String(index + 1).padStart(3, '0'));
         return scene && (project.storyboardBriefVersion === brief.version || scene.usesBriefDuration !== true) ? scene.durationSeconds : settings.defaultSceneDurationSeconds;
       });

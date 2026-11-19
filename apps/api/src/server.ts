@@ -17,6 +17,7 @@ import { calendarRoutes } from "./routes/calendar";
 import { campaignRoutes } from './routes/campaigns';
 import { assetRoutes } from './routes/assets';
 import { projectRoutes } from './routes/projects';
+import { creativeRoutes } from "./routes/creative";
 import { productionRoutes } from './routes/production';
 import { opsRoutes } from './routes/ops';
 
@@ -118,6 +119,7 @@ export async function buildServer() {
   await app.register(assetRoutes);
   await app.register(projectRoutes);
   await app.register(productionRoutes);
+  await app.register(creativeRoutes);
   await app.register(opsRoutes);
 
   app.get('/api/health', async () => {

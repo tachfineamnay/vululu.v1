@@ -5,6 +5,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, patchJson, postJson, ProjectBundle, type ProductionPlanView, type MessageProposal } from '../lib/api';
 import StudioNav from './StudioNav';
+import { CreativeEditor } from "./CreativeEditor";
 import ConversationProposalCard from './ConversationProposalCard';
 import { useUnsavedChanges } from '../lib/useUnsavedChanges';
 import ProjectJourney from './ProjectJourney';
@@ -411,6 +412,7 @@ export default function ProjectStudio({ id }: { id: string }) {
           <div className="studio-head-actions"><span className={'badge status-' + bundle.project.status} data-testid="status-badge">{statusLabel(bundle.project.status)}</span><div className="stack"><button id="produce" className="btn btn-primary" data-testid="produce" aria-describedby={!canProduce ? 'produce-reason' : undefined} onClick={produce} disabled={!canProduce || busy === 'produce'}>Produire la création</button>{!canProduce ? <p id="produce-reason" className="hint">{productionReason}</p> : null}</div></div>
         </section>
 
+        <CreativeEditor bundle={bundle}/>
         <details className="studio-demo">
           <summary>Rendu sans IA générative · Transfert Postiz simulé</summary>
           <div className="studio-demo-details">

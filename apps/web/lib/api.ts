@@ -200,7 +200,7 @@ function readCookie(name: string): string {
   return '';
 }
 
-export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+export async function apiResponse(path: string, init?: RequestInit): Promise<Response> {
   const method = (init && init.method ? init.method : 'GET').toUpperCase();
   const headers: Record<string, string> = init && init.body ? { 'Content-Type': 'application/json' } : {};
   if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
@@ -227,7 +227,11 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new Error(message);
   }
-  return (await response.json()) as T;
+  return response;
+}
+
+export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  return (await (await apiResponse(path, init)).json()) as T;
 }
 
 export function postJson<T>(path: string, body: unknown): Promise<T> {

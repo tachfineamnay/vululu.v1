@@ -100,3 +100,5 @@ export * from './admin';
 export const providerCredentialInputSchema = z.object({ apiKey: z.string().max(4096) }).strict();
 
 export * from './calendar';
+
+export * from './creative';

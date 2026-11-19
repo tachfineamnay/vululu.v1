@@ -4,8 +4,8 @@ import type { Actor, ArtifactAccessPort, ArtifactFile } from '../ports';
 export class ArtifactAccessUseCases {
   constructor(private readonly access: ArtifactAccessPort) {}
 
-  getSceneImage(actor: Actor, projectId: string, sceneKey: string): Promise<ArtifactFile> {
-    return this.access.getSceneImage(actor.id, projectId, sceneKey);
+  getSceneImage(actor: Actor, projectId: string, sceneKey: string, requested?: number): Promise<ArtifactFile> {
+    return this.access.getSceneImage(actor.id, projectId, sceneKey, requested);
   }
 
   getMaster(actor: Actor, projectId: string, version?: number): Promise<ArtifactFile> {
