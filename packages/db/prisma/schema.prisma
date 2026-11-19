@@ -60,6 +60,7 @@ model Campaign {
 }
 
 model Project {
+  marketingRevisions MarketingRevision[]
   executionOperations ExecutionOperation[]
   creativeRevisions CreativeRevision[]
   contentItems ContentItem[]
@@ -722,6 +723,7 @@ model ExecutionAccount {
 }
 
 model ExecutionOperation {
+  marketingResult MarketingRevision?
   id String @id
   accountId String
   projectId String
@@ -785,4 +787,28 @@ model PublicationEvent {
   digest String
   createdAt DateTime @default(now())
   @@id([requestId,eventId])
+}
+
+model MarketingRevision {
+  projectId String
+  version Int
+  project Project @relation(fields:[projectId],references:[id],onDelete:Restrict)
+  requestId String
+  requestDigest String
+  parentVersion Int?
+  operationId String? @unique
+  operation ExecutionOperation? @relation(fields:[operationId],references:[id],onDelete:Restrict,onUpdate:NoAction)
+  parent MarketingRevision? @relation("marketing_parent",fields:[projectId,parentVersion],references:[projectId,version],onDelete:Restrict,onUpdate:NoAction)
+  children MarketingRevision[] @relation("marketing_parent")
+  context Json
+  recipe Json
+  result Json
+  digest String
+  origin String
+  reason String
+  approvedAt DateTime?
+  approvedBy String?
+  createdAt DateTime @default(now())
+  @@id([projectId,version])
+  @@unique([projectId,requestId])
 }
