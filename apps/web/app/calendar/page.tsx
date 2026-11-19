@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import type { CalendarItem, Content } from '@vululu/contracts';
 import StudioNav from '../../components/StudioNav';
 import { api, postJson, type BrandContext, type CampaignSummary, type ProjectSummary } from '../../lib/api';
+import { PublishingPanel } from './PublishingPanel';
 import { Editor, labels } from './Editor';
 import { dayKey, period, shift } from './dates';
 import { suggestions, type Offer } from './suggestions';
@@ -176,19 +177,22 @@ export default function CalendarPage() {
         )}
         {notice && <p role="status">{notice}</p>}
         {draft && refs ? (
-          <Editor
-            key={draft.id}
-            initial={draft}
-            {...refs}
-            close={() => edit(null)}
-            saved={(d, isArchived) => {
-              edit(null);
-              archives(isArchived);
-              setAnchor(d);
-              refresh((r) => r + 1);
-              say('Modification enregistrée.');
-            }}
-          />
+          <>
+            <Editor
+              key={draft.id}
+              initial={draft}
+              {...refs}
+              close={() => edit(null)}
+              saved={(d, isArchived) => {
+                edit(null);
+                archives(isArchived);
+                setAnchor(d);
+                refresh((r) => r + 1);
+                say('Modification enregistrée.');
+              }}
+            />
+            {draft.version > 0 && <PublishingPanel key={draft.id} id={draft.id} />}
+          </>
         ) : (
           <>
             {refs && (

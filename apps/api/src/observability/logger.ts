@@ -16,7 +16,7 @@ const REDACTED_KEYS = new Set([
   'signedUrl',
   'session',
   'credentials',
-  'apikey', 'encryptedvalue', 'ciphertext', 'provider_credentials_encryption_key'
+  'relaykey', 'tokencipher', 'hookcipher', 'x-vululu-signature', 'publishing_encryption_key', 'apikey', 'encryptedvalue', 'ciphertext', 'provider_credentials_encryption_key'
 ]);
 
 function redact(value: unknown): unknown {

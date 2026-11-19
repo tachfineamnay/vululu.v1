@@ -36,7 +36,7 @@ export async function executionRoutes(app: FastifyInstance) {
       .object({
         limitCents: z.int().min(0).max(1000000000),
         enabled: z.boolean(),
-        tools: z.array(toolSchema).max(4)
+        tools: z.array(toolSchema).max(Object.keys(tools).length)
       })
       .strict()
       .parse(r.body);

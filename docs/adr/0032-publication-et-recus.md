@@ -1,0 +1,7 @@
+# 0032 — Le calendrier n’est pas un reçu de publication
+
+Une déclaration éditoriale, un transfert historique `postiz-mock`, une opération C05 terminée et une publication réseau sont quatre faits différents. C06 ne convertit aucun des trois premiers en quatrième. La révision Studio approuvée doit viser la version courante du contenu et la bonne plateforme. La légende et le CTA viennent de cette version ; les pièces jointes proviennent du manifeste scellé et sont vérifiées avant utilisation.
+
+Le port `PublishingProvider` sépare le transport des droits, de l’approbation, du stockage des secrets et de l’état. Le worker C05 exécute une commande de programmation ou d’annulation nommée et approuvée. La clé de tentative entre dans l’empreinte de ces nouvelles commandes, sans modifier celle des outils C05 existants. Une contrainte partielle PostgreSQL empêche deux effets actifs sur le même contenu et la même connexion, même après changement de version éditoriale. Les notifications sont rejouables, pas les émissions ambiguës.
+
+La réponse à `POST /posts` fournit un identifiant **Postiz**, jamais une preuve LinkedIn. La confirmation vient d’un événement authentifié comportant la référence réseau. Un relais de confiance peut vérifier l’API Postiz en lecture avant de signer cet événement. Les notifications natives non signées ne sont pas une autorité. L’export manuel est indépendant du transport, ne consomme pas de crédit et n’écrit aucun reçu. Les anciennes routes de Studio et de transfert mock restent en place.

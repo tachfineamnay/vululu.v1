@@ -4,13 +4,18 @@ import { PrismaCreativeRepository } from '../prisma/creativeRepository';
 import { LocalFilesystemArtifactStorage } from '../storage/localArtifactStorage';
 import { env } from '../../env';
 import type { EnginePort } from './registry';
+import { dispatchPublication } from '../publishing/service';
+import { PostizProvider } from '../publishing/provider';
 import { recover } from './broker';
-// Closed dispatch table: no network transport, dynamic imports, credentials or arbitrary URLs.
+// Closed dispatch table. Only an explicitly enabled Postiz write can leave the local Studio.
 export function studioEngine(creativeStudio: CreativeStudio): EnginePort {
   return {
     async invoke(job, signal) {
       signal.throwIfAborted();
       switch (job.tool) {
+        case 'postiz.schedule@1':
+        case 'postiz.cancel@1':
+          return dispatchPublication(job, creativeStudio, new PostizProvider(), signal);
         case 'studio.inspect@1':
           await creativeStudio.get(job.accountId, job.projectId, job.revision);
           return { costCents: 0 };

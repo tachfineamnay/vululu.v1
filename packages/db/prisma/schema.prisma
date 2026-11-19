@@ -8,6 +8,7 @@ datasource db {
 }
 
 model User {
+  publishingConnections PublishingConnection[]
   executionAccount ExecutionAccount?
   contentItems ContentItem[]
   id           String         @id @default(cuid())
@@ -693,6 +694,7 @@ model ContentRevision {
 }
 
 model CreativeRevision {
+  publicationRequests PublicationRequest[]
   contentItemId String?
   contentVersion Int?
   calendarRevision ContentRevision? @relation(fields:[contentItemId,contentVersion],references:[itemId,version],onDelete:Restrict,map:"CreativeRevision_calendar_fkey")
@@ -741,4 +743,46 @@ model ExecutionOperation {
   @@unique([accountId,key])
   @@index([state,notifyAfter])
   @@index([state,claimUntil])
+}
+
+model PublishingConnection {
+  id String @id
+  ownerId String
+  user User @relation(fields:[ownerId],references:[id],onDelete:Restrict)
+  provider String
+  platform String
+  channel String
+  tokenCipher String
+  hookCipher String
+  expiresAt DateTime
+  revoked Boolean @default(false)
+  requests PublicationRequest[]
+  @@unique([ownerId,provider,channel])
+}
+model PublicationRequest {
+  id String @id
+  submitKey String @unique
+  cancelKey String @unique
+  connectionId String
+  connection PublishingConnection @relation(fields:[connectionId],references:[id],onDelete:Restrict)
+  projectId String
+  revision Int
+  creative CreativeRevision @relation(fields:[projectId,revision],references:[projectId,version],onDelete:Restrict)
+  itemId String
+  itemVersion Int
+  state String @default("PREPARED")
+  reason String?
+  remoteId String?
+  networkReceipt String?
+  events PublicationEvent[]
+  @@unique([itemId,itemVersion,connectionId])
+  @@unique([connectionId,remoteId])
+}
+model PublicationEvent {
+  requestId String
+  eventId String
+  request PublicationRequest @relation(fields:[requestId],references:[id],onDelete:Restrict)
+  digest String
+  createdAt DateTime @default(now())
+  @@id([requestId,eventId])
 }

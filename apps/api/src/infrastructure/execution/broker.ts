@@ -69,7 +69,7 @@ async function reserve(tx: Tx, o: Op, actor: string) {
 export async function propose(actor: string, projectId: string, input: unknown) {
   const p = proposal.parse(input);
   const digest = createHash('sha256')
-    .update(JSON.stringify([projectId, p.tool, p.revision]))
+    .update(JSON.stringify([projectId, p.tool, p.revision,...(p.tool.startsWith('postiz.')?[p.key]:[])]))
     .digest('hex');
   return prisma.$transaction(async (tx) => {
     await allowed(tx, actor, projectId, p.tool, p.revision);
