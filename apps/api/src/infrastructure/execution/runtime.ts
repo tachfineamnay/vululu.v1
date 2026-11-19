@@ -6,6 +6,7 @@ import { env } from '../../env';
 import type { EnginePort } from './registry';
 import { dispatchPublication } from '../publishing/service';
 import { PostizProvider } from '../publishing/provider';
+import {generateClaim} from '../marketing/service';
 import { recover } from './broker';
 // Closed dispatch table. Only an explicitly enabled Postiz write can leave the local Studio.
 export function studioEngine(creativeStudio: CreativeStudio): EnginePort {
@@ -13,6 +14,7 @@ export function studioEngine(creativeStudio: CreativeStudio): EnginePort {
     async invoke(job, signal) {
       signal.throwIfAborted();
       switch (job.tool) {
+        case 'marketing.plan@1':return generateClaim(job,signal);
         case 'postiz.schedule@1':
         case 'postiz.cancel@1':
           return dispatchPublication(job, creativeStudio, new PostizProvider(), signal);

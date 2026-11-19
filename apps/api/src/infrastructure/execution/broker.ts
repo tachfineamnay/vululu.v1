@@ -40,6 +40,7 @@ async function owned(tx: Tx, id: string, actor: string) {
 async function allowed(tx: Tx, actor: string, id: string, tool: keyof typeof tools, revision: number) {
   const a = await lock(tx, actor);
   if (!a.enabled || !a.tools.includes(tool)) deny(403, 'tool_disabled');
+  if(tool==='marketing.plan@1'){if(!await tx.marketingRevision.count({where:{projectId:id,version:revision,project:{userId:actor}}}))return missing();return a;}
   const r = await tx.creativeRevision.findFirst({
     where: { projectId: id, version: revision, project: { userId: actor } },
     select: { approvedAt: true }
@@ -69,10 +70,11 @@ async function reserve(tx: Tx, o: Op, actor: string) {
 export async function propose(actor: string, projectId: string, input: unknown) {
   const p = proposal.parse(input);
   const digest = createHash('sha256')
-    .update(JSON.stringify([projectId, p.tool, p.revision,...(p.tool.startsWith('postiz.')?[p.key]:[])]))
+    .update(JSON.stringify([projectId, p.tool, p.revision,...((p.tool.startsWith('postiz.')||p.tool==='marketing.plan@1')?[p.key]:[])]))
     .digest('hex');
   return prisma.$transaction(async (tx) => {
     await allowed(tx, actor, projectId, p.tool, p.revision);
+    if(p.tool==='marketing.plan@1'&&!(await tx.marketingRevision.count({where:{projectId,version:p.revision,requestId:p.key}})))return missing();
     const prev = await tx.executionOperation.findUnique({
       where: { accountId_key: { accountId: actor, key: p.key } }
     });

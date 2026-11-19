@@ -5,6 +5,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, patchJson, postJson, ProjectBundle, type ProductionPlanView, type MessageProposal } from '../lib/api';
 import StudioNav from './StudioNav';
+import {MarketingAssistant} from "./MarketingAssistant";
 import { CreativeEditor } from "./CreativeEditor";
 import ConversationProposalCard from './ConversationProposalCard';
 import { useUnsavedChanges } from '../lib/useUnsavedChanges';
@@ -413,6 +414,7 @@ export default function ProjectStudio({ id }: { id: string }) {
         </section>
 
         <CreativeEditor bundle={bundle}/>
+        <MarketingAssistant key={bundle.project.id} project={bundle.project.id} context={bundle.context.id}/>
         <details className="studio-demo">
           <summary>Rendu sans IA générative · Transfert Postiz simulé</summary>
           <div className="studio-demo-details">
