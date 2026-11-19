@@ -25,7 +25,7 @@ function failClosedDefault(): boolean {
 }
 
 export async function consumeRateLimit(key: string, policy: RateLimitPolicy): Promise<RateLimitResult> {
-  if (!enabled()) {
+  if (!enabled() && !policy.failClosed) {
     return { allowed: true, count: 0, remaining: policy.limit, retryAfterSeconds: 0 };
   }
   const now = new Date();
@@ -58,7 +58,7 @@ export async function consumeRateLimit(key: string, policy: RateLimitPolicy): Pr
     logEvent('error', 'rate_limit.backend_error', {
       policy: policy.name,
       failClosed,
-      error: error instanceof Error ? error.message : 'unknown'
+      error: error instanceof Error ? error.name : 'unknown'
     });
     if (failClosed) {
       return { allowed: false, count: policy.limit + 1, remaining: 0, retryAfterSeconds: 1 };
