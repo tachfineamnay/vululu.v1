@@ -18,6 +18,7 @@ import { campaignRoutes } from './routes/campaigns';
 import { assetRoutes } from './routes/assets';
 import { projectRoutes } from './routes/projects';
 import { creativeRoutes } from "./routes/creative";
+import {publishingRoutes} from './routes/publishing';
 import { executionRoutes } from './routes/execution';
 import { productionRoutes } from './routes/production';
 import { opsRoutes } from './routes/ops';
@@ -122,6 +123,7 @@ export async function buildServer() {
   await app.register(productionRoutes);
   await app.register(creativeRoutes);
   await app.register(executionRoutes);
+  await app.register(publishingRoutes);
   await app.register(opsRoutes);
 
   app.get('/api/health', async () => {

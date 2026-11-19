@@ -1,6 +1,8 @@
 import { z } from 'zod';
 // Version is part of each immutable tool identity. No dynamic URLs, secrets, prompts or provider selection.
 export const tools = {
+  'postiz.schedule@1': { provider: 'postiz@1', action: 'WRITE/PUBLISH', maxCents: 0 },
+  'postiz.cancel@1': { provider: 'postiz@1', action: 'WRITE/PUBLISH', maxCents: 0 },
   'studio.inspect@1': { provider: 'studio@1', action: 'READ', maxCents: 0 },
   'studio.render@1': { provider: 'studio@1', action: 'GENERATE', maxCents: 0 },
   'sandbox.generate@1': { provider: 'sandbox@1', action: 'GENERATE', maxCents: 10 },

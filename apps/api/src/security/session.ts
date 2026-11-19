@@ -16,7 +16,7 @@ export const CSRF_HEADER = 'x-csrf-token';
 export const MUTATING_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
 
 /** Login and activation are public: they cannot rely on a session-bound CSRF hash. */
-export const CSRF_EXEMPT_PATHS = new Set(['/api/auth/login', '/api/auth/activate']);
+export const CSRF_EXEMPT_PATHS = new Set(['/api/auth/login', '/api/auth/activate', '/api/publishing/relay']);
 
 const LAST_USED_REFRESH_MS = 5 * 60 * 1000;
 
