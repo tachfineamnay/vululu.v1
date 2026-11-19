@@ -5,7 +5,14 @@ import { zipSync, strToU8 } from 'fflate';
 import { buffer } from 'node:stream/consumers';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import { creativeSpec, creativeWrite } from '@vululu/contracts';
+import { editScene, previewOf, localTranslator } from '../application/creativeActions';
+import {
+  actionScope,
+  creativeAction,
+  creativeApproval,
+  creativeSpec,
+  creativeWrite
+} from '@vululu/contracts';
 import { creativeStudio as service } from '../application/container';
 import { sendArtifact } from './production';
 import { rateLimitPreHandler, RATE_LIMITS } from '../infrastructure/security/rateLimiter';
@@ -16,6 +23,62 @@ export async function creativeRoutes(app: FastifyInstance) {
   const base = '/api/projects/:id/creative',
     id = z.object({ id: z.string() }),
     revision = id.extend({ version: z.coerce.number().int().positive() });
+  const intent = actionScope.extend({ prompt: z.string().trim().min(1).max(2048) });
+  const scoped = async (user: string, project: string, scope: z.infer<typeof actionScope>) => {
+    if (scope.target.projectId !== project)
+      throw new HttpError(404, 'creative_not_found', 'Projet introuvable.');
+    const row = await service.get(user, project, scope.expectedRevision);
+    if ((await service.history(user, project))[0]?.version !== scope.expectedRevision)
+      throw new HttpError(409, 'creative_conflict', 'Rechargez la dernière révision.');
+    return row;
+  };
+  app.post(base + '/actions/translate', auth, async (r) => {
+    const b = intent.parse(r.body),
+      row = await scoped(r.currentUser!.id, id.parse(r.params).id, b);
+    const incomplete =
+      /^(?:change the CTA and colou?r of scene|modifier le CTA et la couleur de la scène) (two|deux|\d+)(?: without modifying the other scenes| sans modifier les autres scènes)?[.!]?$/i.exec(
+        b.prompt
+      );
+    if (incomplete) {
+      const scene = row.spec.scenes[(/^two$|^deux$/i.test(incomplete[1]) ? 2 : Number(incomplete[1])) - 1];
+      if (!scene) throw new HttpError(422, 'creative_action_invalid', 'Scène introuvable.');
+      return { needs: 'cta-and-color', sceneKey: scene.key };
+    }
+    const proposal = z
+      .strictObject({
+        sceneKey: actionScope.shape.target.shape.sceneKey,
+        changes: creativeAction.shape.changes
+      })
+      .parse(
+        await localTranslator.generate(
+          { prompt: b.prompt, keys: row.spec.scenes.map((s) => s.key), selected: b.target.sceneKey },
+          { signal: AbortSignal.timeout(1000), maxCostCents: 0, idempotencyKey: r.id }
+        )
+      );
+    return previewOf(row.spec, {
+      schemaVersion: 1,
+      target: { ...b.target, sceneKey: proposal.sceneKey },
+      expectedRevision: b.expectedRevision,
+      changes: proposal.changes,
+      authorization: 'project-owner:confirm',
+      estimatedCostCents: 0
+    });
+  });
+  app.post(base + '/actions/preview', auth, async (r) => {
+    const a = creativeAction.parse(r.body),
+      row = await scoped(r.currentUser!.id, id.parse(r.params).id, a);
+    return previewOf(row.spec, a);
+  });
+  app.post(base + '/actions/apply', auth, async (r) => {
+    const b = creativeApproval.parse(r.body),
+      a = b.action,
+      user = r.currentUser!.id,
+      project = id.parse(r.params).id,
+      row = await scoped(user, project, a);
+    if (previewOf(row.spec, a).digest !== b.digest)
+      throw new HttpError(409, 'creative_action_changed', 'Prévisualisez à nouveau.');
+    return service.save(user, project, a.expectedRevision, editScene(row.spec, a));
+  });
   app.get(base, auth, (r) => service.history(r.currentUser!.id, id.parse(r.params).id));
   app.post(base, auth, (r) => {
     const b = creativeWrite.parse(r.body);

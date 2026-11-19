@@ -73,8 +73,8 @@ export async function creativeFrame(
     `<svg width="${width}" height="${height}"><defs><linearGradient id="g"><stop stop-color="${brand.background}"/><stop offset="1" stop-color="${brand.accent}"/></linearGradient></defs><rect width="100%" height="100%" fill="url(#g)"/></svg>`
   );
   return (
-    spec.delivery
-      ? sharp({ create: { width, height, channels: 4, background: brand.background } })
+    spec.delivery || scene.background
+      ? sharp({ create: { width, height, channels: 4, background: scene.background ?? brand.background } })
       : sharp(background)
   )
     .ensureAlpha()

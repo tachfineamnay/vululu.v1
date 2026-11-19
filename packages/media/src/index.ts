@@ -43,7 +43,7 @@ export type MasterInput = {
   version: number;
   scenePaths: string[];
   motion?: {
-    width: number; height: number; dip: boolean;
+    width: number; height: number; dip: boolean; sceneDip?: boolean[];
     clips: ({ path: string; overlay: string; start: number; height: number } | undefined)[];
     audio?: { path: string; gain: number };
   };

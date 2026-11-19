@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { CreativeActionPanel } from './CreativeActionPanel';
 import { FormatGuide, type Destination } from './FormatGuide';
 import { useUnsavedChanges } from '../lib/useUnsavedChanges';
 import { readableInk, creativeSpec, type CreativeSpec, type CreativeLayer } from '@vululu/contracts';
@@ -164,7 +165,26 @@ export function CreativeEditor({ bundle }: { bundle: ProjectBundle }) {
   function update(i: number, patch: Partial<CreativeLayer>) {
     if (scene) layers(scene.layers.map((l, j) => (j === i ? ({ ...l, ...patch } as CreativeLayer) : l)));
   }
+  const [timeline, travel] = useState<{ head: number; past: number[]; future: number[] }>({
+    head: 0,
+    past: [],
+    future: []
+  });
+  const past = timeline.head === expected ? timeline.past : versions.slice(1).map((v) => v.version);
+  const future = timeline.head === expected ? timeline.future : [];
+  async function step(back: boolean) {
+    const v = (back ? past : future)[0];
+    if (!v) return;
+    const r = await postJson<Revision>(`${base}/${v}/restore`, { expectedVersion: expected });
+    await sync(r);
+    travel({
+      head: r.version,
+      past: back ? past.slice(1) : [expected, ...past],
+      future: back ? [expected, ...future] : future.slice(1)
+    });
+  }
   async function sync(r: Revision) {
+    travel({ head: r.version, past: expected ? [expected, ...past] : [], future: [] });
     display(r);
     setExpected(r.version);
     history(await api<Rev[]>(base));
@@ -213,6 +233,36 @@ export function CreativeEditor({ bundle }: { bundle: ProjectBundle }) {
         )}
         {spec && scene && (
           <>
+            {!dirty && view?.version === expected && (
+              <>
+                <CreativeActionPanel
+                  key={`${expected}:${scene.key}`}
+                  scene={scene}
+                  project={bundle.project.id}
+                  assets={sources}
+                  version={expected}
+                  run={action}
+                  applied={async (key) => {
+                    const r = await api<Revision>(base + '/' + (expected + 1));
+                    await sync(r);
+                    focus(r.spec.scenes.findIndex((s) => s.key === key));
+                  }}
+                />
+                <div>
+                  <button type="button" disabled={!past.length} onClick={() => void action(() => step(true))}>
+                    Annuler la révision
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!future.length}
+                    onClick={() => void action(() => step(false))}
+                  >
+                    Rétablir la révision
+                  </button>
+                </div>
+              </>
+            )}
+            {dirty && <p>Enregistrez la composition pour activer les actions ciblées.</p>}
             <button
               type="button"
               className="btn btn-secondary"

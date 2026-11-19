@@ -21,6 +21,7 @@ const sourceIds = (s: CreativeSpec) => [
 ];
 type ObjectRef = { provider: string; key: string; sha256: string; sizeBytes: number };
 type Frame = ObjectRef & {
+  overlay?: ObjectRef;
   sceneKey: string;
   fingerprint: string;
   sources: { id: string; sha256: string }[];
@@ -197,24 +198,59 @@ export class CreativeStudio {
         if (scene.clip)
           deps.push({ id: scene.clip.versionId, sha256: sources.get(scene.clip.versionId)!.sha256 });
         const fingerprint = hash(
-          JSON.stringify(['creative-2', scene.clip, spec.width, spec.height, spec.brand, scene.layers, deps])
+          JSON.stringify([
+            'creative-2',
+            scene.clip,
+            spec.width,
+            spec.height,
+            spec.brand,
+            scene.layers,
+            deps,
+            ...(scene.background ? [scene.background] : []),
+            ...(spec.delivery ? ['flat'] : [])
+          ])
         );
         const hit = cache?.find((f) => f.fingerprint === fingerprint);
         let bytes: Buffer, ref: ObjectRef;
-        if (hit && !scene.clip) {
+        let overlay: ObjectRef | undefined;
+        if (hit && (!scene.clip || hit.overlay)) {
           bytes = await buffer((await this.reader(hit).get(hit.key)).stream);
           if (hash(bytes) !== hit.sha256) throw new Error('creative_cache_integrity');
           ref = hit;
+          if (scene.clip && hit.overlay) {
+            overlay = hit.overlay;
+            const overlayBytes = await buffer((await this.reader(overlay).get(overlay.key)).stream);
+            if (hash(overlayBytes) !== overlay.sha256) throw new Error('creative_cache_integrity');
+            const clip = scene.clip,
+              file = path.join(dir, scene.key + '.mp4'),
+              overlayPath = path.join(dir, scene.key + '-overlay.png');
+            await fs.writeFile(file, await this.bytes(sources, clip.versionId));
+            await fs.writeFile(overlayPath, overlayBytes);
+            clips[frames.length] = {
+              path: file,
+              overlay: overlayPath,
+              start: clip.start,
+              height: Math.round((spec.height * clip.height) / 2) * 2
+            };
+          }
         } else {
           const draw = await this.draw(spec, scene, sources, dir);
           bytes = draw.bytes;
           clips[frames.length] = draw.clip;
+          if (draw.clip) overlay = await persistFrame(await fs.readFile(draw.clip.overlay));
           ref = await persistFrame(bytes);
         }
         const file = path.join(dir, `${frames.length}.png`);
         await fs.writeFile(file, bytes);
         paths.push(file);
-        frames.push({ ...ref, sceneKey: scene.key, fingerprint, sources: deps, seconds: scene.seconds });
+        frames.push({
+          ...ref,
+          ...(overlay ? { overlay } : {}),
+          sceneKey: scene.key,
+          fingerprint,
+          sources: deps,
+          seconds: scene.seconds
+        });
       }
       if (spec.delivery && spec.delivery.kind !== 'short') {
         await this.repo.seal(userId, id, version, {
@@ -236,6 +272,7 @@ export class CreativeStudio {
               height: spec.height,
               clips,
               dip: spec.delivery.transition === 'dip',
+              sceneDip: spec.scenes.map((s) => (s.transition ?? spec.delivery?.transition) === 'dip'),
               audio: audio ? { path: audioPath, gain: audio.gain } : undefined
             }
           : undefined,
