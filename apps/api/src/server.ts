@@ -19,6 +19,7 @@ import { assetRoutes } from './routes/assets';
 import { projectRoutes } from './routes/projects';
 import { creativeRoutes } from "./routes/creative";
 import {publishingRoutes} from './routes/publishing';
+import {resultsRoutes} from './routes/results';
 import {studioRoutes} from "./routes/studio";
 import {mediaGenerationRoutes} from "./routes/mediaGeneration";
 import {marketingRoutes} from "./routes/marketing";
@@ -114,6 +115,7 @@ export async function buildServer() {
     return respond(500, { error: 'internal_error', message: 'Erreur interne.' });
   });
 
+  await app.register(resultsRoutes);
   await app.register(authRoutes);
   await app.register(adminRoutes);
   await app.register(adminReadRoutes);

@@ -252,6 +252,9 @@ it('exports unsupported Instagram as ordered, checksummed files and caption with
   expect((await app.inject({ url, headers: ah })).statusCode).toBe(404);
   const r = await app.inject({ url, headers: h });
   expect(r.statusCode, r.body.slice(0, 50)).toBe(200);
+  // The package is an observed export, not proof of an external publication.
+  await expect.poll(()=>prisma.resultEvent.count({where:{userId:owner,kind:'export',subject:item,version:2}})).toBe(1);
+  expect(await prisma.resultEvent.count({where:{userId:admin,kind:'export'}})).toBe(0);
   const files = unzip(r.rawPayload),
     manifest = JSON.parse(Buffer.from(files['manifest.json']).toString());
   expect(manifest.direct).toBe(false);

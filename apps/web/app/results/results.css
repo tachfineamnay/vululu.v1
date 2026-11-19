@@ -1,0 +1,35 @@
+#results {
+  max-width: 74rem;
+  overflow-wrap: anywhere;
+}
+#results dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: 1rem;
+  margin: 0;
+}
+#results dl > div {
+  border-inline-start: 2px solid var(--v-color-border);
+  padding-inline-start: 0.75rem;
+}
+#results dd {
+  margin: 0.35rem 0 0;
+}
+#results section > article {
+  padding-block: 0.8rem;
+  border-top: 1px solid var(--v-color-border);
+}
+#results li {
+  padding-block: 0.35rem;
+}
+#results details form {
+  padding-block: 1rem;
+  max-width: 32rem;
+}
+#results details label {
+  display: grid;
+  gap: 0.4rem;
+}
+#results summary {
+  cursor: pointer;
+}

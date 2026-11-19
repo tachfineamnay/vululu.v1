@@ -109,6 +109,8 @@ services:
     restart: unless-stopped
     environment:
       <<: *api-env
+      POSTIZ_ANALYTICS_ENABLED: ${POSTIZ_ANALYTICS_ENABLED:-0}
+      PUBLISHING_ENCRYPTION_KEY: ${PUBLISHING_ENCRYPTION_KEY:-}
       MEDIA_GENERATION_ENABLED: ${MEDIA_GENERATION_ENABLED:-0}
       # Presence hints only: provider secrets are injected into the worker, not the API/web.
       MEDIA_IMAGE_CONFIGURED: ${REPLICATE_API_TOKEN:+1}

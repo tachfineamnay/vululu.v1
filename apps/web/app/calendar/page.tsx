@@ -34,7 +34,7 @@ export default function CalendarPage() {
   const [error, fail] = useState(''),
     [notice, say] = useState('');
   useEffect(() => {
-    setAnchor(new Date());
+    setAnchor(new URLSearchParams(location.search).get('week')==='next'?shift(period(new Date(),false).start,7):new Date());
   }, []);
   useEffect(() => {
     let active = true;
@@ -52,6 +52,7 @@ export default function CalendarPage() {
           select(
             (current) =>
               current ||
+              o.find((offer)=>offer.id===new URLSearchParams(location.search).get('offer'))?.id ||
               o.find((offer) => offer.contextId === project?.contextId)?.id ||
               (!project ? o[0]?.id : '') ||
               ''
@@ -99,6 +100,10 @@ export default function CalendarPage() {
           new URLSearchParams(location.search).get('project')
         )
       : [];
+  const nextPlan = !!anchor && new URLSearchParams(location.search).get('week') === 'next';
+  if(nextPlan && selected && ideas[0] && new URLSearchParams(location.search).get('angle')==='question') {
+    ideas[0]={...ideas[0],title:`Une question sur ${selected.name}`.slice(0,160),objective:'Répondre à une question concrète avec un exemple différent',variants:ideas[0].variants.map(v=>({...v,caption:'',cta:'Posez votre question'}))};
+  }
   function blank(day: Date) {
     if (ideas[0])
       make({
@@ -245,7 +250,7 @@ export default function CalendarPage() {
                             ))}
                           </select>
                         </label>
-                        <details>
+                        <details open={nextPlan || undefined}>
                           <summary>Suggestions hebdomadaires · {ideas.length} idées</summary>
                           <p>À adapter avant enregistrement. Aucune génération payante.</p>
                           <div className="cal-actions">

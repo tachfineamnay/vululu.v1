@@ -650,7 +650,7 @@ export function CreativeEditor({ bundle,serverHead }: { bundle: ProjectBundle;se
                       />
                     )}
                     <a
-                      href={`${base}/${view.version}/master`}
+                      href={`${base}/${view.version}/master?export=1`}
                       download={`v${view.version}.${view.spec.delivery && view.spec.delivery.kind !== 'short' ? 'png' : 'mp4'}`}
                     >
                       Exporter le master v{view.version}
