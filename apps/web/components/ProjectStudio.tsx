@@ -403,6 +403,7 @@ export default function ProjectStudio({ id }: { id: string }) {
             <h1 data-testid="project-title-heading">{bundle.project.title}</h1>
             <p className="muted">{bundle.project.objective}</p>
             <div className="studio-head-links">
+              <Link className="text-link" href={'/calendar?project=' + encodeURIComponent(bundle.project.id)}>Planifier ce projet</Link>
               <Link className="text-link" href={'/contexts?context=' + encodeURIComponent(bundle.context.id)}>Contexte : {bundle.context.name}</Link>
               {bundle.master ? <a className="text-link" href="#preview-heading">Versions et téléchargement</a> : <a className="text-link" href="#storyboard-heading">Voir les scènes</a>}
             </div>

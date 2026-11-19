@@ -1,0 +1,133 @@
+.cal-page {
+  min-width: 0;
+}
+.cal-page label {
+  display: grid;
+  gap: 0.25rem;
+}
+.cal-page label:has(> input[type='checkbox']) {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.cal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: end;
+}
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+.cal-day {
+  min-width: 0;
+  padding: 0.5rem;
+  border: 1px solid var(--v-color-border);
+  border-radius: 0.5rem;
+  overflow-wrap: anywhere;
+}
+.cal-day:first-child {
+  grid-column-start: var(--first-day);
+}
+.cal-day h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+.cal-item {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--v-color-border);
+}
+.cal-title {
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: left;
+  overflow-wrap: anywhere;
+  background: none;
+  color: inherit;
+  border: 0;
+  padding: 0;
+}
+.cal-editor {
+  max-width: 48rem;
+}
+.cal-editor fieldset {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.cal-editor legend {
+  font-weight: 700;
+  margin: 1rem 0;
+}
+@media (max-width: 900px) {
+  .cal-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .cal-day:first-child {
+    grid-column-start: auto;
+  }
+}
+@media (max-width: 540px) {
+  .cal-grid {
+    grid-template-columns: 1fr;
+  }
+  .cal-actions > * {
+    max-width: 100%;
+  }
+  .cal-page .input {
+    max-width: 100%;
+    min-width: 0;
+  }
+}
+
+.cal-day[data-today='true'] {
+  border-color: var(--v-color-action);
+  background: var(--v-color-selected);
+}
+.cal-item .text-link {
+  font-size: var(--v-font-size-label);
+  justify-self: start;
+}
+
+.cal-paging,
+.cal-date {
+  display: flex;
+  gap: var(--v-space-4);
+  align-items: center;
+}
+.cal-date {
+  justify-content: space-between;
+  margin-bottom: var(--v-space-4);
+}
+.cal-date h3 {
+  margin: 0;
+}
+.cal-add,
+.cal-item .text-link {
+  border: 0;
+  background: none;
+  color: var(--v-color-action);
+  cursor: pointer;
+}
+.cal-add {
+  padding: var(--v-space-4) var(--v-space-8);
+  font-size: 1.2rem;
+}
+.cal-item .text-link {
+  padding: var(--v-space-4) 0;
+}
+@media (max-width: 540px) {
+  .cal-paging {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .cal-paging .btn {
+    padding-inline: var(--v-space-8);
+  }
+}

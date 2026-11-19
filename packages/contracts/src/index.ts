@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-export const platformSchema = z.enum(['TikTok', 'Instagram', 'LinkedIn']);
-export const formatSchema = z.enum(['Affiche', 'Carrousel', 'Video', 'Reel', 'Motion']);
+import { platformSchema, formatSchema } from './channels';
+export { platformSchema, formatSchema };
 
 export const campaignInputSchema = z.object({
   name: z.string().trim().min(2).max(160),
@@ -98,3 +98,5 @@ export type SessionUser = {
 
 export * from './admin';
 export const providerCredentialInputSchema = z.object({ apiKey: z.string().max(4096) }).strict();
+
+export * from './calendar';
