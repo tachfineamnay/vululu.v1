@@ -26,11 +26,12 @@ test('C12 · customer ticket, restricted support reply, admin oversight', async 
     await expect(u.p.getByText(ticket + ' · OPEN')).toBeVisible();
     await s.p.goto('/support');
     await s.p.getByText(ticket + ' · OPEN').click();
-    await s.p
+    const currentTicket = s.p.locator('details').filter({has:s.p.getByText(ticket + ' · OPEN', {exact:true})});
+    await currentTicket
       .getByLabel('Réponse', { exact: true })
       .fill('Le solde réservé est distinct du solde disponible.');
-    await s.p.getByRole('combobox', { name: 'État' }).selectOption('IN_PROGRESS');
-    await s.p.getByRole('button', { name: 'Enregistrer', exact: true }).click();
+    await currentTicket.getByRole('combobox', { name: 'État' }).selectOption('IN_PROGRESS');
+    await currentTicket.getByRole('button', { name: 'Enregistrer', exact: true }).click();
     await expect(s.p.getByText(ticket + ' · IN_PROGRESS')).toBeVisible();
     expect((await s.p.request.get('/api/admin/commerce')).status()).toBe(403);
     await a.p.goto('/admin/commerce');
@@ -38,7 +39,7 @@ test('C12 · customer ticket, restricted support reply, admin oversight', async 
     await expect(a.p.getByText(ticket + ' · IN_PROGRESS')).toBeVisible();
     await u.p.reload();
     await u.p.getByText(ticket + ' · IN_PROGRESS').click();
-    await expect(u.p.getByText('Le solde réservé est distinct du solde disponible.')).toBeVisible();
+    await expect(u.p.locator('details').filter({hasText:ticket}).getByText('Le solde réservé est distinct du solde disponible.')).toBeVisible();
   } finally {
     await Promise.all([u.ctx.close(), s.ctx.close(), a.ctx.close()]);
   }

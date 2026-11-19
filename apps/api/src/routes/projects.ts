@@ -1,3 +1,4 @@
+import {requireDemo} from '../releaseMode';
 import type { FastifyInstance } from 'fastify';
 import {
   briefInputSchema,
@@ -38,14 +39,14 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
     return { brief };
   });
 
-  app.post('/api/projects/:id/messages', { preHandler: [app.authenticate] }, async (request, reply) => {
+  app.post('/api/projects/:id/messages', { preHandler: [app.authenticate, requireDemo] }, async (request, reply) => {
     const params = request.params as { id: string };
     const input = messageInputSchema.parse(request.body);
     const pair = await messages.add(actorOf(request.currentUser), params.id, input.content);
     return reply.code(201).send(pair);
   });
 
-  app.post('/api/projects/:id/storyboard', { preHandler: [app.authenticate, rateLimitPreHandler(RATE_LIMITS.storyboard, (request) => 'storyboard:' + (request.currentUser?.id ?? 'anon') + ':' + String((request.params as { id?: string }).id ?? ''))] }, async (request) => {
+  app.post('/api/projects/:id/storyboard', { preHandler: [app.authenticate, requireDemo, rateLimitPreHandler(RATE_LIMITS.storyboard, (request) => 'storyboard:' + (request.currentUser?.id ?? 'anon') + ':' + String((request.params as { id?: string }).id ?? ''))] }, async (request) => {
     const params = request.params as { id: string };
     return storyboards.generate(actorOf(request.currentUser), params.id);
   });

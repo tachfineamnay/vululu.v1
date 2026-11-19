@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+import {LanguageControl,useWorkspace} from '../../components/WorkspacePreferences';
 import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { postJson, SessionUser } from '../../lib/api';
@@ -19,6 +21,7 @@ function safeNextPath(value: string | null): string {
 }
 
 export default function LoginPage() {
+  const {t}=useWorkspace();
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -43,11 +46,11 @@ export default function LoginPage() {
   return (
     <main className="auth-page">
       <div className="auth-orb" />
-      <section className="auth-card">
+      <section className="auth-card"><LanguageControl/>
         <div className="brand-mark">V</div>
-        <p className="eyebrow">Studio creatif agentique</p>
+        <p className="eyebrow">{t('Studio créatif','Creative studio')}</p>
         <h1>Vululu AI</h1>
-        <p className="muted">Un espace de création, de la marque au master validé.</p>
+        <p className="muted">{t('Un espace de création, de la marque au master validé.','A workspace from business profile to approved master.')}</p>
         <form onSubmit={submit} className="stack">
           <label className="label">
             Email
@@ -62,7 +65,7 @@ export default function LoginPage() {
             />
           </label>
           <label className="label">
-            Mot de passe
+            {t('Mot de passe','Password')}
             <input
               className="input"
               data-testid="login-password"
@@ -73,13 +76,13 @@ export default function LoginPage() {
               required
             />
           </label>
-          {error ? <p className="error" data-testid="login-error">{error}</p> : null}
+          {error ? <p role="alert" className="error" data-testid="login-error">{error}</p> : null}
           <button className="btn btn-primary" data-testid="login-submit" type="submit" disabled={busy}>
-            {busy ? 'Connexion...' : 'Entrer dans le studio'}
+            {busy ? t('Connexion…','Signing in…') : t('Entrer dans le studio','Sign in')}
           </button>
         </form>
         <p className="hint">
-          Accès sur invitation. Utilise les identifiants transmis par ton administrateur.
+          <Link href="/activate">{t('Activer une invitation','Activate an invitation')}</Link> · <Link href="/catalog">{t('Guide','Guide')}</Link> · <Link href="/terms">{t('Conditions','Terms')}</Link>
         </p>
       </section>
     </main>

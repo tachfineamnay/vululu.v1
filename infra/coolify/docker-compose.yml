@@ -111,6 +111,7 @@ services:
       <<: *api-env
       STRIPE_TEST_SECRET_KEY: ${STRIPE_TEST_SECRET_KEY:-}
       STRIPE_TEST_WEBHOOK_SECRET: ${STRIPE_TEST_WEBHOOK_SECRET:-}
+      POSTIZ_PUBLISH_ENABLED: ${POSTIZ_PUBLISH_ENABLED:-0}
       POSTIZ_ANALYTICS_ENABLED: ${POSTIZ_ANALYTICS_ENABLED:-0}
       PUBLISHING_ENCRYPTION_KEY: ${PUBLISHING_ENCRYPTION_KEY:-}
       MEDIA_GENERATION_ENABLED: ${MEDIA_GENERATION_ENABLED:-0}
@@ -129,7 +130,7 @@ services:
       artifacts-init:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3101/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3101/api/ready').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -176,6 +177,8 @@ services:
       ORCHESTRATOR_MODE: hatchet
       HATCHET_CLIENT_TOKEN: ${HATCHET_CLIENT_TOKEN:-}
       MEDIA_GENERATION_ENABLED: ${MEDIA_GENERATION_ENABLED:-0}
+      POSTIZ_PUBLISH_ENABLED: ${POSTIZ_PUBLISH_ENABLED:-0}
+      PUBLISHING_ENCRYPTION_KEY: ${PUBLISHING_ENCRYPTION_KEY:-}
       REPLICATE_API_TOKEN: ${REPLICATE_API_TOKEN:-}
       RUNWAYML_API_SECRET: ${RUNWAYML_API_SECRET:-}
     volumes:

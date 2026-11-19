@@ -1,4 +1,5 @@
 'use client';
+import {useWorkspace} from '../../components/WorkspacePreferences';
 import { useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -14,6 +15,7 @@ import './calendar.css';
 const fmt = (d: Date, options: Intl.DateTimeFormatOptions) => d.toLocaleDateString('fr-FR', options);
 const message = (e: unknown) => (e instanceof Error ? e.message : 'Chargement impossible.');
 export default function CalendarPage() {
+  const {t}=useWorkspace();
   const router = useRouter();
   const [anchor, setAnchor] = useState<Date | null>(null),
     [month, monthly] = useState(false),
@@ -162,8 +164,8 @@ export default function CalendarPage() {
       <main id="calendar-main" tabIndex={-1} className="page stack cal-page">
         <header>
           <p className="eyebrow">Studio · Planification marketing</p>
-          <h1>Calendrier éditorial</h1>
-          <p className="muted">Organisez vos contenus, de la première idée au suivi de publication.</p>
+          <h1>{t("Calendrier éditorial","Editorial calendar")}</h1>
+          <p className="muted">{t("Organisez vos contenus, de la première idée au suivi de publication.","Organize content from your first idea to publication tracking.")}</p>
         </header>
         {error && (
           <div className="error" role="alert">
@@ -177,7 +179,7 @@ export default function CalendarPage() {
             >
               Réessayer
             </button>{' '}
-            <Link href="/login?next=/calendar">Se connecter</Link>
+            <Link href="/login?next=/calendar">{t("Se connecter","Sign in")}</Link>
           </div>
         )}
         {notice && <p role="status">{notice}</p>}
@@ -202,16 +204,16 @@ export default function CalendarPage() {
           <>
             {refs && (
               <section className="card stack">
-                <h2>Préparer la semaine</h2>
+                <h2>{t("Préparer la semaine","Prepare the week")}</h2>
                 {!refs.contexts.length ? (
-                  <Link href="/contexts/new">Créer un contexte de marque pour commencer</Link>
+                  <Link href="/contexts/new">{t("Créer un contexte de marque pour commencer","Create a business profile to get started")}</Link>
                 ) : (
                   <>
                     <details open={!refs.offers.length}>
-                      <summary>Confirmer une offre de votre activité</summary>
+                      <summary>{t("Confirmer une offre de votre activité","Confirm a business offer")}</summary>
                       <form className="cal-actions" onSubmit={confirm}>
                         <label>
-                          Marque
+                          {t("Marque","Brand")}
                           <select className="input" value={contextId} onChange={(e) => choose(e.target.value)}>
                             {refs.contexts.map((c) => (
                               <option key={c.id} value={c.id}>
@@ -221,7 +223,7 @@ export default function CalendarPage() {
                           </select>
                         </label>
                         <label>
-                          Nom de l’offre
+                          {t("Nom de l’offre","Offer name")}
                           <input
                             required
                             maxLength={160}
@@ -231,14 +233,14 @@ export default function CalendarPage() {
                           />
                         </label>
                         <button className="btn btn-secondary" disabled={busy}>
-                          Confirmer l’offre
+                          {t("Confirmer l’offre","Confirm offer")}
                         </button>
                       </form>
                     </details>
                     {!!refs.offers.length && (
                       <>
                         <label>
-                          Offre pour les idées de la semaine
+                          {t("Offre pour les idées de la semaine","Offer for this week\u2019s ideas")}
                           <select className="input" value={offerId} onChange={(e) => select(e.target.value)}>
                             <option value="" disabled>
                               Choisir une offre confirmée

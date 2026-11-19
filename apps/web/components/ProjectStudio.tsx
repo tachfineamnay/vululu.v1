@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, patchJson, postJson, ProjectBundle, type ProductionPlanView, type MessageProposal } from '../lib/api';
+import {useWorkspace} from './WorkspacePreferences';
 import StudioNav from './StudioNav';
 import {MarketingAssistant} from "./MarketingAssistant";
 import {StudioDesk} from './StudioDesk';
@@ -66,6 +67,7 @@ function formatDate(value: string | undefined | null): string {
 type ToastState = { id: number; message: string; tone: 'success' | 'error' } | null;
 
 export default function ProjectStudio({ id }: { id: string }) {
+  const {demo,t}=useWorkspace();
   const router = useRouter();
   const [bundle, setBundle] = useState<ProjectBundle | null>(null);
   const [error, setError] = useState('');
@@ -142,14 +144,14 @@ export default function ProjectStudio({ id }: { id: string }) {
   }, [messageCount]);
 
   useEffect(() => {
-    if (!planBriefVersion) return;
+    if (!demo || !planBriefVersion) return;
     let cancelled = false;
     setPlan(null); setPlanError('');
     void api<{ plan: ProductionPlanView }>('/api/projects/' + id + '/production-plan').then((result) => {
       if (!cancelled) setPlan(result.plan);
     }).catch((err: unknown) => { if (!cancelled) setPlanError(err instanceof Error ? err.message : 'Plan indisponible.'); });
     return () => { cancelled = true; };
-  }, [id, planBriefVersion, planDurationKey]);
+  }, [id, planBriefVersion, planDurationKey,demo]);
 
   function notify(message: string, tone: 'success' | 'error' = 'success'): void {
     setToast({ id: Date.now(), message, tone });
@@ -394,7 +396,7 @@ export default function ProjectStudio({ id }: { id: string }) {
     : recommended.action === 'produce' ? { target: 'produce', label: 'Produire la création' }
     : { target: 'finalization-heading', label: 'Consulter et finaliser le résultat' };
   function focusStudioSection(target: string) {
-    let element = document.getElementById(target);
+    let element = document.getElementById(!demo && target==='finalization-heading'?'composition-heading':target);
     if(target==='creative-deliver'&&!element)element=document.getElementById('composition-heading');
     let parent = element?.parentElement;
     while (parent) { if (parent instanceof HTMLDetailsElement) parent.open = true; parent = parent.parentElement; }
@@ -415,23 +417,23 @@ export default function ProjectStudio({ id }: { id: string }) {
             <div className="studio-head-links">
               <Link className="text-link" href={'/calendar?project=' + encodeURIComponent(bundle.project.id)}>Planifier ce projet</Link>
               <Link className="text-link" href={'/contexts?context=' + encodeURIComponent(bundle.context.id)}>Contexte : {bundle.context.name}</Link>
-              {bundle.master ? <a className="text-link" href="#preview-heading">Versions et téléchargement</a> : <a className="text-link" href="#storyboard-heading">Voir les scènes</a>}
+              {!demo?<button className="text-link" onClick={()=>focusStudioSection('composition-heading')}>{t('Ouvrir la composition','Open composition')}</button>:bundle.master ? <a className="text-link" href="#preview-heading">Versions et téléchargement</a> : <a className="text-link" href="#storyboard-heading">Voir les scènes</a>}
             </div>
           </div>
-          <div className="studio-head-actions"><span className={'badge status-' + bundle.project.status} data-testid="status-badge">{statusLabel(bundle.project.status)}</span><div className="stack"><button id="produce" className="btn btn-primary" data-testid="produce" aria-describedby={!canProduce ? 'produce-reason' : undefined} onClick={produce} disabled={!canProduce || busy === 'produce'}>Produire la création</button>{!canProduce ? <p id="produce-reason" className="hint">{productionReason}</p> : null}</div></div>
+          {demo&&<div className="studio-head-actions"><span className={'badge status-' + bundle.project.status} data-testid="status-badge">{statusLabel(bundle.project.status)}</span><div className="stack"><button id="produce" className="btn btn-primary" data-testid="produce" aria-describedby={!canProduce ? 'produce-reason' : undefined} onClick={produce} disabled={!canProduce || busy === 'produce'}>Produire la création</button>{!canProduce ? <p id="produce-reason" className="hint">{productionReason}</p> : null}</div></div>}
         </section>
 
         <StudioDesk bundle={bundle} state={live.state} connection={live.connection} go={focusStudioSection}/>
         <CreativeEditor bundle={bundle} serverHead={live.state?.revisions[0]?.version}/>
         <MarketingAssistant key={bundle.project.id} project={bundle.project.id} context={bundle.context.id}/>
-        <details className="studio-demo">
+        {demo&&<details className="studio-demo">
           <summary>Pipeline de démonstration · Rendu local et transfert simulé</summary>
           <div className="studio-demo-details">
             <p data-testid="deterministic-banner">Rendu déterministe Sharp/FFmpeg — aucune IA générative dans ce pipeline. La génération externe de médias se prépare séparément dans Composition et versions.</p>
             <p data-testid="postiz-mock-banner">Postiz MOCK — aucun réseau, aucune publication</p>
             <p data-testid="costs-mode">Coûts MOCK — {bundle.costs.totalCents} centimes simulés / {bundle.costs.events} événement(s)</p>
           </div>
-        </details>
+        </details>}
 
         <div className="studio-live" aria-live="polite">
           {toast ? (
@@ -441,13 +443,13 @@ export default function ProjectStudio({ id }: { id: string }) {
           {refreshError ? <div role="alert" className="error"><p>Actualisation impossible : {refreshError} Le dernier résultat reçu reste affiché ; son état peut avoir évolué.</p><button className="btn btn-secondary" type="button" onClick={() => void load()}>Réessayer l’actualisation</button></div> : null}
         </div>
 
-        <nav className="studio-steps" aria-label="Étapes du projet"><ol>
+        {demo&&<><nav className="studio-steps" aria-label="Étapes du projet"><ol>
           {[{ key: 'prepare', label: 'Préparer', target: 'brief-heading' }, { key: 'create', label: 'Créer', target: 'preview-heading' }, { key: 'finalize', label: 'Finaliser', target: 'finalization-heading' }].map((step) => <li key={step.key}><a href={'#' + step.target} aria-current={recommended.step === step.key ? 'step' : undefined} onClick={(event) => { event.preventDefault(); focusStudioSection(step.target); }}>{step.label}</a></li>)}
         </ol></nav>
-        <section className="studio-next" aria-label="Prochaine étape" data-testid="studio-next"><p><strong>Prochaine étape</strong></p><a href={'#' + next.target} className="text-link" onClick={(event) => { event.preventDefault(); focusStudioSection(next.target); }}>{next.label}</a></section>
+        <section className="studio-next" aria-label="Prochaine étape" data-testid="studio-next"><p><strong>Prochaine étape</strong></p><a href={'#' + next.target} className="text-link" onClick={(event) => { event.preventDefault(); focusStudioSection(next.target); }}>{next.label}</a></section></>}
 
         <details id="studio-preparation" className="studio-preparation" open={preparationInitiallyOpen.current || Boolean(draftConflict) || undefined} onToggle={(event) => { preparationInitiallyOpen.current = event.currentTarget.open; }}>
-          <summary>Préparer le brief et le storyboard</summary>
+          <summary>{demo?'Préparer le brief et le storyboard':t('Préparer le brief','Prepare the brief')}</summary>
         <div className="studio-grid">
           <section className="card brief-entry" data-vululu-theme="blue" aria-labelledby="brief-heading">
             <p className="eyebrow">Votre idée → Vos références → Votre destination → Votre création</p>
@@ -473,7 +475,7 @@ export default function ProjectStudio({ id }: { id: string }) {
               <label className="label">Appel a action
                 <input className="input" data-testid="brief-cta" value={briefCta} onChange={(event) => setBriefCta(event.target.value)} placeholder="Decouvrir la collection" required disabled={Boolean(busy)} />
               </label>
-              {productionSettings ? <fieldset className="stack production-profile" id="project-destination"><legend>Cadrage et réglages de production</legend>
+              {demo && productionSettings ? <fieldset className="stack production-profile" id="project-destination"><legend>Cadrage et réglages de production</legend>
                 <label className="label">Cadrage de la vidéo<select aria-label="Ratio de sortie" className="input" value={productionSettings.ratio} disabled={Boolean(busy)} onChange={(e) => setProductionSettings({ ...productionSettings, ratio: e.target.value as typeof productionSettings.ratio })}>{(bundle.project.platform === 'TikTok' ? ['9:16'] : bundle.project.platform === 'LinkedIn' ? ['1:1', '16:9'] : ['9:16', '4:5', '1:1']).map((ratio) => <option key={ratio} value={ratio}>{ratioLabels[ratio] ?? ratio}</option>)}</select></label>
                 <details data-testid="advanced-production"><summary>Style et direction simulés · réglages avancés</summary><div className="stack">
                 <label className="label">Style de simulation<select aria-label="Style de simulation" className="input" value={productionSettings.visualStyle} disabled={Boolean(busy)} onChange={(e) => setProductionSettings({ ...productionSettings, visualStyle: e.target.value as typeof productionSettings.visualStyle })}><option value="editorial">Éditorial</option><option value="minimal">Minimal</option><option value="bold">Contrasté</option></select></label>
@@ -488,7 +490,7 @@ export default function ProjectStudio({ id }: { id: string }) {
                 {bundle.brief ? 'Enregistrer une nouvelle révision' : 'Enregistrer le brouillon du brief'}
               </button>
             </form>
-            {bundle.brief ? <section className="production-plan stack" aria-labelledby="production-plan-heading" data-testid="production-plan">
+            {demo && bundle.brief ? <section className="production-plan stack" aria-labelledby="production-plan-heading" data-testid="production-plan">
               <h3 id="production-plan-heading">Plan et estimation MOCK</h3>
               <button className="btn btn-ghost btn-small" type="button" disabled={Boolean(busy) || refreshingPlan} onClick={() => void refreshPlan()}>Recalculer le plan</button>
               {briefDirty ? <p className="hint">Enregistrez vos modifications pour actualiser ce plan.</p> : null}
@@ -501,7 +503,7 @@ export default function ProjectStudio({ id }: { id: string }) {
                 {!plan.ready ? <ul role="alert">{plan.issues.map((issue) => <li key={issue.code}>{issue.message}</li>)}</ul> : null}
               </> : <p role="status">Calcul du plan…</p>}
             </section> : null}
-            {bundle.brief ? <div className="stack"><p className="hint">{briefConfirmed ? 'Version exacte confirmée.' : 'Relisez le plan et cette version puis confirmez le brief et son plafond avant le lancement.'}{briefDirty ? ' Enregistrez d’abord vos modifications.' : ''}</p><button type="button" className="btn btn-secondary" data-testid="brief-confirm" disabled={briefConfirmed || briefDirty || Boolean(busy) || !planReady || !bundle.brief.revisions.length} onClick={confirmBrief}>Confirmer la version {bundle.brief.version} du brief et son plafond</button></div> : null}
+            {demo && bundle.brief ? <div className="stack"><p className="hint">{briefConfirmed ? 'Version exacte confirmée.' : 'Relisez le plan et cette version puis confirmez le brief et son plafond avant le lancement.'}{briefDirty ? ' Enregistrez d’abord vos modifications.' : ''}</p><button type="button" className="btn btn-secondary" data-testid="brief-confirm" disabled={briefConfirmed || briefDirty || Boolean(busy) || !planReady || !bundle.brief.revisions.length} onClick={confirmBrief}>Confirmer la version {bundle.brief.version} du brief et son plafond</button></div> : null}
             {bundle.brief && bundle.brief.revisions.length > 0 ? (
               <details className="history-details">
                 <summary>Historique des revisions ({bundle.brief.revisions.length})</summary>
@@ -515,12 +517,12 @@ export default function ProjectStudio({ id }: { id: string }) {
                 </ul>
               </details>
             ) : null}
-            <button id="storyboard-generate" className="btn btn-primary full-width" data-testid="storyboard-generate" aria-describedby={storyboardReason ? 'storyboard-reason' : undefined} onClick={generateStoryboard} disabled={!briefConfirmed || briefDirty || Boolean(busy) || activeRun || bundle.project.status === 'producing'}>
+            {demo&&<><button id="storyboard-generate" className="btn btn-primary full-width" data-testid="storyboard-generate" aria-describedby={storyboardReason ? 'storyboard-reason' : undefined} onClick={generateStoryboard} disabled={!briefConfirmed || briefDirty || Boolean(busy) || activeRun || bundle.project.status === 'producing'}>
               Générer le storyboard
             </button>
-            {storyboardReason ? <p id="storyboard-reason" className="hint">{storyboardReason}</p> : null}
+            {storyboardReason ? <p id="storyboard-reason" className="hint">{storyboardReason}</p> : null}</>}
           </section>
-          <details className="card chat-card" data-testid="studio-assistance"><summary>Assistance MOCK facultative</summary>
+          {demo&&<details className="card chat-card" data-testid="studio-assistance"><summary>Assistance MOCK facultative</summary>
             <div className="section-head">
               <h2 id="chat-heading">Conversation avec Vululu</h2>
               <span className="pill">Simulation MOCK</span>
@@ -549,13 +551,13 @@ export default function ProjectStudio({ id }: { id: string }) {
               <button className="btn btn-secondary" data-testid="chat-send" type="submit" disabled={Boolean(busy)}>Envoyer</button>
             </form>
             <p className="hint" id="chat-format-help">Scénarios MOCK : /brief, /aide ou SCENE-003: votre instruction. Les propositions préremplissent les formulaires après votre clic.</p>
-          </details>
+          </details>}
 
         </div>
 
 
         </details>
-        <CreationDelivery bundle={bundle} refresh={load} blocked={Boolean(busy) || briefEdited || briefDirty || !!refreshError} correct={() => correctionRef.current?.focus()} studio={{ scene: selectedScene, mode: previewMode, onModeChange: setPreviewMode }} scenes={<>
+        {demo&&<><CreationDelivery bundle={bundle} refresh={load} blocked={Boolean(busy) || briefEdited || briefDirty || !!refreshError} correct={() => correctionRef.current?.focus()} studio={{ scene: selectedScene, mode: previewMode, onModeChange: setPreviewMode }} scenes={<>
           <section className="studio-scenes" aria-labelledby="storyboard-heading">
             <div className="section-head"><h2 id="storyboard-heading" tabIndex={-1}>Scènes</h2><span className="muted small" data-testid="duration-summary">{bundle.scenes.length} {bundle.scenes.length === 1 ? 'scène' : 'scènes'} · {totalDurationSeconds} s</span></div>
             {bundle.scenes.length ? <ol className="studio-scene-strip" aria-label="Choisir une scène">
@@ -599,7 +601,7 @@ export default function ProjectStudio({ id }: { id: string }) {
         <ProjectJourney bundle={bundle} plan={plan} planError={planError} briefDirty={briefEdited || briefDirty} refreshing={refreshingPlan} refresh={() => void refreshPlan()} />
 
 
-        </details>
+        </details></>}
       </main>
     </div>
   );

@@ -30,7 +30,7 @@ export function FormatGuide({
   apply: (f: () => CreativeSpec) => void;
 }) {
   const [concept,selectConcept]=useState<'editorial'|'immersive'>('editorial');
-  const [kind, format] = useState<OutputKind>('square'),
+  const [kind, format] = useState<OutputKind>(bundle.project.format==='Carrousel'?'carousel':bundle.project.format==='Reel'?'short':'square'),
     [platform, channel] = useState<Platform>(platformSchema.parse(bundle.project.platform)),
     [dest, link] = useState(''),
     [photos, pick] = useState<string[]>([]),

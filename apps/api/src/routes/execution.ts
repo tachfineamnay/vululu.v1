@@ -4,6 +4,7 @@ import { prisma } from '@vululu/db';
 import { approve, cancel, propose, resolveIncident } from '../infrastructure/execution/broker';
 import { tools, toolSchema } from '../infrastructure/execution/registry';
 import { rateLimitPreHandler } from '../infrastructure/security/rateLimiter';
+import {demoDisabled} from '../releaseMode';
 import { HttpError } from '../errors';
 export async function executionRoutes(app: FastifyInstance) {
   const rate = rateLimitPreHandler(
@@ -29,7 +30,7 @@ export async function executionRoutes(app: FastifyInstance) {
       }
     })
   );
-  app.get('/api/execution/tools', auth, () => tools);
+  app.get('/api/execution/tools', auth, () => Object.fromEntries(Object.entries(tools).filter(([k])=>!demoDisabled()||!k.startsWith('sandbox.'))));
   app.put('/api/admin/execution/accounts/:account', admin, async (r) => {
     const { account } = z.object({ account: z.string().min(1).max(128) }).parse(r.params);
     const data = z

@@ -1,11 +1,12 @@
 'use client';
+import {useWorkspace} from './WorkspacePreferences';
 import { useEffect, useState } from 'react';
 import { MediaGenerationPanel } from './MediaGenerationPanel';
 import {RevisionCompare} from "./RevisionCompare";
 import { CreativeActionPanel } from './CreativeActionPanel';
 import { FormatGuide, type Destination } from './FormatGuide';
 import { useUnsavedChanges } from '../lib/useUnsavedChanges';
-import { readableInk, creativeSpec, type CreativeSpec, type CreativeLayer } from '@vululu/contracts';
+import { outputSize, platformSchema, readableInk, creativeSpec, type CreativeSpec, type CreativeLayer } from '@vululu/contracts';
 import { api, apiResponse, postJson, type ProjectBundle } from '../lib/api';
 
 type Rev = { version: number; approvedAt: string | null };
@@ -63,6 +64,7 @@ function NumberField({
   );
 }
 export function CreativeEditor({ bundle,serverHead }: { bundle: ProjectBundle;serverHead?:number }) {
+  const {t}=useWorkspace();
   const base = '/api/projects/' + encodeURIComponent(bundle.project.id) + '/creative';
   const [spec, set] = useState<CreativeSpec | null>(null),
     [versions, history] = useState<Rev[]>([]),
@@ -131,13 +133,15 @@ export function CreativeEditor({ bundle,serverHead }: { bundle: ProjectBundle;se
     const ratio = bundle.brief?.settings?.ratio ?? '9:16';
     const width = ratio === '16:9' ? 1920 : 1080,
       height = ratio === '9:16' ? 1920 : ratio === '4:5' ? 1350 : 1080;
+    const kind = bundle.project.format === 'Affiche' ? 'square' : bundle.project.format === 'Carrousel' ? 'carousel' : bundle.project.format === 'Reel' ? 'short' : null;
     set({
       schemaVersion: 1,
-      width,
-      height,
+      width: kind ? outputSize[kind][0] : width,
+      height: kind ? outputSize[kind][1] : height,
+      ...(kind ? {delivery:{kind,platform:platformSchema.parse(bundle.project.platform)}} : {}),
       safeArea: 0.05,
       brand: { background: bundle.context.colorPrimary, accent: bundle.context.colorSecondary },
-      scenes: seeds.map((s, i) => ({
+      scenes: (kind === 'square' ? seeds.slice(0,1) : seeds).map((s, i) => ({
         key: s.sceneKey,
         seconds: s.durationSeconds,
         layers: [
@@ -198,7 +202,7 @@ export function CreativeEditor({ bundle,serverHead }: { bundle: ProjectBundle;se
         if (e.currentTarget.open && !spec && !busy) void action(load);
       }}
     >
-      <summary id="composition-heading">Composition et versions</summary>
+      <summary id="composition-heading">{t("Composition et versions","Composition and versions")}</summary>
       {spec&&serverHead!==undefined&&serverHead>expected&&<p role="status">La version v{serverHead} est disponible. Votre saisie reste intacte ; rechargez pour travailler sur la dernière version.</p>}
       {error && (
         <p role="alert" className="error">
@@ -213,7 +217,7 @@ export function CreativeEditor({ bundle,serverHead }: { bundle: ProjectBundle;se
             if (!dirty || confirm('Abandonner les modifications locales ?')) void action(load);
           }}
         >
-          Recharger la dernière version
+          {t("Recharger la dernière version","Reload latest version")}
         </button>
         {spec && (
           <FormatGuide
@@ -591,7 +595,7 @@ export function CreativeEditor({ bundle,serverHead }: { bundle: ProjectBundle;se
                 })
               }
             >
-              Enregistrer une nouvelle révision
+              {t("Enregistrer une nouvelle révision","Save new revision")}
             </button>
             {!!versions.length && (
               <label>
@@ -653,7 +657,7 @@ export function CreativeEditor({ bundle,serverHead }: { bundle: ProjectBundle;se
                       href={`${base}/${view.version}/master?export=1`}
                       download={`v${view.version}.${view.spec.delivery && view.spec.delivery.kind !== 'short' ? 'png' : 'mp4'}`}
                     >
-                      Exporter le master v{view.version}
+                      {t("Exporter le master v","Export master v")}{view.version}
                     </a>
                     <a href={`${base}/${view.version}/scenes/${scene.key}`} download={`${scene.key}.png`}>
                       Exporter la scène {index + 1}
@@ -672,7 +676,7 @@ export function CreativeEditor({ bundle,serverHead }: { bundle: ProjectBundle;se
                         })
                       }
                     >
-                      {view.approvedAt ? 'Version approuvée' : 'Approuver cette version'}
+                      {view.approvedAt ? t("Version approuvée","Version approved") : t("Approuver cette version","Approve this version")}
                     </button>
                   </>
                 ) : (
@@ -685,7 +689,7 @@ export function CreativeEditor({ bundle,serverHead }: { bundle: ProjectBundle;se
                       })
                     }
                   >
-                    Rendre le master v{view.version}
+                    {t("Rendre le master v","Render master v")}{view.version}
                   </button>
                 )}
               </>

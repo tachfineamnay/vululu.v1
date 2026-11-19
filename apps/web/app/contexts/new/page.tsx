@@ -1,5 +1,6 @@
 'use client';
 
+import {useWorkspace} from '../../../components/WorkspacePreferences';
 import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -9,6 +10,7 @@ import StudioNav from '../../../components/StudioNav';
 import ContextFields, { type ContextDraft } from '../../../components/ContextFields';
 
 export default function NewContextPage() {
+  const {t}=useWorkspace();
   const router = useRouter();
   const [draft, setDraft] = useState<ContextDraft>({ name: '', website: '', description: '', audience: '', tone: '', colorPrimary: '#2347be', colorSecondary: '#f5d867' });
   const [error, setError] = useState('');
@@ -27,15 +29,15 @@ export default function NewContextPage() {
     finally { setBusy(false); }
   }
   return <div className="shell" data-vululu-theme="blue">
-    <a className="skip-link" href="#new-context-main">Aller au contenu</a>
+    <a className="skip-link" href="#new-context-main">{t("Aller au contenu","Skip to content")}</a>
     <StudioNav><Link href={returnToProject ? '/projects/new' : '/contexts'} className="text-link">{returnToProject ? 'Retour au nouveau projet' : 'Retour aux contextes'}</Link></StudioNav>
     <main id="new-context-main" tabIndex={-1} className="page narrow stack">
-      <p className="eyebrow">Marques et références</p><h1>Créer un contexte</h1><p className="muted">Une marque, une activité, un univers créatif : commencez par ce qui compte. Seuls le nom et la description sont obligatoires.</p>
+      <p className="eyebrow">{t("Marques et références","Business profiles")}</p><h1>{t("Créer un contexte","Create a business profile")}</h1><p className="muted">{t("Une marque, une activité, un univers créatif : commencez par ce qui compte. Seuls le nom et la description sont obligatoires.","Start with a brand, business or creative identity. Only the name and description are required.")}</p>
       <form className="card stack" onSubmit={submit} aria-busy={busy}>
         <ContextFields value={draft} onChange={(field, value) => { setDirty(true); setDraft((current) => ({ ...current, [field]: value })); }} disabled={busy} />
         {error ? <div className="error" role="alert" data-testid="context-error"><p>{error}</p><p>Le contexte n’a pas pu être créé. Votre saisie est conservée ; corrigez-la ou réessayez.</p></div> : null}
         <p className="hint">Ces informations sont déclarées par vous. Les références et les ressources pourront être complétées après l’enregistrement.</p>
-        <button className="btn btn-primary" data-testid="context-submit" type="submit" disabled={busy}>{busy ? 'Enregistrement…' : 'Créer le contexte'}</button>
+        <button className="btn btn-primary" data-testid="context-submit" type="submit" disabled={busy}>{busy ? t("Enregistrement…","Saving\u2026") : t("Créer le contexte","Create profile")}</button>
         {busy ? <p role="status">Enregistrement du contexte…</p> : null}
       </form>
     </main>

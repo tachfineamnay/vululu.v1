@@ -21,7 +21,7 @@ export const projectFormatLabels: Record<string, string> = {
 
 export type ProjectDraft = {
   title: string; objective: string; contextId: string; platform: 'TikTok' | 'Instagram' | 'LinkedIn';
-  format: 'Video'; sceneDurationSeconds: number; step: number;
+  format: 'Video'|'Affiche'|'Carrousel'|'Reel'; sceneDurationSeconds: number; step: number;
 };
 export const emptyProjectDraft: ProjectDraft = { title: '', objective: '', contextId: '', platform: 'Instagram', format: 'Video', sceneDurationSeconds: 2, step: 0 };
 
@@ -30,7 +30,7 @@ export function restoreProjectDraft(raw: string | null): ProjectDraft | null {
   if (!raw) return null;
   try {
     const value = JSON.parse(raw) as Partial<ProjectDraft>;
-    if (!value || typeof value !== 'object' || typeof value.title !== 'string' || value.title.length > 160 || typeof value.objective !== 'string' || value.objective.length > 8000 || typeof value.contextId !== 'string' || value.contextId.length > 128 || !['TikTok', 'Instagram', 'LinkedIn'].includes(value.platform ?? '') || value.format !== 'Video' || !Number.isInteger(value.sceneDurationSeconds) || value.sceneDurationSeconds! < 1 || value.sceneDurationSeconds! > 15 || !Number.isInteger(value.step) || value.step! < 0 || value.step! > 3) return null;
-    return { title: value.title, objective: value.objective, contextId: value.contextId, platform: value.platform!, format: 'Video', sceneDurationSeconds: value.sceneDurationSeconds!, step: value.step! };
+    if (!value || typeof value !== 'object' || typeof value.title !== 'string' || value.title.length > 160 || typeof value.objective !== 'string' || value.objective.length > 8000 || typeof value.contextId !== 'string' || value.contextId.length > 128 || !['TikTok', 'Instagram', 'LinkedIn'].includes(value.platform ?? '') || !['Video','Affiche','Carrousel','Reel'].includes(value.format??'') || !Number.isInteger(value.sceneDurationSeconds) || value.sceneDurationSeconds! < 1 || value.sceneDurationSeconds! > 15 || !Number.isInteger(value.step) || value.step! < 0 || value.step! > 3) return null;
+    return { title: value.title, objective: value.objective, contextId: value.contextId, platform: value.platform!, format: value.format!, sceneDurationSeconds: value.sceneDurationSeconds!, step: value.step! };
   } catch { return null; }
 }

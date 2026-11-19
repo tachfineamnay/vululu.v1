@@ -1,4 +1,5 @@
 'use client';
+import {useWorkspace} from '../../components/WorkspacePreferences';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import StudioNav from '../../components/StudioNav';
@@ -187,6 +188,7 @@ function Utm() {
   );
 }
 export default function Results() {
+  const {t}=useWorkspace();
   const [data, set] = useState<Report | null>(null),
     [h, list] = useState<History | null>(null),
     [error, fail] = useState(''),
@@ -216,7 +218,7 @@ export default function Results() {
       <main id="results" className="page stack">
         <header>
           <p className="eyebrow">BILAN MARKETING</p>
-          <h1>Résultats et prochaine semaine</h1>
+          <h1>{t("Résultats et prochaine semaine","Results and next week")}</h1>
           <p>Ce que vous avez produit, ce qui a été diffusé et ce que vous pouvez réellement mesurer.</p>
         </header>
         {error && <p role="alert">{error}</p>}
@@ -224,7 +226,7 @@ export default function Results() {
         {data && (
           <>
             <section className="card stack">
-              <h2>Votre activité</h2>
+              <h2>{t("Votre activité","Your activity")}</h2>
               <dl>
                 {[
                   ['Première création approuvée', fmt(data.usage.firstApproved)],
@@ -253,7 +255,7 @@ export default function Results() {
               </p>
             </section>
             <section className="card stack">
-              <h2>Performances des publications</h2>
+              <h2>{t("Performances des publications","Post performance")}</h2>
               <p>
                 Une publication confirmée n’est pas une conversion. « Non disponible » signifie qu’aucune
                 mesure vérifiable n’est fournie.
@@ -274,7 +276,7 @@ export default function Results() {
               <Utm />
             </section>
             <section className="card stack">
-              <h2>Préparer la semaine prochaine</h2>
+              <h2>{t("Préparer la semaine prochaine","Plan next week")}</h2>
               <p>
                 Choisissez une offre confirmée. Le calendrier vous laisse modifier chaque idée avant de
                 l’enregistrer.
@@ -333,7 +335,7 @@ export default function Results() {
               </label>
             </section>
             <section className="card stack">
-              <h2>Historique · 180 derniers jours</h2>
+              <h2>{t("Historique · 180 derniers jours","History \u00b7 last 180 days")}</h2>
               <p>Les exports sont observés à partir de C11. Un fichier servi n’est pas une publication.</p>
               {!h?.rows.length && <p>Aucun événement dans cette période.</p>}
               <ol>

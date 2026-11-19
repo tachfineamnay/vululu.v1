@@ -1,4 +1,5 @@
 'use client';
+import {useWorkspace} from '../../components/WorkspacePreferences';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { api, postJson } from '../../lib/api';
@@ -41,6 +42,7 @@ const labels: Record<string, string> = {
   EXPIRED: 'Expiré',
 };
 export default function Account() {
+  const {t}=useWorkspace();
   const [view, set] = useState<View>(),
     [tickets, list] = useState<Ticket[]>([]),
     [error, fail] = useState(''),
@@ -77,7 +79,7 @@ export default function Account() {
       <main className="page stack">
         <header>
           <p className="eyebrow">ESPACE CLIENT · STRIPE TEST</p>
-          <h1>Abonnement et assistance</h1>
+          <h1>{t("Abonnement et assistance","Billing and support")}</h1>
           <p>
             Pass prépayés sans reconduction. Aucun paiement réel. Les fournisseurs externes nécessitent aussi
             une connexion et un budget autorisés.
@@ -96,7 +98,7 @@ export default function Account() {
               </p>
             )}
             <section className="card stack">
-              <h2>Mes droits et paiements</h2>
+              <h2>{t("Mes droits et paiements","Entitlements and payments")}</h2>
               {!view.orders.length && <p>Aucun achat enregistré.</p>}
               {view.orders.map((o) => (
                 <article key={o.id}>
@@ -132,7 +134,7 @@ export default function Account() {
               ))}
             </section>
             <section className="card stack">
-              <h2>Catalogue approuvé</h2>
+              <h2>{t("Catalogue approuvé","Approved catalog")}</h2>
               {!view.catalog.length && <p>Aucune offre commerciale approuvée.</p>}
               {!view.commercial && <p>Application des forfaits désactivée ; achat indisponible.</p>}
               {view.catalog.map((p) => (
@@ -169,7 +171,7 @@ export default function Account() {
           </>
         )}
         <section className="card stack">
-          <h2>Contacter l’assistance</h2>
+          <h2>{t("Contacter l’assistance","Contact support")}</h2>
           <p>Ne transmettez ni numéro de carte ni secret.</p>
           <form
             className="stack"

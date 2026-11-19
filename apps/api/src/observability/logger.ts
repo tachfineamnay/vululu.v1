@@ -12,11 +12,11 @@ const REDACTED_KEYS = new Set([
   'secret',
   'csrf',
   'csrftoken',
-  'presignedUrl',
-  'signedUrl',
+  'presignedurl',
+  'signedurl',
   'session',
   'credentials',
-  'relaykey', 'tokencipher', 'hookcipher', 'x-vululu-signature', 'publishing_encryption_key', 'apikey', 'encryptedvalue', 'ciphertext', 'provider_credentials_encryption_key'
+  'stripe-signature','stripe_test_secret_key','stripe_test_webhook_secret','set-cookie','x-csrf-token','database_url','relaykey', 'tokencipher', 'hookcipher', 'x-vululu-signature', 'publishing_encryption_key', 'apikey', 'encryptedvalue', 'ciphertext', 'provider_credentials_encryption_key'
 ]);
 
 function redact(value: unknown): unknown {

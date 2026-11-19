@@ -19,9 +19,9 @@ it.each([undefined, '', 'invalid-base64', 'a'.repeat(32), randomBytes(16).toStri
 });
 it('redige les champs sensibles des journaux sans perdre la correlation', () => {
   const lines: string[] = []; const output = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => { lines.push(String(chunk)); return true; });
-  try { logEvent('info', 'fixture.redaction', { actorId: 'fixture-actor', apiKey: 'fixture-private', csrfToken: 'fixture-csrf', nested: { encryptedValue: 'fixture-encrypted', PROVIDER_CREDENTIALS_ENCRYPTION_KEY: 'fixture-master' } }); }
+  try { logEvent('info', 'fixture.redaction', { actorId: 'fixture-actor', apiKey: 'fixture-private', csrfToken: 'fixture-csrf', nested: { preSignedUrl:'fixture-signed', 'set-cookie':'fixture-cookie', STRIPE_TEST_SECRET_KEY:'fixture-stripe', encryptedValue: 'fixture-encrypted', PROVIDER_CREDENTIALS_ENCRYPTION_KEY: 'fixture-master' } }); }
   finally { output.mockRestore(); }
-  const text = lines.join(''); expect(text).toContain('fixture-actor'); expect(text).not.toMatch(/fixture-private|fixture-encrypted|fixture-master|fixture-csrf/);
+  const text = lines.join(''); expect(text).toContain('fixture-actor'); expect(text).not.toMatch(/fixture-private|fixture-encrypted|fixture-master|fixture-csrf|fixture-signed|fixture-cookie|fixture-stripe/);
 });
 it('applique le RBAC dans le cas d usage avant toute lecture du fournisseur', async () => {
   const store = { findProvider: vi.fn(), save: vi.fn(), remove: vi.fn() };

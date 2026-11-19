@@ -5,6 +5,7 @@ import { mediaApprovalDigest } from '../mediaGeneration/approval';
 import { HttpError } from '../../errors';
 import { tools, toolSchema, proposal, type EnginePort } from './registry';
 import { holdTool,checkClaim,finishTool } from '../billing/service';
+import {demoDisabled} from '../../releaseMode';
 type Tx = Prisma.TransactionClient;
 const deny = (status: number, code: string): never => {
   throw new HttpError(status, code, code);
@@ -40,6 +41,7 @@ async function owned(tx: Tx, id: string, actor: string) {
   );
 }
 async function allowed(tx: Tx, actor: string, id: string, tool: keyof typeof tools, revision: number) {
+  if(tool.startsWith('sandbox.')&&demoDisabled()) deny(403,'tool_disabled');
   const a = await lock(tx, actor);
   if (!a.enabled || !a.tools.includes(tool)) deny(403, 'tool_disabled');
   if (tool === 'marketing.plan@1') {
