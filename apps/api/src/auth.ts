@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import {prisma} from '@vululu/db';
 import { HttpError } from './errors';
 import { recordAuditEvent } from './security/audit';
 import {
@@ -83,6 +84,15 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
     }
     if (!validateCsrfToken(request, session)) {
       throw new HttpError(403, 'csrf_invalid', 'Jeton CSRF absent ou invalide.');
+    }
+    const path = requestPath(request);
+    if (path.startsWith('/api/billing/') || path === '/api/auth/logout' ||
+        /^\/api\/(execution\/[^/]+\/cancel|publishing\/[^/]+\/prepare-cancel)$/.test(path)) return;
+    if ((await prisma.billingAccount.findUnique({ where: { userId: session.userId } }))?.suspended) {
+      // A suspended customer may still stop a previously scheduled publication.
+      const approval = /^\/api\/execution\/([^/]+)\/approve$/.exec(path);
+      if (approval && await prisma.executionOperation.count({where:{id:approval[1],accountId:session.userId,tool:'postiz.cancel@1'}})) return;
+      throw new HttpError(403, 'billing_suspended', 'Compte suspendu : accès en lecture, facturation et assistance disponibles.');
     }
   });
 }

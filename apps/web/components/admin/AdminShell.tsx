@@ -9,6 +9,7 @@ import type { SessionUser } from '../../lib/api';
 type NavItem = { key: string; href: string; label: string };
 
 const NAV_ITEMS: NavItem[] = [
+  {key:'commerce',href:'/admin/commerce',label:'Commerce et assistance'},
   { key: 'overview', href: '/admin', label: "Vue d'ensemble" },
   { key: 'utilisateurs', href: '/admin/utilisateurs', label: 'Utilisateurs' },
   { key: 'agents', href: '/admin/agents', label: 'Agents' },

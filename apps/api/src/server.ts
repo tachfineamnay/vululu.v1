@@ -19,6 +19,8 @@ import { assetRoutes } from './routes/assets';
 import { projectRoutes } from './routes/projects';
 import { creativeRoutes } from "./routes/creative";
 import {publishingRoutes} from './routes/publishing';
+import {billingMessage} from './infrastructure/billing/messages';
+import {billingRoutes,billingWebhook} from './routes/billing';
 import {resultsRoutes} from './routes/results';
 import {studioRoutes} from "./routes/studio";
 import {mediaGenerationRoutes} from "./routes/mediaGeneration";
@@ -87,6 +89,12 @@ export async function buildServer() {
       logEvent('error', 'http.request.failed', { requestId: request.requestId, traceId: request.traceId, method: request.method, route: request.routeOptions?.url ?? request.url, statusCode, errorCode: body.error });
       return reply.code(statusCode).send(body);
     };
+    const dbError = error as { name?: string; message?: string };
+    if (dbError.name?.startsWith('PrismaClient')) {
+      const code = ['billing_quota_exhausted', 'billing_plan_required', 'billing_suspended',
+        'billing_key_conflict', 'billing_render_already_reserved'].find(c => dbError.message?.includes(c));
+      if (code) return respond(code === 'billing_suspended' ? 403 : 409, { error: code, message: billingMessage(code) });
+    }
     if (error instanceof HttpError) {
       return respond(error.statusCode, { error: error.code, message: error.message });
     }
@@ -115,6 +123,8 @@ export async function buildServer() {
     return respond(500, { error: 'internal_error', message: 'Erreur interne.' });
   });
 
+  await app.register(billingRoutes);
+  await app.register(billingWebhook);
   await app.register(resultsRoutes);
   await app.register(authRoutes);
   await app.register(adminRoutes);

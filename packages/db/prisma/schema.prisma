@@ -8,6 +8,8 @@ datasource db {
 }
 
 model User {
+  billingAccount BillingAccount?
+  serviceTickets ServiceTicket[]
   resultEvents ResultEvent[]
   resultPreference ResultPreference?
   publishingConnections PublishingConnection[]
@@ -901,4 +903,95 @@ model PostMeasure {
   engagement BigInt?
   clicks BigInt?
   @@index([retrievedAt])
+}
+
+model BillingControl {
+ id String @id
+ enabled Boolean @default(false)
+}
+model BillingProduct {
+ id String @id
+ name String
+ currency String
+ amount Int
+ days Int
+ regular Int
+ premium Int
+ imageUnits Int
+ videoUnits Int
+ features String[]
+ terms String
+ evidence String
+ approvedBy String
+ listed Boolean @default(true)
+ createdAt DateTime @default(now())
+ orders BillingOrder[]
+}
+model BillingAccount {
+ userId String @id
+ user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+ suspended Boolean @default(false)
+}
+model BillingOrder {
+ id String @id
+ userId String
+ productId String
+ product BillingProduct @relation(fields:[productId],references:[id],onDelete:Restrict)
+ requestKey String
+ sessionId String? @unique
+ intentId String? @unique
+ state String @default("PENDING")
+ refunded Int @default(0)
+ refundReview Boolean @default(false)
+ reviewThrough Int @default(0)
+ paidAt DateTime?
+ expiresAt DateTime?
+ createdAt DateTime @default(now())
+ receipts BillingReceipt[]
+ usage BillingUse[]
+ @@unique([userId,requestKey])
+ @@index([userId,createdAt])
+}
+model BillingReceipt {
+ id String @id
+ orderId String
+ order BillingOrder @relation(fields:[orderId],references:[id],onDelete:Restrict)
+ kind String
+ digest String
+ createdAt DateTime @default(now())
+}
+model BillingUse {
+ renderKey String?
+ key String @id
+ orderId String
+ order BillingOrder @relation(fields:[orderId],references:[id],onDelete:Restrict)
+ feature String
+ bucket String
+ units Int
+ state String
+ createdAt DateTime @default(now())
+ closedAt DateTime?
+ @@index([orderId])
+}
+model ServiceTicket {
+ id String @id
+ userId String
+ user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+ kind String
+ status String @default("OPEN")
+ subject String
+ createdAt DateTime @default(now())
+ updatedAt DateTime @default(now())
+ entries TicketEntry[]
+ @@index([userId,updatedAt])
+}
+model TicketEntry {
+ id String @id
+ ticketId String
+ ticket ServiceTicket @relation(fields:[ticketId],references:[id],onDelete:Cascade)
+ role String
+ status String
+ message String
+ createdAt DateTime @default(now())
+ @@index([ticketId,createdAt])
 }

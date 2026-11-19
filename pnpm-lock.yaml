@@ -110,6 +110,9 @@ importers:
       fflate:
         specifier: 0.8.2
         version: 0.8.2
+      stripe:
+        specifier: ^18.5.0
+        version: 18.5.0(@types/node@24.19.2)
       zod:
         specifier: 4.6.7
         version: 4.6.7
@@ -2159,6 +2162,15 @@ packages:
 
   strip-literal@3.1.0:
     resolution: {integrity: sha512-8r3mkIM/2+PpjHoOtiAW8Rg3jJLHaV7xPwG+YRGrv6FP0wwk/toTpATxWYOW0BKdWwl82VT2tFYi5DlROa0Mxg==}
+
+  stripe@18.5.0:
+    resolution: {integrity: sha512-Hp+wFiEQtCB0LlNgcFh5uVyKznpDjzyUZ+CNVEf+I3fhlYvh7rZruIg+jOwzJRCpy0ZTPMjlzm7J2/M2N6d+DA==}
+    engines: {node: '>=12.*'}
+    peerDependencies:
+      '@types/node': '>=12.x.x'
+    peerDependenciesMeta:
+      '@types/node':
+        optional: true
 
   styled-jsx@5.1.6:
     resolution: {integrity: sha512-qSVyDTeMotdvQYoHWLNGwRFJHC+i+ZvdBRYosOFgC+Wg1vx4frN2/RG/NA7SYqqvKNLf39P2LSRA2pu6n0XYZA==}
@@ -4338,6 +4350,12 @@ snapshots:
   strip-literal@3.1.0:
     dependencies:
       js-tokens: 9.0.1
+
+  stripe@18.5.0(@types/node@24.19.2):
+    dependencies:
+      qs: 6.16.1
+    optionalDependencies:
+      '@types/node': 24.19.2
 
   styled-jsx@5.1.6(react@19.3.1):
     dependencies:

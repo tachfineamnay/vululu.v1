@@ -82,3 +82,10 @@ export async function creativeFrame(
     .png()
     .toBuffer();
 }
+
+/** A free commercial-mode preview must not be an alternate full-resolution master endpoint. */
+export async function draftThumbnail(frame: Buffer) {
+  const { data, info } = await sharp(frame).resize({ width: 384, height: 384, fit: 'inside', withoutEnlargement: true }).png().toBuffer({ resolveWithObject: true });
+  const mark = Buffer.from(`<svg width="${info.width}" height="${info.height}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="28" fill="#111" opacity=".8"/><text x="8" y="20" fill="white" font-size="16">Vululu · aperçu</text></svg>`);
+  return sharp(data).composite([{ input: mark }]).png().toBuffer();
+}

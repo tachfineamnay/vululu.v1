@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const ROLE_VALUES = ['user', 'super_admin'] as const;
+export const ROLE_VALUES = ['user', 'support', 'super_admin'] as const;
 export const roleSchema = z.enum(ROLE_VALUES);
 
 export const invitationInputSchema = z.object({

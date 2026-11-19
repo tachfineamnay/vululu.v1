@@ -301,4 +301,4 @@ export async function runQa(scenes: SceneRenderOutput[], master: MasterOutput, e
   };
 }
 
-export { creativeFrame } from './creativeFrame';
+export { creativeFrame, draftThumbnail } from './creativeFrame';

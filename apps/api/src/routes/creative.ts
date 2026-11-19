@@ -15,6 +15,7 @@ import {
   creativeWrite,
 } from '@vululu/contracts';
 import { creativeStudio as service } from '../application/container';
+import {draftThumbnail} from '@vululu/media';
 import { sendArtifact } from './production';
 import { rateLimitPreHandler, RATE_LIMITS } from '../infrastructure/security/rateLimiter';
 import { HttpError } from '../errors';
@@ -190,7 +191,10 @@ export async function creativeRoutes(app: FastifyInstance) {
     return reply
       .header('Cache-Control', 'private, no-store')
       .type('image/png')
-      .send(await withSlot(() => service.preview(r.currentUser!.id, id.parse(r.params).id, spec)));
+      .send(await withSlot(async () => {
+        const frame = await service.preview(r.currentUser!.id, id.parse(r.params).id, spec);
+        return (await prisma.billingControl.findUniqueOrThrow({where:{id:'commercial'}})).enabled ? draftThumbnail(frame) : frame;
+      }));
   });
   app.post(base + '/:version/render', renderAuth, (r) => {
     const p = revision.parse(r.params);

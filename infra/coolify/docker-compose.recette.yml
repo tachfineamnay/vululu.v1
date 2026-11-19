@@ -150,6 +150,8 @@ services:
     restart: unless-stopped
     environment:
       <<: *api-env
+      STRIPE_TEST_SECRET_KEY: ${STRIPE_TEST_SECRET_KEY:-}
+      STRIPE_TEST_WEBHOOK_SECRET: ${STRIPE_TEST_WEBHOOK_SECRET:-}
       POSTIZ_ANALYTICS_ENABLED: ${POSTIZ_ANALYTICS_ENABLED:-0}
       PUBLISHING_ENCRYPTION_KEY: ${PUBLISHING_ENCRYPTION_KEY:-}
       DEMO_EMAIL: ${DEMO_EMAIL:-demo@vululu.example}

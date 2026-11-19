@@ -24,6 +24,7 @@ type Tab = 'users' | 'invitations';
 
 const ROLE_OPTIONS = [
   { value: 'user', label: 'Utilisateur' },
+  {value:'support',label:'Assistance (sans administration)'},
   { value: 'super_admin', label: 'Super administrateur' }
 ];
 
