@@ -4,6 +4,7 @@ import type { ExecutionOperation as Op, Prisma } from '@prisma/client';
 import { mediaApprovalDigest } from '../mediaGeneration/approval';
 import { HttpError } from '../../errors';
 import { tools, toolSchema, proposal, type EnginePort } from './registry';
+import { holdTool,checkClaim,finishTool } from '../billing/service';
 type Tx = Prisma.TransactionClient;
 const deny = (status: number, code: string): never => {
   throw new HttpError(status, code, code);
@@ -60,6 +61,7 @@ async function allowed(tx: Tx, actor: string, id: string, tool: keyof typeof too
 }
 async function reserve(tx: Tx, o: Op, actor: string) {
   const a = await allowed(tx, actor, o.projectId, toolSchema.parse(o.tool), o.revision);
+  await holdTool(tx,o);
   if (a.limitCents - a.spentCents - a.reservedCents < o.maxCents) deny(409, 'budget_exhausted');
   await tx.executionAccount.update({
     where: { userId: actor },
@@ -148,6 +150,7 @@ export async function cancel(actor: string, id: string) {
   });
 }
 async function release(tx: Tx, o: Op, actor: string | null) {
+  await finishTool(tx,o,'cancel');
   if (o.state === 'QUEUED')
     await tx.executionAccount.update({
       where: { userId: o.accountId },
@@ -181,6 +184,7 @@ async function settle(tx: Tx, o: Op, cents: number, manual?: { actor: string; ev
     await audit(tx, o, null, 'invalid_provider_cost', Number.isSafeInteger(cents) ? { cents } : {});
     return incident(tx, o);
   }
+  await finishTool(tx,o,manual?'manual':'success');
   if (!manual) await audit(tx, o, null, 'reported', { cents });
   await tx.executionAccount.update({
     where: { userId: o.accountId },
@@ -215,6 +219,7 @@ export async function execute(id: string, engine: EnginePort, timeoutMs = 120000
     const polling = row.state === 'POLLING';
     const tool = toolSchema.parse(row.tool);
     try {
+      if(!polling)await checkClaim(tx,row);
       await allowed(tx, row.accountId, row.projectId, tool, row.revision);
     } catch (e) {
       if (!(e instanceof HttpError)) throw e;

@@ -519,6 +519,7 @@ export const adminApi = {
 };
 
 export const ROLE_LABELS: Record<string, string> = {
+  support: 'Assistance',
   user: 'Utilisateur',
   super_admin: 'Super administrateur'
 };

@@ -11,6 +11,7 @@ const PRIMARY = [
   { key: 'creations', href: '/creations', label: 'Mes créations' }
 ];
 const SECONDARY = [
+  { key:'account',href:'/account',label:'Mon compte' },
   { key: 'results', href: '/results', label: 'Résultats' },
   { key: 'campaigns', href: '/campaigns', label: 'Campagnes' },
   { key: 'assets', href: '/assets', label: 'Ressources' },

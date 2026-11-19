@@ -36,6 +36,7 @@ export default function DashboardPage() {
   return <div className="shell" data-vululu-theme="blue">
     <a className="skip-link" href="#projects-main">Aller au contenu</a>
     <StudioNav><div className="topbar-actions">
+      {user?.role==='support'&&<Link href="/support">Assistance clients</Link>}
       {user?.role === 'super_admin' ? <Link className="text-link" href="/admin" data-testid="admin-link">Administration</Link> : null}
       <span className="muted small">{user?.name}</span><button type="button" className="btn btn-ghost" disabled={leaving} onClick={logout}>{leaving ? 'Déconnexion…' : 'Sortir'}</button>
     </div></StudioNav>
