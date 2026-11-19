@@ -1,20 +1,24 @@
 import { prisma } from '@vululu/db';
 import { CreativeStudio } from '../../application/creative';
 import { PrismaCreativeRepository } from '../prisma/creativeRepository';
-import { LocalFilesystemArtifactStorage } from '../storage/localArtifactStorage';
-import { env } from '../../env';
+import { createArtifactStorage, createArtifactStorageRegistry } from '../storage/storageFactory';
 import type { EnginePort } from './registry';
 import { dispatchPublication } from '../publishing/service';
 import { PostizProvider } from '../publishing/provider';
-import {generateClaim} from '../marketing/service';
+import { generateClaim } from '../marketing/service';
+import { dispatchMedia } from '../mediaGeneration/service';
 import { recover } from './broker';
-// Closed dispatch table. Only an explicitly enabled Postiz write can leave the local Studio.
+// Closed dispatch table. External media and publishing are reached only through a reserved claim.
 export function studioEngine(creativeStudio: CreativeStudio): EnginePort {
   return {
     async invoke(job, signal) {
       signal.throwIfAborted();
       switch (job.tool) {
-        case 'marketing.plan@1':return generateClaim(job,signal);
+        case 'media.image@1':
+        case 'media.video@1':
+          return dispatchMedia(job, signal);
+        case 'marketing.plan@1':
+          return generateClaim(job, signal);
         case 'postiz.schedule@1':
         case 'postiz.cancel@1':
           return dispatchPublication(job, creativeStudio, new PostizProvider(), signal);
@@ -33,22 +37,23 @@ export function studioEngine(creativeStudio: CreativeStudio): EnginePort {
     }
   };
 }
-const local = new LocalFilesystemArtifactStorage(env.artifactRoot);
-export const engine = studioEngine(new CreativeStudio(new PrismaCreativeRepository(), local, { local }));
+export const engine = studioEngine(
+  new CreativeStudio(new PrismaCreativeRepository(), createArtifactStorage(), createArtifactStorageRegistry())
+);
 export const workflowName = 'vululu-secure-execution-v1';
 // QUEUED is the transactional outbox. Retry the notification, never the claimed effect.
 export async function notifyQueued(send: (id: string) => Promise<string>) {
   await recover();
   const now = new Date();
   const rows = await prisma.executionOperation.findMany({
-    where: { state: 'QUEUED', notifyAfter: { lte: now } },
+    where: { state: { in: ['QUEUED', 'POLLING'] }, notifyAfter: { lte: now } },
     orderBy: { notifyAfter: 'asc' },
     select: { id: true, correlationId: true },
     take: 20
   });
   for (const { id, correlationId } of rows) {
     const lease = await prisma.executionOperation.updateMany({
-      where: { id, state: 'QUEUED', notifyAfter: { lte: now } },
+      where: { id, state: { in: ['QUEUED', 'POLLING'] }, notifyAfter: { lte: now } },
       data: { notifyAfter: new Date(Date.now() + 60000) }
     });
     if (lease.count) {

@@ -1,6 +1,7 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { prisma } from '@vululu/db';
 import type { ExecutionOperation as Op, Prisma } from '@prisma/client';
+import { mediaApprovalDigest } from '../mediaGeneration/approval';
 import { HttpError } from '../../errors';
 import { tools, toolSchema, proposal, type EnginePort } from './registry';
 type Tx = Prisma.TransactionClient;
@@ -40,7 +41,15 @@ async function owned(tx: Tx, id: string, actor: string) {
 async function allowed(tx: Tx, actor: string, id: string, tool: keyof typeof tools, revision: number) {
   const a = await lock(tx, actor);
   if (!a.enabled || !a.tools.includes(tool)) deny(403, 'tool_disabled');
-  if(tool==='marketing.plan@1'){if(!await tx.marketingRevision.count({where:{projectId:id,version:revision,project:{userId:actor}}}))return missing();return a;}
+  if (tool === 'marketing.plan@1') {
+    if (
+      !(await tx.marketingRevision.count({
+        where: { projectId: id, version: revision, project: { userId: actor } }
+      }))
+    )
+      return missing();
+    return a;
+  }
   const r = await tx.creativeRevision.findFirst({
     where: { projectId: id, version: revision, project: { userId: actor } },
     select: { approvedAt: true }
@@ -68,36 +77,54 @@ async function reserve(tx: Tx, o: Op, actor: string) {
   });
 }
 export async function propose(actor: string, projectId: string, input: unknown) {
+  return prisma.$transaction((tx) => proposeTx(tx, actor, projectId, input));
+}
+export async function proposeTx(tx: Tx, actor: string, projectId: string, input: unknown) {
   const p = proposal.parse(input);
-  const digest = createHash('sha256')
-    .update(JSON.stringify([projectId, p.tool, p.revision,...((p.tool.startsWith('postiz.')||p.tool==='marketing.plan@1')?[p.key]:[])]))
-    .digest('hex');
-  return prisma.$transaction(async (tx) => {
-    await allowed(tx, actor, projectId, p.tool, p.revision);
-    if(p.tool==='marketing.plan@1'&&!(await tx.marketingRevision.count({where:{projectId,version:p.revision,requestId:p.key}})))return missing();
-    const prev = await tx.executionOperation.findUnique({
-      where: { accountId_key: { accountId: actor, key: p.key } }
-    });
-    if (prev) {
-      if (prev.digest !== digest) deny(409, 'key_payload_conflict');
-      return prev;
-    }
-    const o = await tx.executionOperation.create({
-      data: {
-        id: randomUUID(),
-        correlationId: randomUUID(),
-        accountId: actor,
+  const parts: unknown[] = [projectId, p.tool, p.revision];
+  if (p.tool.startsWith('postiz.') || p.tool === 'marketing.plan@1') parts.push(p.key);
+  let digest = createHash('sha256').update(JSON.stringify(parts)).digest('hex');
+  if (p.tool.startsWith('media.')) {
+    const g = await tx.mediaGeneration.findFirst({
+      where: {
+        id: p.key,
         projectId,
-        ...p,
-        digest,
-        maxCents: tools[p.tool].maxCents,
-        state: 'PROPOSED',
-        costState: 'ESTIMATED'
+        revision: p.revision,
+        tool: p.tool,
+        source: { project: { userId: actor } }
       }
     });
-    await audit(tx, o, actor, 'estimated');
-    return tools[p.tool].action === 'READ' ? reserve(tx, o, actor) : o;
+    if (!g) return missing();
+    digest = mediaApprovalDigest(g, tools[p.tool].maxCents);
+  }
+  await allowed(tx, actor, projectId, p.tool, p.revision);
+  if (
+    p.tool === 'marketing.plan@1' &&
+    !(await tx.marketingRevision.count({ where: { projectId, version: p.revision, requestId: p.key } }))
+  )
+    return missing();
+  const prev = await tx.executionOperation.findUnique({
+    where: { accountId_key: { accountId: actor, key: p.key } }
   });
+  if (prev) {
+    if (prev.digest !== digest) deny(409, 'key_payload_conflict');
+    return prev;
+  }
+  const o = await tx.executionOperation.create({
+    data: {
+      id: randomUUID(),
+      correlationId: randomUUID(),
+      accountId: actor,
+      projectId,
+      ...p,
+      digest,
+      maxCents: tools[p.tool].maxCents,
+      state: 'PROPOSED',
+      costState: 'ESTIMATED'
+    }
+  });
+  await audit(tx, o, actor, 'estimated');
+  return tools[p.tool].action === 'READ' ? reserve(tx, o, actor) : o;
 }
 export async function approve(actor: string, id: string, digest: string) {
   return prisma.$transaction(async (tx) => {
@@ -184,20 +211,23 @@ export async function resolveIncident(actor: string, id: string, cents: number, 
 // of invoke is intentionally indistinguishable: no lease re-acquisition for CLAIMED jobs.
 export async function execute(id: string, engine: EnginePort, timeoutMs = 120000) {
   const o = await transition(id, async (tx, row) => {
-    if (row.state !== 'QUEUED') return null;
+    if (!['QUEUED', 'POLLING'].includes(row.state)) return null;
+    const polling = row.state === 'POLLING';
     const tool = toolSchema.parse(row.tool);
     try {
       await allowed(tx, row.accountId, row.projectId, tool, row.revision);
     } catch (e) {
       if (!(e instanceof HttpError)) throw e;
-      await release(tx, row, null);
+      if (polling) await incident(tx, row);
+      else await release(tx, row, null);
       return null;
     }
     if (
       row.maxCents !== tools[tool].maxCents ||
       (tools[tool].action !== 'READ' && row.approvedBy !== row.accountId)
     ) {
-      await release(tx, row, null);
+      if (polling) await incident(tx, row);
+      else await release(tx, row, null);
       return null;
     }
     await audit(tx, row, null, 'claimed');
@@ -220,7 +250,20 @@ export async function execute(id: string, engine: EnginePort, timeoutMs = 120000
       })
     ]);
     await transition(id, async (tx, row) => {
-      if (row.state === 'CLAIMED') await settle(tx, row, result.costCents);
+      if (row.state !== 'CLAIMED') return;
+      if ('pendingMedia' in result) {
+        if (
+          !row.tool.startsWith('media.') ||
+          !(await tx.mediaGeneration.count({
+            where: { id: row.key, projectId: row.projectId, remoteId: { not: null }, state: 'PENDING' }
+          }))
+        )
+          throw Error('invalid_media_poll');
+        await tx.executionOperation.update({
+          where: { id },
+          data: { state: 'POLLING', claimUntil: null, notifyAfter: new Date(Date.now() + 10000) }
+        });
+      } else await settle(tx, row, result.costCents);
     });
   } catch {
     await transition(id, async (tx, row) => {

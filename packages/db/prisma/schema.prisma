@@ -109,6 +109,7 @@ model BrandAsset {
 }
 
 model BrandAssetVersion {
+  generation MediaGeneration?
   id              String @id
   assetId         String
   version         Int
@@ -695,6 +696,7 @@ model ContentRevision {
 }
 
 model CreativeRevision {
+  mediaGenerations MediaGeneration[]
   publicationRequests PublicationRequest[]
   contentItemId String?
   contentVersion Int?
@@ -811,4 +813,28 @@ model MarketingRevision {
   createdAt DateTime @default(now())
   @@id([projectId,version])
   @@unique([projectId,requestId])
+}
+
+model MediaGeneration {
+ id String @id
+ projectId String
+ revision Int
+ source CreativeRevision @relation(fields:[projectId,revision],references:[projectId,version],onDelete:Restrict)
+ sceneKey String
+ tool String
+ provider String
+ model String
+ modelVersion String?
+ parameters Json
+ referenceSha String?
+ remoteId String?
+ state String
+ cancelRequested Boolean @default(false)
+ cancelSent Boolean @default(false)
+ submittedAt DateTime?
+ outputVersion String? @unique
+ output BrandAssetVersion? @relation(fields:[outputVersion],references:[id],onDelete:Restrict)
+ reportedCents Int?
+ createdAt DateTime @default(now())
+ @@index([projectId,createdAt])
 }

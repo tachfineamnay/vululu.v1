@@ -416,9 +416,9 @@ export default function ProjectStudio({ id }: { id: string }) {
         <CreativeEditor bundle={bundle}/>
         <MarketingAssistant key={bundle.project.id} project={bundle.project.id} context={bundle.context.id}/>
         <details className="studio-demo">
-          <summary>Rendu sans IA générative · Transfert Postiz simulé</summary>
+          <summary>Pipeline de démonstration · Rendu local et transfert simulé</summary>
           <div className="studio-demo-details">
-            <p data-testid="deterministic-banner">Rendu déterministe Sharp/FFmpeg — aucune IA générative</p>
+            <p data-testid="deterministic-banner">Rendu déterministe Sharp/FFmpeg — aucune IA générative dans ce pipeline. La génération externe de médias se prépare séparément dans Composition et versions.</p>
             <p data-testid="postiz-mock-banner">Postiz MOCK — aucun réseau, aucune publication</p>
             <p data-testid="costs-mode">Coûts MOCK — {bundle.costs.totalCents} centimes simulés / {bundle.costs.events} événement(s)</p>
           </div>

@@ -1,7 +1,10 @@
 import { z } from 'zod';
 // Version is part of each immutable tool identity. No dynamic URLs, secrets, prompts or provider selection.
+import { caps } from '../mediaGeneration/providers';
 export const tools = {
-  'marketing.plan@1':{provider:'editorial-recipe@1',action:'GENERATE',maxCents:8},
+  'media.image@1': { provider: caps.image.provider, action: 'GENERATE', maxCents: caps.image.maxCents },
+  'media.video@1': { provider: caps.video.provider, action: 'GENERATE', maxCents: caps.video.maxCents },
+  'marketing.plan@1': { provider: 'editorial-recipe@1', action: 'GENERATE', maxCents: 8 },
   'postiz.schedule@1': { provider: 'postiz@1', action: 'WRITE/PUBLISH', maxCents: 0 },
   'postiz.cancel@1': { provider: 'postiz@1', action: 'WRITE/PUBLISH', maxCents: 0 },
   'studio.inspect@1': { provider: 'studio@1', action: 'READ', maxCents: 0 },
@@ -16,5 +19,5 @@ export interface EnginePort {
   invoke(
     job: { id: string; accountId: string; projectId: string; tool: Tool; revision: number; maxCents: number },
     signal: AbortSignal
-  ): Promise<{ costCents: number }>;
+  ): Promise<{ costCents: number } | { pendingMedia: true }>;
 }
