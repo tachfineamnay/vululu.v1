@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { MediaGenerationPanel } from './MediaGenerationPanel';
+import {RevisionCompare} from "./RevisionCompare";
 import { CreativeActionPanel } from './CreativeActionPanel';
 import { FormatGuide, type Destination } from './FormatGuide';
 import { useUnsavedChanges } from '../lib/useUnsavedChanges';
@@ -61,7 +62,7 @@ function NumberField({
     </label>
   );
 }
-export function CreativeEditor({ bundle }: { bundle: ProjectBundle }) {
+export function CreativeEditor({ bundle,serverHead }: { bundle: ProjectBundle;serverHead?:number }) {
   const base = '/api/projects/' + encodeURIComponent(bundle.project.id) + '/creative';
   const [spec, set] = useState<CreativeSpec | null>(null),
     [versions, history] = useState<Rev[]>([]),
@@ -197,7 +198,8 @@ export function CreativeEditor({ bundle }: { bundle: ProjectBundle }) {
         if (e.currentTarget.open && !spec && !busy) void action(load);
       }}
     >
-      <summary>Composition et versions</summary>
+      <summary id="composition-heading">Composition et versions</summary>
+      {spec&&serverHead!==undefined&&serverHead>expected&&<p role="status">La version v{serverHead} est disponible. Votre saisie reste intacte ; rechargez pour travailler sur la dernière version.</p>}
       {error && (
         <p role="alert" className="error">
           {error}
@@ -349,6 +351,7 @@ export function CreativeEditor({ bundle }: { bundle: ProjectBundle }) {
                 />
               </label>
             ))}
+            <nav className="composition-rail" aria-label="Scènes de la composition">{spec.scenes.map((s,i)=><button key={s.key} type="button" aria-pressed={i===index} onClick={()=>focus(i)}>{i+1} · {s.seconds} s</button>)}</nav>
             <label>
               Timeline
               <select className="input" value={index} onChange={(e) => focus(+e.target.value)}>
@@ -612,6 +615,8 @@ export function CreativeEditor({ bundle }: { bundle: ProjectBundle }) {
             )}
             {view && !dirty && (
               <>
+                <h3 id="creative-deliver" tabIndex={-1}>Livraison · composition v{view.version}</h3>
+                <RevisionCompare key={view.version} version={view.version} spec={view.spec} versions={versions} base={base}/>
                 {view.version !== expected && (
                   <button
                     type="button"

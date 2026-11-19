@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import { api, patchJson, postJson, ProjectBundle, type ProductionPlanView, type MessageProposal } from '../lib/api';
 import StudioNav from './StudioNav';
 import {MarketingAssistant} from "./MarketingAssistant";
+import {StudioDesk} from './StudioDesk';
+import {useStudioFeed} from '../lib/useStudioFeed';
 import { CreativeEditor } from "./CreativeEditor";
 import ConversationProposalCard from './ConversationProposalCard';
 import { useUnsavedChanges } from '../lib/useUnsavedChanges';
@@ -86,6 +88,7 @@ export default function ProjectStudio({ id }: { id: string }) {
   const hasCorrectionDraft = !!unassignedCorrection.instruction || unassignedCorrection.edited || Object.values(correctionDrafts).some((draft) => !!draft.instruction || draft.edited);
   const hasEditedCorrection = unassignedCorrection.edited || Object.values(correctionDrafts).some((draft) => draft.edited);
   useUnsavedChanges(briefEdited || hasEditedCorrection || !!chatInput.trim());
+  const editingBrief=useRef(false); editingBrief.current=briefEdited;
   const [draftKey, setDraftKey] = useState('');
   const [draftStored, setDraftStored] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
@@ -104,7 +107,7 @@ export default function ProjectStudio({ id }: { id: string }) {
   const initialWorkFocused = useRef(false);
   const preparationInitiallyOpen = useRef<boolean | null>(null);
   const bundleRef = useRef<ProjectBundle | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const requestSequence=useRef(0), accessLost=useRef(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const actionInFlight = useRef(false);
   const correctionRef = useRef<HTMLInputElement | null>(null);
@@ -155,9 +158,11 @@ export default function ProjectStudio({ id }: { id: string }) {
   }
 
   const load = useCallback(async () => {
+    const sequence=++requestSequence.current;
     try {
       ownerRef.current ??= api<{ user: { id: string } }>('/api/auth/me');
       const [data, me] = await Promise.all([api<ProjectBundle>('/api/projects/' + id), ownerRef.current]);
+      if(accessLost.current||sequence!==requestSequence.current)return;
       bundleRef.current = data;
       setBundle(data);
       if (!settingsLoaded.current) {
@@ -165,6 +170,7 @@ export default function ProjectStudio({ id }: { id: string }) {
         settingsLoaded.current = true;
       }
       setRefreshError('');
+      if(briefLoaded.current&&data.brief&&data.brief.version!==draftBase.current.version&&!editingBrief.current){const b=data.brief;setBriefObjective(b.objective);setBriefAudience(b.audience);setBriefTone(b.tone);setBriefCta(b.cta);if(b.settings)setProductionSettings(b.settings);draftBase.current={version:b.version,checksum:b.revisions.find(x=>x.version===b.version)?.checksum??null};}
       if (!briefLoaded.current) {
         setBriefObjective(data.brief?.objective ?? data.project.objective);
         setBriefAudience(data.brief?.audience ?? data.context.audience ?? '');
@@ -192,11 +198,12 @@ export default function ProjectStudio({ id }: { id: string }) {
     }
   }, [id, router]);
 
+  const deny=useCallback((status:number)=>{accessLost.current=true;bundleRef.current=null;setBundle(null);setLoading(false);setError('Accès au projet interrompu.');if(status===401)router.replace('/login?next='+encodeURIComponent('/projects/'+id));},[id,router]);
+  const live=useStudioFeed(id,load,deny);
   useEffect(() => {
     void load();
-    pollRef.current = setInterval(() => { void load(); }, 1500);
     return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
+
       if (toastTimer.current) clearTimeout(toastTimer.current);
     };
   }, [load]);
@@ -387,7 +394,8 @@ export default function ProjectStudio({ id }: { id: string }) {
     : recommended.action === 'produce' ? { target: 'produce', label: 'Produire la création' }
     : { target: 'finalization-heading', label: 'Consulter et finaliser le résultat' };
   function focusStudioSection(target: string) {
-    const element = document.getElementById(target);
+    let element = document.getElementById(target);
+    if(target==='creative-deliver'&&!element)element=document.getElementById('composition-heading');
     let parent = element?.parentElement;
     while (parent) { if (parent instanceof HTMLDetailsElement) parent.open = true; parent = parent.parentElement; }
     element?.scrollIntoView({ block: 'center' });
@@ -413,7 +421,8 @@ export default function ProjectStudio({ id }: { id: string }) {
           <div className="studio-head-actions"><span className={'badge status-' + bundle.project.status} data-testid="status-badge">{statusLabel(bundle.project.status)}</span><div className="stack"><button id="produce" className="btn btn-primary" data-testid="produce" aria-describedby={!canProduce ? 'produce-reason' : undefined} onClick={produce} disabled={!canProduce || busy === 'produce'}>Produire la création</button>{!canProduce ? <p id="produce-reason" className="hint">{productionReason}</p> : null}</div></div>
         </section>
 
-        <CreativeEditor bundle={bundle}/>
+        <StudioDesk bundle={bundle} state={live.state} connection={live.connection} go={focusStudioSection}/>
+        <CreativeEditor bundle={bundle} serverHead={live.state?.revisions[0]?.version}/>
         <MarketingAssistant key={bundle.project.id} project={bundle.project.id} context={bundle.context.id}/>
         <details className="studio-demo">
           <summary>Pipeline de démonstration · Rendu local et transfert simulé</summary>
@@ -450,6 +459,7 @@ export default function ProjectStudio({ id }: { id: string }) {
             <p className="hint" role="status">{briefEdited ? 'Modifications du brief non enregistrées.' : bundle.brief ? 'Brief enregistré sur le serveur. Relisez sa version avant confirmation.' : 'Projet enregistré ; brief à compléter et enregistrer.'}</p>
             <p className="hint" data-testid="studio-draft-status" role="status">{draftStored ? (briefEdited || hasCorrectionDraft || chatInput.trim() ? (draftRestored ? 'Saisies locales reprises et conservées dans cet onglet.' : 'Saisies locales conservées dans cet onglet.') : 'Conservation locale active dans cet onglet.') : 'Conservation locale indisponible : copiez les instructions et messages avant de quitter.'} Cette copie locale n’est pas une révision serveur ; fermer l’onglet peut l’effacer.</p>
             {draftConflict ? <div className="context-completeness stack" role="alert"><p>Un brouillon local repose sur une autre version du brief. Il n’a pas été appliqué à la version serveur actuelle. Reprenez-le explicitement ou enregistrez votre formulaire courant pour le remplacer.</p><details><summary>Consulter la saisie locale précédente</summary><dl className="journey-data"><dt>Objectif</dt><dd>{draftConflict.objective}</dd><dt>Public</dt><dd>{draftConflict.audience}</dd><dt>Ton</dt><dd>{draftConflict.tone}</dd><dt>Appel à l’action</dt><dd>{draftConflict.cta}</dd><dt>Instructions par scène</dt><dd>{draftConflict.correctionDrafts ? <ul>{Object.entries(draftConflict.correctionDrafts).map(([sceneKey, draft]) => <li key={sceneKey}><strong>{sceneKey}</strong> : {draft.instruction}</li>)}</ul> : draftConflict.correction || 'Aucune'}</dd><dt>Instruction non attribuée</dt><dd>{draftConflict.unassignedCorrection?.instruction || 'Aucune'}</dd><dt>Message non envoyé</dt><dd>{draftConflict.chatInput}</dd></dl></details><button className="btn btn-secondary" type="button" onClick={() => { preparationInitiallyOpen.current = true; restoreInputs(draftConflict); setBriefEdited(true); setDraftConflict(null); }}>Reprendre ces saisies comme brouillon à relire</button></div> : null}
+            {briefEdited&&bundle.brief&&bundle.brief.version!==draftBase.current.version&&<p role="alert">Le brief a changé dans une autre session (v{bundle.brief.version}). Comparez votre saisie avant d’enregistrer une nouvelle version.</p>}
             <form className="stack" onSubmit={saveBrief} onChange={() => setBriefEdited(true)}>
               <label className="label">Objectif
                 <input ref={briefObjectiveRef} className="input" data-testid="brief-objective" value={briefObjective} onChange={(event) => setBriefObjective(event.target.value)} placeholder="Faire connaitre l offre" required disabled={Boolean(busy)} />
@@ -558,7 +568,7 @@ export default function ProjectStudio({ id }: { id: string }) {
               {selectedScene.versions.length ? selectedScene.versions.map((version) => <span className="scene-version" key={version.id}>v{version.version} / {shortChecksum(version.checksum)} / {formatDate(version.createdAt)}</span>) : <span className="hint">Aucune version rendue.</span>}
             </div></details> : null}
             {unavailableCorrections.length ? <details><summary>Instructions de scènes indisponibles ({unavailableCorrections.length})</summary><p className="hint">Ces scènes ne figurent plus dans le projet. Leurs instructions restent consultables dans cet onglet.</p><dl className="journey-data">{unavailableCorrections.map(([sceneKey, draft]) => <div key={sceneKey}><dt>{sceneKey}</dt><dd className="context-copy">{draft.instruction}</dd></div>)}</dl></details> : null}
-          {job && (job.status === 'queued' || job.status === 'running') ? <p className="hint">{job.status === 'queued' ? 'Traitement en attente' : 'Traitement en cours'} · {job.progress}%</p> : null}
+          {job && (job.status === 'queued' || job.status === 'running') ? <p className="hint">{job.status === 'queued' ? 'Traitement en attente' : 'Traitement en cours'}</p> : null}
           {job && job.progress > 0 && job.progress < 100 ? (
             <div className="progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={job.progress}><div className="progress-bar" style={{ width: job.progress + '%' }} /></div>
           ) : null}
@@ -582,10 +592,10 @@ export default function ProjectStudio({ id }: { id: string }) {
             <button className="btn btn-secondary" data-testid="correct-submit" aria-describedby="correction-help" onClick={correctScene} disabled={Boolean(busy) || !selectedScene.versions.length || !bundle.master || !briefConfirmed || briefDirty || bundle.project.status === 'producing' || correction.trim().length < 3}>Corriger « {selectedScene.title} » ({selectedScene.sceneKey})</button>
             <p className="hint" id="correction-help">{correctionReason || 'La correction crée une nouvelle version avec le plafond MOCK enregistré.'}</p>
             {unassignedCorrection.instruction ? <details><summary>Instruction non attribuée</summary><p className="context-copy">{unassignedCorrection.instruction}</p><p className="hint">Choisissez la scène à laquelle attribuer cette saisie. Une instruction déjà présente ne sera pas remplacée.</p><button type="button" className="btn btn-secondary" disabled={Boolean(busy) || !!correction} onClick={() => { setCorrectionDrafts((current) => ({ ...current, [selectedScene.sceneKey]: { instruction: unassignedCorrection.instruction, edited: true } })); setUnassignedCorrection({ instruction: '', edited: false }); }}>Attribuer à « {selectedScene.title} »</button>{correction ? <p className="hint">Effacez d’abord l’instruction de cette scène pour lui attribuer ce brouillon.</p> : null}</details> : null}
-          </> : <><p className="hint">Créez le storyboard pour sélectionner une scène. L’instruction préparée ici restera non attribuée jusqu’à votre choix.</p><label className="label">Instruction non attribuée<input ref={correctionRef} className="input" data-testid="correct-input" maxLength={500} value={unassignedCorrection.instruction} onChange={(event) => setUnassignedCorrection({ instruction: event.currentTarget.value, edited: true })} disabled={Boolean(busy)} /></label><button className="btn btn-secondary" data-testid="correct-submit" disabled>Correction indisponible</button></>}
+          </> : <><p className="hint">Créez le storyboard pour sélectionner une scène. L’instruction préparée ici restera non attribuée jusqu’à votre choix.</p><label className="label">Instruction non attribuée<input ref={correctionRef} className="input" data-testid="correct-input" maxLength={500} value={unassignedCorrection.instruction} onChange={(event) => setUnassignedCorrection({ instruction: event.currentTarget.value, edited: true })} disabled={Boolean(busy)} /></label></>}
         </aside>} />
         <details className="studio-preparation"><summary>Parcours et plan de production</summary>
-        {job ? <p className="hint" data-testid="job-status">État technique : {job.status} / {job.step} / {job.progress}%</p> : null}
+        {job ? <p className="hint" data-testid="job-status">État technique : {job.status} / {job.step}</p> : null}
         <ProjectJourney bundle={bundle} plan={plan} planError={planError} briefDirty={briefEdited || briefDirty} refreshing={refreshingPlan} refresh={() => void refreshPlan()} />
 
 

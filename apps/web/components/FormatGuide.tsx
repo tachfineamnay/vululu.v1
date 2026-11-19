@@ -29,8 +29,9 @@ export function FormatGuide({
   items: Destination[];
   apply: (f: () => CreativeSpec) => void;
 }) {
+  const [concept,selectConcept]=useState<'editorial'|'immersive'>('editorial');
   const [kind, format] = useState<OutputKind>('square'),
-    [platform, channel] = useState<Platform>('Instagram'),
+    [platform, channel] = useState<Platform>(platformSchema.parse(bundle.project.platform)),
     [dest, link] = useState(''),
     [photos, pick] = useState<string[]>([]),
     [logo, mark] = useState(''),
@@ -57,6 +58,7 @@ export function FormatGuide({
   return (
     <details className="card stack">
       <summary>Préparer une déclinaison</summary>
+      <fieldset><legend>Concept visuel</legend><label><input type="radio" checked={concept==='editorial'} onChange={()=>selectConcept('editorial')}/> Éditorial · texte et image en zones distinctes</label><label><input type="radio" checked={concept==='immersive'} onChange={()=>selectConcept('immersive')}/> Immersif · photo plein cadre, texte sur cartouches</label></fieldset>
       <label>
         Contenu du calendrier
         <select
@@ -128,6 +130,7 @@ export function FormatGuide({
         onClick={() =>
           apply(() =>
             composeGuide({
+              concept,
               delivery: {
                 kind,
                 platform,

@@ -11,7 +11,7 @@ import {
   creativeAction,
   creativeApproval,
   creativeSpec,
-  creativeWrite
+  creativeWrite,
 } from '@vululu/contracts';
 import { creativeStudio as service } from '../application/container';
 import { sendArtifact } from './production';
@@ -37,7 +37,7 @@ export async function creativeRoutes(app: FastifyInstance) {
       row = await scoped(r.currentUser!.id, id.parse(r.params).id, b);
     const incomplete =
       /^(?:change the CTA and colou?r of scene|modifier le CTA et la couleur de la scène) (two|deux|\d+)(?: without modifying the other scenes| sans modifier les autres scènes)?[.!]?$/i.exec(
-        b.prompt
+        b.prompt,
       );
     if (incomplete) {
       const scene = row.spec.scenes[(/^two$|^deux$/i.test(incomplete[1]) ? 2 : Number(incomplete[1])) - 1];
@@ -47,13 +47,13 @@ export async function creativeRoutes(app: FastifyInstance) {
     const proposal = z
       .strictObject({
         sceneKey: actionScope.shape.target.shape.sceneKey,
-        changes: creativeAction.shape.changes
+        changes: creativeAction.shape.changes,
       })
       .parse(
         await localTranslator.generate(
           { prompt: b.prompt, keys: row.spec.scenes.map((s) => s.key), selected: b.target.sceneKey },
-          { signal: AbortSignal.timeout(1000), maxCostCents: 0, idempotencyKey: r.id }
-        )
+          { signal: AbortSignal.timeout(1000), maxCostCents: 0, idempotencyKey: r.id },
+        ),
       );
     return previewOf(row.spec, {
       schemaVersion: 1,
@@ -61,7 +61,7 @@ export async function creativeRoutes(app: FastifyInstance) {
       expectedRevision: b.expectedRevision,
       changes: proposal.changes,
       authorization: 'project-owner:confirm',
-      estimatedCostCents: 0
+      estimatedCostCents: 0,
     });
   });
   app.post(base + '/actions/preview', auth, async (r) => {
@@ -94,7 +94,7 @@ export async function creativeRoutes(app: FastifyInstance) {
       r.currentUser!.id,
       p.id,
       p.version,
-      z.object({ expectedVersion: z.int().nonnegative() }).parse(r.body).expectedVersion
+      z.object({ expectedVersion: z.int().nonnegative() }).parse(r.body).expectedVersion,
     );
   });
   app.post(base + '/:version/approve', auth, (r) => {
@@ -103,7 +103,7 @@ export async function creativeRoutes(app: FastifyInstance) {
       r.currentUser!.id,
       p.id,
       p.version,
-      z.object({ checksum: z.string().regex(/^[0-9a-f]{64}$/) }).parse(r.body).checksum
+      z.object({ checksum: z.string().regex(/^[0-9a-f]{64}$/) }).parse(r.body).checksum,
     );
   });
   // Bound native render work across preview and export, not just per account.
@@ -111,8 +111,8 @@ export async function creativeRoutes(app: FastifyInstance) {
   const renderAuth = {
     preHandler: [
       app.authenticate,
-      rateLimitPreHandler(RATE_LIMITS.productionStart, (r) => 'creative:' + r.currentUser!.id)
-    ]
+      rateLimitPreHandler(RATE_LIMITS.productionStart, (r) => 'creative:' + r.currentUser!.id),
+    ],
   };
   async function withSlot<T>(fn: () => Promise<T>) {
     if (active >= 2) throw new HttpError(429, 'creative_busy', 'Rendu en cours, réessayez.');
@@ -131,8 +131,8 @@ export async function creativeRoutes(app: FastifyInstance) {
     prisma.contentItem.findMany({
       where: { projectId: id.parse(r.params).id, userId: r.currentUser!.id, archived: false },
       select: { id: true, version: true, title: true, variants: true, offer: { select: { name: true } } },
-      orderBy: { plannedAt: 'asc' }
-    })
+      orderBy: { plannedAt: 'asc' },
+    }),
   );
   app.get('/api/campaigns/:id/creative-package', renderAuth, async (r, reply) => {
     const campaignId = id.parse(r.params).id,
@@ -141,7 +141,7 @@ export async function creativeRoutes(app: FastifyInstance) {
       const rows = await prisma.creativeRevision.findMany({
         where: { project: { userId, campaignId, campaign: { userId } }, manifest: { not: Prisma.DbNull } },
         select: { projectId: true, version: true, spec: true },
-        orderBy: { version: 'desc' }
+        orderBy: { version: 'desc' },
       });
       const files: Record<string, Uint8Array> = {},
         seen = new Set<string>(),
@@ -170,7 +170,7 @@ export async function creativeRoutes(app: FastifyInstance) {
             delivery: d,
             width: spec.width,
             height: spec.height,
-            sha256: f.sha256
+            sha256: f.sha256,
           });
         }
       }
@@ -192,7 +192,25 @@ export async function creativeRoutes(app: FastifyInstance) {
   });
   app.post(base + '/:version/render', renderAuth, (r) => {
     const p = revision.parse(r.params);
-    return withSlot(() => service.render(r.currentUser!.id, p.id, p.version));
+    return withSlot(async () => {
+      const revision = await service.get(r.currentUser!.id, p.id, p.version);
+      if (revision.manifest) return revision.manifest;
+      const attempt = await prisma.studioRender.create({
+        data: { projectId: p.id, revision: p.version, state: 'running' },
+      });
+      try {
+        const result = await service.render(r.currentUser!.id, p.id, p.version);
+        await prisma.studioRender.update({ where: { id: attempt.id }, data: { state: 'succeeded' } });
+        return result;
+      } catch (e) {
+        const reason =
+          e instanceof Error && 'code' in e && e.code === 'media_text_overflow'
+            ? 'Texte trop long pour le cadre.'
+            : 'Rendu non terminé : vérifier les médias et le stockage.';
+        await prisma.studioRender.update({ where: { id: attempt.id }, data: { state: 'failed', reason } });
+        throw e;
+      }
+    });
   });
   app.get(base + '/:version/master', auth, async (r, reply) => {
     const p = revision.parse(r.params);

@@ -61,7 +61,7 @@ export function MarketingAssistant({ project, context }: { project: string; cont
         if (e.currentTarget === e.target && e.currentTarget.open) void act(load);
       }}
     >
-      <summary>Assistant marketing · plan de la semaine</summary>
+      <summary id="marketing-heading">Assistant marketing · plan de la semaine</summary>
       <fieldset className="stack" disabled={busy}>
         <p>
           Le brouillon local est gratuit. Rien ne sera ajouté au calendrier ni publié sans une action

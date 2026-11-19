@@ -60,6 +60,7 @@ model Campaign {
 }
 
 model Project {
+  studioClock StudioClock?
   marketingRevisions MarketingRevision[]
   executionOperations ExecutionOperation[]
   creativeRevisions CreativeRevision[]
@@ -696,6 +697,7 @@ model ContentRevision {
 }
 
 model CreativeRevision {
+  renderAttempts StudioRender[]
   mediaGenerations MediaGeneration[]
   publicationRequests PublicationRequest[]
   contentItemId String?
@@ -835,6 +837,33 @@ model MediaGeneration {
  outputVersion String? @unique
  output BrandAssetVersion? @relation(fields:[outputVersion],references:[id],onDelete:Restrict)
  reportedCents Int?
+ createdAt DateTime @default(now())
+ @@index([projectId,createdAt])
+}
+
+model StudioClock {
+ projectId String @id
+ project Project @relation(fields:[projectId],references:[id],onDelete:Cascade)
+ cursor Int
+ events StudioEvent[]
+}
+model StudioEvent {
+ projectId String
+ clock StudioClock @relation(fields:[projectId],references:[projectId],onDelete:Cascade)
+ cursor Int
+ kind String
+ entity String
+ state String
+ createdAt DateTime @default(now())
+ @@id([projectId,cursor])
+}
+model StudioRender {
+ id String @id @default(uuid())
+ projectId String
+ revision Int
+ source CreativeRevision @relation(fields:[projectId,revision],references:[projectId,version],onDelete:Cascade)
+ state String
+ reason String?
  createdAt DateTime @default(now())
  @@index([projectId,createdAt])
 }

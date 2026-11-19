@@ -20,9 +20,9 @@ export default function StudioNav({ children }: { children?: ReactNode }) {
   const pathname = usePathname() || '/';
   function renderLink(link: typeof PRIMARY[number]) {
     const active = link.key === 'home'
-      ? pathname === '/' || pathname.startsWith('/projects/') || pathname.startsWith('/campaigns')
+      ? pathname === '/' || pathname.startsWith('/projects/')
       : link.key === 'contexts'
-        ? pathname.startsWith('/contexts') || pathname.startsWith('/assets')
+        ? pathname.startsWith('/contexts')
         : pathname === link.href || pathname.startsWith(link.href + '/');
     return <Link key={link.key} href={link.href} data-testid={'nav-' + link.key} className={'nav-link' + (active ? ' is-active' : '')} aria-current={active ? 'page' : undefined}>{link.label}</Link>;
   }
