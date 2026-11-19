@@ -30,3 +30,11 @@ coverage
 infra/preprod/runtime
 infra/preprod/backups
 infra/preprod/certs
+
+# Developer-only browser scenarios, fixtures and acceptance evidence must not ship.
+e2e
+tests
+**/__fixtures__
+**/*.spec.ts
+**/*.test.ts
+docs/delivery/media

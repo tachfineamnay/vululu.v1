@@ -17,6 +17,7 @@ export function readableInk(plate: string) {
   return luminance(plate) > 0.179 ? '#000000' : '#ffffff';
 }
 export type GuideInput = {
+  concept?: 'editorial' | 'immersive';
   delivery: NonNullable<CreativeSpec['delivery']>;
   brand: CreativeSpec['brand'];
   name: string;
@@ -29,6 +30,7 @@ export type GuideInput = {
 };
 /** Assemble editable layers, not a flattened mockup. No synthetic copy, prices or asset URLs. */
 export function composeGuide({
+  concept='editorial',
   delivery,
   brand,
   name,
@@ -103,6 +105,7 @@ export function composeGuide({
                   gravity: 'north'
                 } as CreativeLayer)
         );
+      if (concept==='immersive' && !video) layers[0]=img(photo,0,0,1,1);
       if (logo) layers.push(img(logo, square ? 0.07 : 0.79, square ? 0.1 : 0.07, 0.15, 0.115, 'contain'));
       if (square) {
         layers.push(
