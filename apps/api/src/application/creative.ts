@@ -5,13 +5,19 @@ import path from 'node:path';
 import { buffer } from 'node:stream/consumers';
 import { creativeSpec, type CreativeSpec } from '@vululu/contracts';
 import type { ArtifactStoragePort } from '@vululu/application';
-import { creativeFrame, assembleMaster } from '@vululu/media';
+import { creativeFrame, assembleMaster, clipPoster } from '@vululu/media';
 import { HttpError } from '../errors';
 
 const missing = () => new HttpError(404, 'creative_not_found', 'Projet, révision ou ressource introuvable.');
 const hash = (v: Buffer | string) => createHash('sha256').update(v).digest('hex');
 const sourceIds = (s: CreativeSpec) => [
-  ...new Set(s.scenes.flatMap((scene) => scene.layers.flatMap((l) => (l.type === 'image' ? [l.versionId] : []))))
+  ...new Set([
+    ...s.scenes.flatMap((scene) => [
+      ...scene.layers.flatMap((l) => (l.type === 'image' ? [l.versionId] : [])),
+      ...(scene.clip ? [scene.clip.versionId] : [])
+    ]),
+    ...(s.delivery?.audio ? [s.delivery.audio.versionId] : [])
+  ])
 ];
 type ObjectRef = { provider: string; key: string; sha256: string; sizeBytes: number };
 type Frame = ObjectRef & {
@@ -20,7 +26,13 @@ type Frame = ObjectRef & {
   sources: { id: string; sha256: string }[];
   seconds: number;
 };
-export type Manifest = { renderer: 'creative-1'; frames: Frame[]; master: ObjectRef; seconds: number };
+export type Manifest = {
+  renderer: 'creative-1' | 'creative-2';
+  approvalSha256?: string;
+  frames: Frame[];
+  master: ObjectRef;
+  seconds: number;
+};
 type RevisionMeta = { version: number; approvedAt: Date | null; createdAt: Date };
 type Revision = RevisionMeta & { spec: CreativeSpec; manifest: Manifest | null };
 export interface CreativeRepository {
@@ -30,7 +42,19 @@ export interface CreativeRepository {
     contextId: string,
     usage: string,
     ids: string[]
-  ): Promise<Map<string, { id: string; storageKey: string; storageProvider: string; sha256: string }>>;
+  ): Promise<
+    Map<
+      string,
+      {
+        id: string;
+        storageKey: string;
+        storageProvider: string;
+        mimeType?: string;
+        metadata?: unknown;
+        sha256: string;
+      }
+    >
+  >;
   history(userId: string, id: string): Promise<RevisionMeta[]>;
   get(userId: string, id: string, version: number): Promise<Revision>;
   append(userId: string, id: string, expectedVersion: number, spec: CreativeSpec): Promise<Revision>;
@@ -54,7 +78,7 @@ export class CreativeStudio {
   async save(userId: string, id: string, expectedVersion: number, input: CreativeSpec) {
     const spec = creativeSpec.parse(input),
       p = await this.repo.project(userId, id);
-    await this.repo.sources(userId, p.contextId, p.usage, sourceIds(spec));
+    await this.checked(userId, p, spec);
     return this.repo.append(userId, id, expectedVersion, spec);
   }
   async restore(userId: string, id: string, version: number, expectedVersion: number) {
@@ -63,7 +87,7 @@ export class CreativeStudio {
   }
   async approve(userId: string, id: string, version: number, checksum: string) {
     const row = await this.get(userId, id, version);
-    if (row.manifest?.master.sha256 !== checksum)
+    if ((row.manifest?.approvalSha256 ?? row.manifest?.master.sha256) !== checksum)
       throw new HttpError(409, 'creative_unrendered', 'Vérifiez le master exact avant approbation.');
     await this.repo.approve(userId, id, version);
     return this.get(userId, id, version);
@@ -81,32 +105,73 @@ export class CreativeStudio {
     return {
       size: ref.sizeBytes,
       sha256: ref.sha256,
-      contentType: sceneKey ? ('image/png' as const) : ('video/mp4' as const),
+      contentType: sceneKey || ref.key.endsWith('.png') ? ('image/png' as const) : ('video/mp4' as const),
       openRead: async (range?: { start: number; end?: number }) => (await reader.get(ref.key, range)).stream
     };
   }
-  private draw(
+  private async checked(userId: string, p: { contextId: string; usage: string }, spec: CreativeSpec) {
+    const rows = await this.repo.sources(userId, p.contextId, p.usage, sourceIds(spec));
+    for (const scene of spec.scenes) {
+      for (const l of scene.layers)
+        if (
+          l.type === 'image' &&
+          rows.get(l.versionId)?.mimeType &&
+          !rows.get(l.versionId)!.mimeType!.startsWith('image/')
+        )
+          throw missing();
+      if (scene.clip) {
+        const r = rows.get(scene.clip.versionId);
+        if (r?.mimeType !== 'video/mp4') throw missing();
+        if (Number((r.metadata as { duration: number }).duration) + 0.001 < scene.clip.start + scene.seconds)
+          throw new HttpError(422, 'clip_duration', 'Le clip est trop court pour cette scène.');
+      }
+    }
+    if (spec.delivery?.audio && !rows.get(spec.delivery.audio.versionId)?.mimeType?.startsWith('audio/'))
+      throw missing();
+    return rows;
+  }
+  private async bytes(rows: Awaited<ReturnType<CreativeRepository['sources']>>, id: string) {
+    const r = rows.get(id)!;
+    const b = await buffer((await this.reader({ provider: r.storageProvider }).get(r.storageKey)).stream);
+    if (hash(b) !== r.sha256) throw new Error('creative_asset_integrity');
+    return b;
+  }
+  private async draw(
     spec: CreativeSpec,
     scene: CreativeSpec['scenes'][number],
-    sources: Awaited<ReturnType<CreativeRepository['sources']>>
+    rows: Awaited<ReturnType<CreativeRepository['sources']>>,
+    dir: string
   ) {
-    return creativeFrame(spec, scene, async (assetId) => {
-      const a = sources.get(assetId)!;
-      const b = await buffer((await this.reader({ provider: a.storageProvider }).get(a.storageKey)).stream);
-      if (hash(b) !== a.sha256) throw new Error('creative_asset_integrity');
-      return b;
-    });
+    const resolve = (id: string) => this.bytes(rows, id);
+    if (!scene.clip) return { bytes: await creativeFrame(spec, scene, resolve) };
+    const c = scene.clip,
+      height = Math.round((spec.height * c.height) / 2) * 2,
+      base = path.join(dir, scene.key),
+      file = base + '.mp4',
+      overlay = base + '-overlay.png';
+    await fs.writeFile(file, await resolve(c.versionId));
+    const poster = await clipPoster(file, c.start, spec.width, height, base + '-poster.png');
+    await fs.writeFile(overlay, await creativeFrame(spec, scene, resolve, { height: c.height }));
+    return {
+      bytes: await creativeFrame(spec, scene, resolve, { height: c.height, poster }),
+      clip: { path: file, overlay, start: c.start, height }
+    };
   }
   async preview(userId: string, id: string, spec: CreativeSpec) {
-    const p = await this.repo.project(userId, id);
-    return this.draw(spec, spec.scenes[0], await this.repo.sources(userId, p.contextId, p.usage, sourceIds(spec)));
+    const p = await this.repo.project(userId, id),
+      dir = await fs.mkdtemp(path.join(os.tmpdir(), 'creative-preview-'));
+    try {
+      return (await this.draw(spec, spec.scenes[0], await this.checked(userId, p, spec), dir)).bytes;
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   }
   async render(userId: string, id: string, version: number) {
     const row = await this.get(userId, id, version);
     if (row.manifest) return row.manifest;
     const spec = creativeSpec.parse(row.spec),
       p = await this.repo.project(userId, id),
-      sources = await this.repo.sources(userId, p.contextId, p.usage, sourceIds(spec));
+      sources = await this.checked(userId, p, spec);
     const cache = (await this.repo.previous(userId, id, version))?.frames;
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'vululu-creative-'));
     const frames: Frame[] = [],
@@ -124,21 +189,26 @@ export class CreativeStudio {
       return { provider: this.storage.provider, key, sha256, sizeBytes: bytes.length };
     };
     try {
+      const clips: NonNullable<Parameters<typeof assembleMaster>[0]['motion']>['clips'] = [];
       for (const scene of spec.scenes) {
         const deps = scene.layers.flatMap((l) =>
           l.type === 'image' ? [{ id: l.versionId, sha256: sources.get(l.versionId)!.sha256 }] : []
         );
+        if (scene.clip)
+          deps.push({ id: scene.clip.versionId, sha256: sources.get(scene.clip.versionId)!.sha256 });
         const fingerprint = hash(
-          JSON.stringify(['creative-1', spec.width, spec.height, spec.brand, scene.layers, deps])
+          JSON.stringify(['creative-2', scene.clip, spec.width, spec.height, spec.brand, scene.layers, deps])
         );
         const hit = cache?.find((f) => f.fingerprint === fingerprint);
         let bytes: Buffer, ref: ObjectRef;
-        if (hit) {
+        if (hit && !scene.clip) {
           bytes = await buffer((await this.reader(hit).get(hit.key)).stream);
           if (hash(bytes) !== hit.sha256) throw new Error('creative_cache_integrity');
           ref = hit;
         } else {
-          bytes = await this.draw(spec, scene, sources);
+          const draw = await this.draw(spec, scene, sources, dir);
+          bytes = draw.bytes;
+          clips[frames.length] = draw.clip;
           ref = await persistFrame(bytes);
         }
         const file = path.join(dir, `${frames.length}.png`);
@@ -146,7 +216,29 @@ export class CreativeStudio {
         paths.push(file);
         frames.push({ ...ref, sceneKey: scene.key, fingerprint, sources: deps, seconds: scene.seconds });
       }
+      if (spec.delivery && spec.delivery.kind !== 'short') {
+        await this.repo.seal(userId, id, version, {
+          renderer: 'creative-2',
+          approvalSha256: hash(JSON.stringify(frames.map((f) => [f.sceneKey, f.sha256]))),
+          frames,
+          master: frames[0],
+          seconds: 0
+        });
+        return (await this.get(userId, id, version)).manifest!;
+      }
+      const audio = spec.delivery?.audio;
+      const audioPath = path.join(dir, 'audio');
+      if (audio) await fs.writeFile(audioPath, await this.bytes(sources, audio.versionId));
       const master = await assembleMaster({
+        motion: spec.delivery
+          ? {
+              width: spec.width,
+              height: spec.height,
+              clips,
+              dip: spec.delivery.transition === 'dip',
+              audio: audio ? { path: audioPath, gain: audio.gain } : undefined
+            }
+          : undefined,
         artifactRoot: dir,
         projectId: 'output',
         version,
@@ -171,7 +263,7 @@ export class CreativeStudio {
         contentType: 'video/mp4'
       });
       const manifest: Manifest = {
-        renderer: 'creative-1',
+        renderer: spec.delivery ? 'creative-2' : 'creative-1',
         frames,
         master: { key, provider: this.storage.provider, sha256: master.checksum, sizeBytes },
         seconds: master.duration

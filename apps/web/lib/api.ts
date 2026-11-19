@@ -131,6 +131,7 @@ export type MockCostSummary = {
 
 export type ProjectBundle = {
   project: {
+    campaignId?: string | null;
     id: string;
     title: string;
     status: string;

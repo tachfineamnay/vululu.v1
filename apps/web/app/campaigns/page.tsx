@@ -109,6 +109,7 @@ export default function CampaignsPage() {
               <>
                 <h2>{detail.campaign.name}</h2>
                 {detail.campaign.description ? <p className="muted">{detail.campaign.description}</p> : null}
+                <a className="text-link" href={`/api/campaigns/${detail.campaign.id}/creative-package`} download>Exporter les déclinaisons rendues (ZIP)</a>
                 <h3>Projets rattachés</h3>
                 {detail.projects.length === 0 ? <p className="muted">Aucun projet dans cette campagne.</p> : (
                   <ul className="list campaign-projects">

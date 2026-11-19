@@ -1,7 +1,7 @@
 import { prisma } from '@vululu/db';
 import { Prisma } from '@prisma/client';
 import { assertAssetUsage, type AssetLicense, type PublicationUsage } from '@vululu/domain';
-import { creativeSpec, type CreativeSpec } from '@vululu/contracts';
+import { content, creativeSpec, type CreativeSpec } from '@vululu/contracts';
 import { HttpError } from '../../errors';
 import type { CreativeRepository, Manifest } from '../../application/creative';
 const missing = () => new HttpError(404, 'creative_not_found', 'Projet, révision ou ressource introuvable.');
@@ -20,7 +20,7 @@ export class PrismaCreativeRepository implements CreativeRepository {
       where: {
         id: { in: ids },
         state: 'ready',
-        mimeType: { in: ['image/jpeg', 'image/png', 'image/webp'] },
+        mimeType: { in: ['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'audio/wav', 'audio/mpeg'] },
         asset: { userId, contextId }
       }
     });
@@ -56,7 +56,25 @@ export class PrismaCreativeRepository implements CreativeRepository {
       });
       if ((last?.version ?? 0) !== expectedVersion)
         throw new HttpError(409, 'creative_conflict', 'Révision dépassée. Rechargez avant de sauvegarder.');
-      await tx.creativeRevision.create({ data: { projectId: id, version: expectedVersion + 1, spec } });
+      const link = spec.delivery?.calendar;
+      if (link) {
+        const rev = await tx.contentRevision.findFirst({
+          where: { itemId: link.itemId, version: link.version, item: { userId, projectId: id } }
+        });
+        if (!rev) throw missing();
+        const snapshot = content.parse(rev.snapshot);
+        if (snapshot.projectId !== id || !snapshot.variants.some((v) => v.platform === spec.delivery!.platform))
+          throw missing();
+      }
+      await tx.creativeRevision.create({
+        data: {
+          projectId: id,
+          version: expectedVersion + 1,
+          contentItemId: link?.itemId,
+          contentVersion: link?.version,
+          spec
+        }
+      });
     });
     return this.get(userId, id, expectedVersion + 1);
   }

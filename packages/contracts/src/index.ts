@@ -102,3 +102,5 @@ export const providerCredentialInputSchema = z.object({ apiKey: z.string().max(4
 export * from './calendar';
 
 export * from './creative';
+
+export * from './compositionGuide';
