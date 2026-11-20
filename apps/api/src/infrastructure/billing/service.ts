@@ -13,6 +13,7 @@ export const features = [
   'creative.render',
   'production.job',
   'marketing.plan@1',
+  'assistant.draft@1',
   'media.image@1',
   'media.video@1',
   'postiz.schedule@1',
@@ -375,6 +376,8 @@ export async function finishTool(tx: Tx, o: ExecutionOperation, outcome: 'cancel
     used = !!(await tx.mediaGeneration.count({ where: { id: o.key, state: 'READY' } }));
   if (used && o.tool === 'marketing.plan@1')
     used = !!(await tx.marketingRevision.count({ where: { operationId: o.id, origin: 'provider' } }));
+  if (used && o.tool === 'assistant.draft@1')
+    used = !!(await tx.assistantTurn.count({ where: { operationId: o.id, origin: 'ai' } }));
   await tx.$executeRaw`SELECT billing_finish(${'exec:' + o.id},${used})`;
 }
 // A failed refund can contradict a previous cumulative charge notification. Never regrant on

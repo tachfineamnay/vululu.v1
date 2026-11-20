@@ -38,7 +38,7 @@ async function lock(tx: Tx, user: string, project: string) {
   >`SELECT id FROM "Project" WHERE id=${project} AND "userId"=${user} FOR UPDATE`;
   if (!rows.length) fail(404, 'marketing_project_not_found');
 }
-async function snapshot(
+export async function marketingSnapshot(
   tx: Tx,
   user: string,
   project: string,
@@ -157,7 +157,7 @@ export async function createDraft(user: string, project: string, raw: unknown) {
       if (prev.requestDigest !== requestDigest) return fail(409, 'marketing_key_conflict');
       return prev;
     }
-    const c = await snapshot(tx, user, project, b.offerId, b.week, b.regulated);
+    const c = await marketingSnapshot(tx, user, project, b.offerId, b.week, b.regulated);
     return append(tx, c, fallback(c), {
       requestId: b.requestId,
       requestDigest,
@@ -237,7 +237,7 @@ export async function approveDraft(
     const c = marketingContext.parse(r.context);
     if (r.digest !== digest) return fail(409, 'marketing_digest_mismatch');
     if (c.regulated && !professionalReview) return fail(409, 'professional_review_required');
-    const current = await snapshot(tx, user, project, c.offerId, c.week, c.regulated);
+    const current = await marketingSnapshot(tx, user, project, c.offerId, c.week, c.regulated);
     if (hash(c) !== hash(current)) return fail(409, 'marketing_context_changed');
     const output = marketingOutput.parse(r.result);
     if (

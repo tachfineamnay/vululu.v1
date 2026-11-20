@@ -9,6 +9,7 @@ import StudioNav from './StudioNav';
 import {MarketingAssistant} from "./MarketingAssistant";
 import {StudioDesk} from './StudioDesk';
 import {useStudioFeed} from '../lib/useStudioFeed';
+import { ProjectAssistant } from './ProjectAssistant';
 import { CreativeEditor } from "./CreativeEditor";
 import ConversationProposalCard from './ConversationProposalCard';
 import { useUnsavedChanges } from '../lib/useUnsavedChanges';
@@ -425,6 +426,7 @@ export default function ProjectStudio({ id }: { id: string }) {
 
         <StudioDesk bundle={bundle} state={live.state} connection={live.connection} go={focusStudioSection}/>
         <CreativeEditor bundle={bundle} serverHead={live.state?.revisions[0]?.version}/>
+        <ProjectAssistant key={bundle.project.id} projectId={bundle.project.id} contextId={bundle.context.id} creativeHead={live.state?.revisions[0]?.version} />
         <MarketingAssistant key={bundle.project.id} project={bundle.project.id} context={bundle.context.id}/>
         {demo&&<details className="studio-demo">
           <summary>Pipeline de démonstration · Rendu local et transfert simulé</summary>

@@ -79,6 +79,7 @@ model Campaign {
 }
 
 model Project {
+  assistantTurns AssistantTurn[]
   studioClock StudioClock?
   marketingRevisions MarketingRevision[]
   executionOperations ExecutionOperation[]
@@ -746,6 +747,7 @@ model ExecutionAccount {
 }
 
 model ExecutionOperation {
+  assistantTurn AssistantTurn?
   marketingResult MarketingRevision?
   id String @id
   accountId String
@@ -1009,4 +1011,30 @@ model TicketEntry {
  message String
  createdAt DateTime @default(now())
  @@index([ticketId,createdAt])
+}
+
+model AssistantTurn {
+  id              String    @id
+  projectId       String
+  project         Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parentId        String?
+  parent          AssistantTurn? @relation("assistant_parent", fields: [parentId], references: [id], onDelete: SetNull)
+  children        AssistantTurn[] @relation("assistant_parent")
+  operationId     String?   @unique
+  operation       ExecutionOperation? @relation(fields: [operationId], references: [id], onDelete: Restrict)
+  kind            String
+  revision        Int
+  request         Json
+  inputDigest     String
+  snapshot        Json
+  providerProfile String?
+  result          Json?
+  digest          String?
+  origin          String?
+  reason          String?
+  approvedAt      DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([projectId, createdAt])
+  @@index([parentId])
 }

@@ -14,6 +14,10 @@ L’utilisateur a autorisé la **V1-DEMO complète sans connexion IA** : [périm
 
 Inscription vérifiée sans invitation pour le rôle client, récupération et sécurité du compte, puis profil d’activité → offre → premier projet : [décision](../adr/0033-comptes-clients.md) et [livraison](../delivery/F01_CUSTOMER_ACCOUNT.md). Un envoi fournisseur réel reste à qualifier séparément sur un domaine et un expéditeur autorisés.
 
+### F02 — Assistant marketing et créatif (2026-11-20)
+
+Brouillons conversationnels par projet, Vertex AI derrière le budget ToolBroker, propositions créatives relues et repli local : [ADR](../adr/0034-assistant-vertex.md), [livraison et recette](../delivery/F02_PROJECT_ASSISTANT.md). L’inférence externe reste non vérifiée.
+
 ## 2. Principes de séquencement
 
 ### Studio du 2026-11-06

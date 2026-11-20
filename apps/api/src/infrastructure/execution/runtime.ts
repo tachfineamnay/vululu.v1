@@ -5,6 +5,7 @@ import { createArtifactStorage, createArtifactStorageRegistry } from '../storage
 import type { EnginePort } from './registry';
 import { dispatchPublication } from '../publishing/service';
 import { PostizProvider } from '../publishing/provider';
+import { generateAssistantClaim } from '../assistant/service';
 import { generateClaim } from '../marketing/service';
 import { dispatchMedia } from '../mediaGeneration/service';
 import { recover } from './broker';
@@ -17,6 +18,8 @@ export function studioEngine(creativeStudio: CreativeStudio): EnginePort {
         case 'media.image@1':
         case 'media.video@1':
           return dispatchMedia(job, signal);
+        case 'assistant.draft@1':
+          return generateAssistantClaim(job, signal);
         case 'marketing.plan@1':
           return generateClaim(job, signal);
         case 'postiz.schedule@1':

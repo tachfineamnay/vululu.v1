@@ -6,6 +6,7 @@ const features = [
   'creative.render',
   'production.job',
   'marketing.plan@1',
+  'assistant.draft@1',
   'media.image@1',
   'media.video@1',
   'postiz.schedule@1',

@@ -4,6 +4,7 @@ import { caps } from '../mediaGeneration/providers';
 export const tools = {
   'media.image@1': { provider: caps.image.provider, action: 'GENERATE', maxCents: caps.image.maxCents },
   'media.video@1': { provider: caps.video.provider, action: 'GENERATE', maxCents: caps.video.maxCents },
+  'assistant.draft@1': { provider: 'vertex-gemini@1', action: 'GENERATE', maxCents: 8 },
   'marketing.plan@1': { provider: 'editorial-recipe@1', action: 'GENERATE', maxCents: 8 },
   'postiz.schedule@1': { provider: 'postiz@1', action: 'WRITE/PUBLISH', maxCents: 0 },
   'postiz.cancel@1': { provider: 'postiz@1', action: 'WRITE/PUBLISH', maxCents: 0 },

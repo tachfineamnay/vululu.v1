@@ -269,3 +269,8 @@ main :where(input,select,textarea){max-inline-size:100%;box-sizing:border-box}
 .account-entry .auth-card h1 { font-size: clamp(1.75rem, 5vw, 2.5rem); }
 .account-links { display: flex; flex-wrap: wrap; gap: .75rem 1rem; align-items: center; }
 .account-email { overflow-wrap: anywhere; }
+
+.project-assistant { min-inline-size: 0; overflow-wrap: anywhere; }
+.project-assistant > .stack { margin-block-start: var(--v-space-16); }
+.project-assistant :is(fieldset, select, textarea) { min-inline-size: 0; max-inline-size: 100%; }
+.assistant-preview { inline-size: min(100%, 28rem); block-size: auto; }
