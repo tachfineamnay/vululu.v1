@@ -2,8 +2,11 @@
 import Link from 'next/link';
 import StudioNav from '../../components/StudioNav';
 import { useWorkspace } from '../../components/WorkspacePreferences';
+import { betaCopy, useBetaStatus } from '../../lib/beta';
 export default function Guide() {
   const { t } = useWorkspace();
+  const beta = useBetaStatus();
+  const copy = betaCopy(t);
   const steps = [
     [
       '/contexts',
@@ -42,10 +45,10 @@ export default function Guide() {
     ],
     [
       '/account',
-      'Facturation et assistance',
-      'Billing and support',
-      'Consultez les offres disponibles, les réservations et les crédits média. Ouvrez un dossier pour toute question.',
-      'Review available offers, reservations and media credits. Open a ticket if you need help.',
+      'Accès et assistance',
+      'Access and support',
+      'Consultez votre accès, votre historique et vos réservations. Ouvrez un dossier pour toute question.',
+      'Review your access, history and reservations. Open a ticket if you need help.',
     ],
   ];
   return (
@@ -64,6 +67,11 @@ export default function Guide() {
               'From profile to results: plan your week, create and deliver an approved version.',
             )}
           </p>
+          {beta?.beta ? (
+            <p className="hint" data-testid="beta-badge">
+              <strong>{copy.badge}</strong> · {copy.noPayment} {copy.frozen}
+            </p>
+          ) : null}
         </header>
         {steps.map(([href, fr, en, frText, enText]) => (
           <article key={href} className="card stack">

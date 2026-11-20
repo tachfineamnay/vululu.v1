@@ -14,9 +14,13 @@ export const threads = (where: Prisma.ServiceTicketWhereInput) =>
     take: 100,
     include: { entries: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] } },
   });
+// BETA01 : `BETA_FEEDBACK` est un dossier d'assistance ordinaire, simplement
+// typé, afin de distinguer un retour de bêta d'un incident de facturation.
+// Aucune donnée supplémentaire n'est collectée.
+export type TicketKind = 'SUPPORT' | 'ERASURE' | 'BETA_FEEDBACK';
 export async function openTicket(
   userId: string,
-  kind: 'SUPPORT' | 'ERASURE',
+  kind: TicketKind,
   subject: string,
   message: string,
 ) {
@@ -53,7 +57,12 @@ export async function replyTicket(
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM "ServiceTicket" WHERE id=${id} FOR UPDATE`;
     const t = await tx.serviceTicket.findFirst({
-      where: { id, ...(role === 'customer' ? { userId: actor } : { kind: 'SUPPORT' }) },
+      where: {
+        id,
+        ...(role === 'customer'
+          ? { userId: actor }
+          : { kind: { in: ['SUPPORT', 'BETA_FEEDBACK'] } }),
+      },
     });
     if (!t) return fail(404, 'ticket_not_found');
     if (t.status !== expected || t.status === 'CLOSED') return fail(409, 'ticket_changed');

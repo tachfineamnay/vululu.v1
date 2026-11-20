@@ -21,6 +21,7 @@ export default function Support() {
       <main className="page stack">
         <h1>{t("Assistance clients","Customer support")}</h1>
         <p>{t("Accès support uniquement. Aucune action sur les prix, crédits, paiements ou comptes.","Support staff only. Prices, credits, payments and accounts cannot be changed here.")}</p>
+        <p>{t("Les retours de bêta (bugs, suggestions) arrivent dans cette même file, étiquetés « Retour bêta », et restent distincts des incidents de facturation.","Beta feedback (bugs, suggestions) arrives in this same queue, labelled “Beta feedback”, and stays distinct from billing incidents.")}</p>
         <Link href="/account#assistance">{t('Ouvrir ou suivre ma demande depuis Mon compte', 'Open or follow my case in My account')}</Link>
         {err ? <p role="alert">{err}</p> : <ServiceCases items={rows} mode="support" reload={load} />}
       </main>

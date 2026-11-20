@@ -9,6 +9,13 @@ export type Ticket = {
   status: string;
   entries: { id: string; role: string; message: string; status: string; createdAt: string }[];
 };
+// BETA01 : libellé de tri, pour distinguer un retour de bêta d'un incident de facturation.
+const KIND_LABELS: Record<string, string> = {
+  SUPPORT: 'Assistance',
+  BETA_FEEDBACK: 'Retour bêta',
+  ERASURE: 'Effacement',
+};
+
 export function ServiceCases({
   items,
   mode,
@@ -27,6 +34,7 @@ export function ServiceCases({
       {items.map((t) => (
         <details key={t.id}>
           <summary>
+            {mode !== 'customer' && KIND_LABELS[t.kind] ? KIND_LABELS[t.kind] + ' · ' : ''}
             {t.subject} · {t.status}
           </summary>
           <p>

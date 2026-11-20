@@ -2,6 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import { assertDatabaseLocation } from './envPolicy';
+import { betaMode } from './betaMode';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const repoRoot = path.resolve(here, '../../..');
@@ -22,6 +23,9 @@ process.env.APP_ENV = appEnv;
 if (appEnv === 'production' && !(process.env.APP_ORIGIN || process.env.WEB_ORIGIN)) {
   throw new Error('APP_ORIGIN ou WEB_ORIGIN obligatoire en production.');
 }
+// BETA01 : valeur absente = bêta (aucun paiement ouvrable), valeur inconnue = démarrage refusé.
+const currentBetaMode = betaMode();
+
 const testMode = process.env.V0_TEST_DB === '1';
 const selected = testMode
   ? (process.env.DATABASE_URL_TEST || process.env.DATABASE_URL || '')
@@ -48,6 +52,7 @@ if (!['127.0.0.1', '0.0.0.0', '::1', '::'].includes(apiHost)) {
 
 export const env = {
   repoRoot,
+  betaMode: currentBetaMode,
   host: apiHost,
   port: Number(process.env.API_PORT || '3001'),
   databaseUrl: selected,

@@ -4,11 +4,14 @@ import Link from 'next/link';
 import { useEffect, useState, type FormEvent } from 'react';
 import { postJson } from '../lib/api';
 import { LanguageControl, useWorkspace } from './WorkspacePreferences';
+import { betaCopy, useBetaStatus } from '../lib/beta';
 
 export type AccountEntryMode = 'register' | 'resend-verification' | 'verify-email' | 'forgot-password' | 'reset-password';
 
 export function AccountEntry({ mode }: { mode: AccountEntryMode }) {
   const { t } = useWorkspace();
+  const beta = useBetaStatus();
+  const copy = betaCopy(t);
   const [ready, setReady] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const [note, setNote] = useState('');
@@ -66,6 +69,11 @@ export function AccountEntry({ mode }: { mode: AccountEntryMode }) {
       <LanguageControl />
       <p className="eyebrow">Vululu · {t('Mon compte', 'My account')}</p>
       <h1 id="account-entry-heading">{headings[mode]}</h1>
+      {mode === 'register' && beta?.beta ? (
+        <p className="hint" data-testid="beta-badge">
+          <strong>{copy.access}</strong> · {copy.noPayment}
+        </p>
+      ) : null}
       {note ? <p role="status">{note}</p> : null}
       {!claim && !note && <p className="muted">{recovery
         ? t('Saisissez votre adresse email pour demander un lien de réinitialisation.', 'Enter your email address to request a reset link.')

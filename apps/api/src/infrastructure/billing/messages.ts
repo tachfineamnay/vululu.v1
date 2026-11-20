@@ -24,5 +24,9 @@ export const billingMessage = (code: string) =>
       reauth_required: 'Le mot de passe actuel doit être confirmé.',
       ticket_changed: 'Le dossier a changé. Actualisez son historique.',
       provider_review_required: 'Les preuves Stripe sont insuffisantes. Le solde reste inchangé.',
+      beta_mode_inactive:
+        'Les retours de bêta ne sont acceptés que pendant la bêta. Ouvrez un dossier d’assistance.',
+      beta_mode_active:
+        'Mode bêta gratuite actif : aucun paiement n’est ouvert et aucune carte n’est demandée. L’historique reste consultable.',
     }) as Record<string, string>
   )[code] ?? code;

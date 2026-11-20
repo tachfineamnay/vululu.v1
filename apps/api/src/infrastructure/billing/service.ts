@@ -6,6 +6,7 @@ import type { Prisma, ExecutionOperation } from '@prisma/client';
 import { HttpError } from '../../errors';
 import { billingMessage } from './messages';
 import { activationPhrase, billingConfig, requestedBillingMode } from './config';
+import { betaPaymentsFrozen } from '../../betaMode';
 export type Tx = Prisma.TransactionClient;
 export const fail = (status: number, code: string): never => {
   throw new HttpError(status, code, billingMessage(code));
@@ -74,6 +75,9 @@ export async function createProduct(actor: string, input: unknown) {
 }
 export async function account(userId: string) {
   const config = billingConfig(), mode = requestedBillingMode();
+  // BETA01 : en bêta gratuite, le catalogue n'est plus proposé à l'achat et
+  // aucun contrôle ne demande de carte. L'historique financier reste lisible.
+  const beta = betaPaymentsFrozen();
   const [control, flag, catalog, orders, totals] = await prisma.$transaction(
     [
       prisma.billingControl.findUniqueOrThrow({ where: { id: 'commercial' } }),
@@ -114,8 +118,10 @@ export async function account(userId: string) {
     suspended: !!flag?.suspended,
     mode,
     testMode: mode !== 'live',
-    checkoutAvailable: !!config?.checkoutEnabled && control.enabled && control.mode === config.mode,
-    catalog,
+    beta: { enabled: beta, paymentsFrozen: beta },
+    checkoutAvailable:
+      !beta && !!config?.checkoutEnabled && control.enabled && control.mode === config.mode,
+    catalog: beta ? [] : catalog,
     orders: orders.map(({ sessionId, stripeAccount, intentId, ...o }) => {
       const status = o.refundReview
         ? 'REFUND_REVIEW'
@@ -152,6 +158,10 @@ async function checkStripeAccount(config: ReturnType<typeof requiredConfig>, cli
   return fail(503, 'stripe_account_mismatch');
 }
 export async function enableCommerce(actor: string, confirm: string, evidence?: string) {
+  // BETA01 : le gel commercial est strict. Aucune action administrative ne peut
+  // réactiver les ventes tant que le mode bêta est actif ; le catalogue, le
+  // ledger et les droits existants restent inchangés.
+  if (betaPaymentsFrozen()) return fail(409, 'beta_mode_active');
   const config = requiredConfig();
   if (confirm !== activationPhrase(config.mode) || (config.live && !evidence)) return fail(400, 'activation_confirmation_required');
   if (!config.checkoutEnabled) return fail(503, 'stripe_checkout_unavailable');
@@ -167,6 +177,9 @@ export async function enableCommerce(actor: string, confirm: string, evidence?: 
   });
 }
 export async function checkout(userId: string, productId: string, requestKey: string, mockedClient?: Stripe) {
+  // BETA01 : refus explicite au niveau du service, avant toute lecture de
+  // configuration Stripe et sans effet de bord. Masquer un bouton ne suffit pas.
+  if (betaPaymentsFrozen()) return fail(403, 'beta_mode_active');
   const config = requiredConfig(), { origin, mode } = config;
   if (!config.checkoutEnabled || !origin) return fail(503, 'stripe_checkout_unavailable');
   const client = mockedClient ?? stripeClient(config);
