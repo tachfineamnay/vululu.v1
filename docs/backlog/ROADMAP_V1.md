@@ -22,6 +22,10 @@ Brouillons conversationnels par projet, Vertex AI derrière le budget ToolBroker
 
 Adaptateurs Replicate et Runway conservés, suivi et récupération dans ToolBroker, import vérifié, placement dans le Studio et export : [activation et recette](../delivery/F03_MEDIA_GENERATION.md). Aucun fournisseur réel activé.
 
+### F04 — Publication multicanale (2026-11-20)
+
+Connexion Postiz par le client, programmation approuvée et suivi des reçus dans le calendrier, kit manuel hors périmètre : [livraison et activation](../delivery/F04_MULTICHANNEL_PUBLISHING.md). Aucun réseau réel activé.
+
 ## 2. Principes de séquencement
 
 ### Studio du 2026-11-06

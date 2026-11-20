@@ -779,6 +779,7 @@ model PublishingConnection {
   provider String
   platform String
   channel String
+  displayName String?
   tokenCipher String
   hookCipher String
   expiresAt DateTime
@@ -802,6 +803,7 @@ model PublicationRequest {
   reason String?
   remoteId String?
   networkReceipt String?
+  scheduledAt DateTime?
   events PublicationEvent[]
   @@unique([itemId,itemVersion,connectionId])
   @@unique([connectionId,remoteId])
