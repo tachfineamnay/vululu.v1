@@ -11,6 +11,8 @@ const enabled = vi.hoisted(() => {
   Object.assign(process.env, {
     DATABASE_URL: u.href,
     APP_ENV: 'test',
+    // This suite exercises the commercial architecture: beta mode is explicitly off.
+    VULULU_BETA_MODE: '0',
     BILLING_STRIPE_MODE: 'test',
     SESSION_SECRET: crypto.randomUUID(),
     APP_ORIGIN: 'http://localhost:3100',

@@ -6,6 +6,8 @@ const signing = process.env.F05_BROWSER_WEBHOOK;
 if (process.env.APP_ENV !== 'test' || process.env.V0_TEST_DB !== '1' || !id || !password || !signing ||
   !['localhost', '127.0.0.1'].includes(db.hostname) || !db.pathname.endsWith('_browser_billing_test')) throw Error('Disposable browser billing database required');
 Object.assign(process.env, {
+  // This fixture reproduces a commercial instance: the beta mode is explicitly off.
+  VULULU_BETA_MODE: '0',
   BILLING_STRIPE_MODE: 'test', STRIPE_TEST_SECRET_KEY: ['sk', 'test', 'browser_fixture'].join('_'), STRIPE_TEST_WEBHOOK_SECRET: signing
 });
 const { buildServer } = await import('../../apps/api/src/server');
