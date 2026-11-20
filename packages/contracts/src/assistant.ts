@@ -10,7 +10,8 @@ const common = {
 export const assistantRequest = z.discriminatedUnion('kind', [
   z.strictObject({ ...common, kind: z.literal('marketing'), offerId: z.string().min(1).max(128), week: marketingWeek, regulated: z.boolean() }),
   z.strictObject({ ...common, kind: z.literal('creative'), scope: actionScope }),
-  z.strictObject({ ...common, kind: z.literal('brainstorm'), offerId: z.string().min(1).max(128).nullable() })
+  z.strictObject({ ...common, kind: z.literal('brainstorm'), offerId: z.string().min(1).max(128).nullable() }),
+  z.strictObject({ ...common, kind: z.literal('agent') })
 ]);
 export const assistantCopy = z.strictObject({
   campaign: z.string().trim().min(1).max(120),
@@ -48,3 +49,19 @@ export const brainstormOutput = z.strictObject({
 export type BrainstormAngle = z.infer<typeof brainstormAngle>;
 export type BrainstormDecision = z.infer<typeof brainstormDecision>;
 export type BrainstormOutput = z.infer<typeof brainstormOutput>;
+
+/**
+ * L'agent RECOMMANDE des outils ; seul Vululu AUTORISE et exécute (ADR-0036).
+ * Les paramètres sont revalidés côté serveur au moment de la conversion en opération.
+ */
+export const agentToolProposal = z.strictObject({
+  tool: z.string().min(3).max(64),
+  params: z.unknown(),
+  reason: z.string().trim().min(2).max(300)
+});
+export const agentOutput = z.strictObject({
+  schemaVersion: z.literal(1),
+  reply: z.string().trim().min(1).max(600),
+  tools: z.array(agentToolProposal).max(4)
+});
+export type AgentOutput = z.infer<typeof agentOutput>;

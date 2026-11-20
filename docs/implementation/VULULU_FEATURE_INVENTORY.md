@@ -170,7 +170,21 @@ Implémenté depuis l'inventaire (commit P02, `BUILD_UNVERIFIED`, aucun test ex�
 
 Limites P02 : les suites existantes qui appellent l'assistant/le plan marketing sans confirmer les ressources échoueront jusqu'au réalignement P12 ; aucune exécution réelle (tests, build, lint, typecheck) en P02 ; le client Prisma doit être régénéré avant toute vérification TypeScript.
 
-## 8. Mise à jour P04 — directions artistiques versionnées (2026-11-20)
+## 8. Mise à jour P05 — exécution outillée agentique (2026-11-20)
+
+Implémenté depuis l'inventaire (commit P05, `BUILD_UNVERIFIED`, aucun test exécuté) :
+
+- **ADR-0036** : registre fermé et versionné, l'agent recommande et Vululu autorise, aucune exécution arbitraire, pas de nouveau moteur de workflow.
+- Migration additive `20261121130000_agentic_tool_proposals` : `ExecutionOperation.params/result` (JSONB), `agentTurnId`, `step`.
+- `registry.ts` v2 : chaque outil porte `action`, `scope` (`project`|`assets`|`revision`), `approval` (`auto`|`human`) et, si proposable, un schéma Zod ; nouveaux outils `project.summary@1`, `assets.list@1`, `assets.inspect@1`, `creative.direction@1` (aucun effet payant).
+- `broker.ts` : périmètres exécutables avant toute révision créative (décision de ressources confirmée requise pour `assets`), digest des paramètres canoniques, stockage `params`/`agentTurnId`/`step`, résultat structuré plafonné (32 Kio), échec déterministe → `FAILED` à coût nul (distinct de l'issue incertaine `UNKNOWN`).
+- Assistant : type de tour `agent` (`agentOutput` : réponse + ≤4 recommandations), filtrage aux outils proposables, plafond de 6 étapes consécutives, repli hors ligne sans recommandation ; Vertex étendu (schéma JSON + consigne « recommander, ne jamais exécuter »).
+- API : `POST /api/projects/:id/execution/agent` (conversion recommandation → opération PROPOSED/QUEUED avec revalidation des paramètres), `GET /api/projects/:id/execution` (statut réel du projet), `GET /api/execution/tools` sérialisé (plus de schéma Zod exposé).
+- UI `ProjectExecutionStatus` : autorisation humaine, annulation, résultat structuré, issue incertaine, rafraîchissement automatique.
+
+Limites P05 : les outils Python de P06 s'enregistreront sur ce contrat (registre + un cas de dispatch) ; le choix humain de direction (ancien P05) reste à livrer ; aucun test/build/lint/typecheck exécuté.
+
+## 9. Mise à jour P04 — directions artistiques versionnées (2026-11-20)
 
 Implémenté depuis l'inventaire (commit P04, `BUILD_UNVERIFIED`, aucun test exécuté) :
 

@@ -1,9 +1,10 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { prisma } from '@vululu/db';
 import type { ExecutionOperation as Op, Prisma } from '@prisma/client';
+import { contentChecksum } from '@vululu/domain';
 import { mediaApprovalDigest } from '../mediaGeneration/approval';
 import { HttpError } from '../../errors';
-import { tools, toolSchema, proposal, type EnginePort } from './registry';
+import { tools, toolSchema, proposal, type EnginePort, type Tool } from './registry';
 import { holdTool,checkClaim,finishTool } from '../billing/service';
 import {demoDisabled} from '../../releaseMode';
 type Tx = Prisma.TransactionClient;
@@ -40,7 +41,7 @@ async function owned(tx: Tx, id: string, actor: string) {
     })) ?? missing()
   );
 }
-async function allowed(tx: Tx, actor: string, id: string, tool: keyof typeof tools, revision: number, key: string) {
+async function allowed(tx: Tx, actor: string, id: string, tool: Tool, revision: number, key: string) {
   if(tool.startsWith('sandbox.')&&demoDisabled()) deny(403,'tool_disabled');
   const a = await lock(tx, actor);
   if (!a.enabled || !a.tools.includes(tool)) deny(403, 'tool_disabled');
@@ -58,12 +59,27 @@ async function allowed(tx: Tx, actor: string, id: string, tool: keyof typeof too
       return missing();
     return a;
   }
+  const definition = tools[tool];
+  // Outils bornés aux ressources confirmées : exécutables avant toute révision créative (ADR-0036).
+  if (definition.scope === 'assets') {
+    const project = await tx.project.findFirst({
+      where: { id, userId: actor, context: { userId: actor } },
+      select: { assetsConfirmationDigest: true }
+    });
+    if (!project) return missing();
+    if (!project.assetsConfirmationDigest) deny(409, 'assets_required');
+    return a;
+  }
+  if (definition.scope === 'project') {
+    if (!(await tx.project.count({ where: { id, userId: actor } }))) return missing();
+    return a;
+  }
   const r = await tx.creativeRevision.findFirst({
     where: { projectId: id, version: revision, project: { userId: actor } },
     select: { approvedAt: true }
   });
   if (!r) return missing();
-  if (tools[tool].action === 'WRITE/PUBLISH' && !r.approvedAt) deny(409, 'content_approval_required');
+  if (definition.action === 'WRITE/PUBLISH' && !r.approvedAt) deny(409, 'content_approval_required');
   return a;
 }
 async function reserve(tx: Tx, o: Op, actor: string) {
@@ -85,10 +101,11 @@ async function reserve(tx: Tx, o: Op, actor: string) {
     }
   });
 }
-export async function propose(actor: string, projectId: string, input: unknown) {
-  return prisma.$transaction((tx) => proposeTx(tx, actor, projectId, input));
+export type AgentProposalMeta = { agentTurnId?: string; step?: number; params?: unknown };
+export async function propose(actor: string, projectId: string, input: unknown, meta?: AgentProposalMeta) {
+  return prisma.$transaction((tx) => proposeTx(tx, actor, projectId, input, meta));
 }
-export async function proposeTx(tx: Tx, actor: string, projectId: string, input: unknown) {
+export async function proposeTx(tx: Tx, actor: string, projectId: string, input: unknown, meta?: AgentProposalMeta) {
   const p = proposal.parse(input);
   const parts: unknown[] = [projectId, p.tool, p.revision];
   if (p.tool.startsWith('postiz.') || p.tool === 'marketing.plan@1') parts.push(p.key);
@@ -97,6 +114,11 @@ export async function proposeTx(tx: Tx, actor: string, projectId: string, input:
     const turn = await tx.assistantTurn.findFirst({ where: { id: p.key, projectId, revision: p.revision, project: { userId: actor } }, select: { inputDigest: true } });
     if (!turn) return missing();
     digest = createHash('sha256').update(JSON.stringify([...parts, p.key, turn.inputDigest, tools[p.tool].maxCents])).digest('hex');
+  }
+  if (meta?.params !== undefined) {
+    digest = createHash('sha256')
+      .update(JSON.stringify([projectId, p.tool, p.revision, p.key, contentChecksum(meta.params)]))
+      .digest('hex');
   }
   if (p.tool.startsWith('media.')) {
     const g = await tx.mediaGeneration.findFirst({
@@ -134,7 +156,10 @@ export async function proposeTx(tx: Tx, actor: string, projectId: string, input:
       digest,
       maxCents: tools[p.tool].maxCents,
       state: 'PROPOSED',
-      costState: 'ESTIMATED'
+      costState: 'ESTIMATED',
+      ...(meta?.params !== undefined ? { params: JSON.parse(JSON.stringify(meta.params)) as Prisma.InputJsonValue } : {}),
+      ...(meta?.agentTurnId ? { agentTurnId: meta.agentTurnId } : {}),
+      ...(meta?.step !== undefined ? { step: meta.step } : {})
     }
   });
   await audit(tx, o, actor, 'estimated');
@@ -189,7 +214,7 @@ async function incident(tx: Tx, o: Op) {
     data: { state: 'UNKNOWN', costState: 'UNKNOWN' }
   });
 }
-async function settle(tx: Tx, o: Op, cents: number, manual?: { actor: string; evidence: string }) {
+async function settle(tx: Tx, o: Op, cents: number, manual?: { actor: string; evidence: string }, result?: unknown) {
   if (!Number.isInteger(cents) || cents < 0 || cents > o.maxCents) {
     if (manual) deny(409, 'invalid_cost');
     await tx.executionAccount.update({ where: { userId: o.accountId }, data: { enabled: false } });
@@ -206,12 +231,20 @@ async function settle(tx: Tx, o: Op, cents: number, manual?: { actor: string; ev
     cents,
     ...(manual ? { evidence: manual.evidence } : {})
   });
+  let storedResult: Prisma.InputJsonValue | undefined;
+  if (result !== undefined) {
+    const json = JSON.stringify(result);
+    storedResult = json.length <= 32768
+      ? (JSON.parse(json) as Prisma.InputJsonValue)
+      : { truncated: true, sizeBytes: json.length };
+  }
   return tx.executionOperation.update({
     where: { id: o.id },
     data: {
       state: manual ? 'RESOLVED' : 'SUCCEEDED',
       costState: manual ? 'RECONCILED' : 'REPORTED',
-      reportedCents: cents
+      reportedCents: cents,
+      ...(storedResult !== undefined ? { result: storedResult } : {})
     }
   });
 }
@@ -258,7 +291,7 @@ export async function execute(id: string, engine: EnginePort, timeoutMs = 120000
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const result = await Promise.race([
-      engine.invoke({ ...o, tool: toolSchema.parse(o.tool) }, ctrl.signal),
+      engine.invoke({ ...o, tool: toolSchema.parse(o.tool), params: o.params ?? undefined }, ctrl.signal),
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => {
           ctrl.abort();
@@ -268,6 +301,20 @@ export async function execute(id: string, engine: EnginePort, timeoutMs = 120000
     ]);
     await transition(id, async (tx, row) => {
       if (row.state !== 'CLAIMED') return;
+      if ('failed' in result) {
+        await finishTool(tx, row, 'cancel');
+        await tx.executionAccount.update({
+          where: { userId: row.accountId },
+          data: { reservedCents: { decrement: row.maxCents } }
+        });
+        await audit(tx, row, null, 'failed', { code: result.failed.code });
+        await tx.executionOperation.update({
+          where: { id },
+          data: { state: 'FAILED', costState: 'RELEASED', reportedCents: 0,
+            result: { error: { code: result.failed.code, message: result.failed.message } } as Prisma.InputJsonValue }
+        });
+        return;
+      }
       if ('pendingMedia' in result) {
         if (
           !row.tool.startsWith('media.') ||
@@ -280,7 +327,7 @@ export async function execute(id: string, engine: EnginePort, timeoutMs = 120000
           where: { id },
           data: { state: 'POLLING', claimUntil: null, notifyAfter: new Date(Date.now() + 10000) }
         });
-      } else await settle(tx, row, result.costCents);
+      } else await settle(tx, row, result.costCents, undefined, ('result' in result ? result.result : undefined));
     });
   } catch {
     await transition(id, async (tx, row) => {

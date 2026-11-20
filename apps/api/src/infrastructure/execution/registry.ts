@@ -1,24 +1,55 @@
 import { z } from 'zod';
 // Version is part of each immutable tool identity. No dynamic URLs, secrets, prompts or provider selection.
 import { caps } from '../mediaGeneration/providers';
+import { creativeDirectionInput } from '@vululu/contracts';
+
+export type ToolScope = 'project' | 'revision' | 'assets';
+export type ToolApproval = 'auto' | 'human';
+export type ToolDefinition = {
+  provider: string;
+  action: 'READ' | 'GENERATE' | 'WRITE/PUBLISH';
+  maxCents: number;
+  /** Paramètres proposés par l'agent puis revalidés par le serveur ; absent = non proposable par l'agent. */
+  params?: z.ZodTypeAny;
+  scope: ToolScope;
+  approval: ToolApproval;
+  description: string;
+};
 export const tools = {
-  'media.image@1': { provider: caps.image.provider, action: 'GENERATE', maxCents: caps.image.maxCents },
-  'media.video@1': { provider: caps.video.provider, action: 'GENERATE', maxCents: caps.video.maxCents },
-  'assistant.draft@1': { provider: 'vertex-gemini@1', action: 'GENERATE', maxCents: 8 },
-  'marketing.plan@1': { provider: 'editorial-recipe@1', action: 'GENERATE', maxCents: 8 },
-  'postiz.schedule@1': { provider: 'postiz@1', action: 'WRITE/PUBLISH', maxCents: 0 },
-  'postiz.cancel@1': { provider: 'postiz@1', action: 'WRITE/PUBLISH', maxCents: 0 },
-  'studio.inspect@1': { provider: 'studio@1', action: 'READ', maxCents: 0 },
-  'studio.render@1': { provider: 'studio@1', action: 'GENERATE', maxCents: 0 },
-  'sandbox.generate@1': { provider: 'sandbox@1', action: 'GENERATE', maxCents: 10 },
-  'sandbox.publish@1': { provider: 'sandbox@1', action: 'WRITE/PUBLISH', maxCents: 4 }
-} as const;
+  'media.image@1': { provider: caps.image.provider, action: 'GENERATE', maxCents: caps.image.maxCents, scope: 'revision', approval: 'human', description: 'Générer une image externe (fournisseur, budget requis).' },
+  'media.video@1': { provider: caps.video.provider, action: 'GENERATE', maxCents: caps.video.maxCents, scope: 'revision', approval: 'human', description: 'Générer une vidéo externe (fournisseur, budget requis).' },
+  'assistant.draft@1': { provider: 'vertex-gemini@1', action: 'GENERATE', maxCents: 8, scope: 'revision', approval: 'human', description: 'Rédiger un brouillon d’assistant (Vertex, budget requis).' },
+  'marketing.plan@1': { provider: 'editorial-recipe@1', action: 'GENERATE', maxCents: 8, scope: 'revision', approval: 'human', description: 'Générer un plan marketing éditorial.' },
+  'postiz.schedule@1': { provider: 'postiz@1', action: 'WRITE/PUBLISH', maxCents: 0, scope: 'revision', approval: 'human', description: 'Programmer une publication Postiz (approbation de contenu requise).' },
+  'postiz.cancel@1': { provider: 'postiz@1', action: 'WRITE/PUBLISH', maxCents: 0, scope: 'revision', approval: 'human', description: 'Annuler une programmation Postiz.' },
+  'studio.inspect@1': { provider: 'studio@1', action: 'READ', maxCents: 0, scope: 'revision', approval: 'auto', description: 'Lire une révision de composition existante.' },
+  'studio.render@1': { provider: 'studio@1', action: 'GENERATE', maxCents: 0, scope: 'revision', approval: 'human', description: 'Rendre une révision de composition (Sharp/FFmpeg).' },
+  'sandbox.generate@1': { provider: 'sandbox@1', action: 'GENERATE', maxCents: 10, scope: 'revision', approval: 'human', description: 'Unités synthétiques de démonstration, jamais publiées.' },
+  'sandbox.publish@1': { provider: 'sandbox@1', action: 'WRITE/PUBLISH', maxCents: 4, scope: 'revision', approval: 'human', description: 'Unité synthétique de démonstration, jamais publiée.' },
+  // P05 — outils lisibles avant toute révision créative, proposables par l'agent (aucun effet payant).
+  'project.summary@1': { provider: 'vululu@1', action: 'READ', maxCents: 0, scope: 'project', approval: 'auto', description: 'Résumé du projet : objectif, canal, format, identité, décision de ressources.', params: z.strictObject({}) },
+  'assets.list@1': { provider: 'vululu@1', action: 'READ', maxCents: 0, scope: 'assets', approval: 'auto', description: 'Lister les ressources confirmées du projet (version, type, empreinte, droits).', params: z.strictObject({}) },
+  'assets.inspect@1': { provider: 'vululu@1', action: 'READ', maxCents: 0, scope: 'assets', approval: 'auto', description: 'Inspecter une ressource confirmée (métadonnées et empreinte).', params: z.strictObject({ versionId: z.string().min(1).max(128) }) },
+  'creative.direction@1': { provider: 'vululu@1', action: 'GENERATE', maxCents: 0, scope: 'project', approval: 'human', description: 'Créer des directions artistiques versionnées depuis le brainstorming.', params: creativeDirectionInput }
+} as const satisfies Record<string, ToolDefinition>;
 export type Tool = keyof typeof tools;
 export const toolSchema = z.enum(Object.keys(tools) as [Tool, ...Tool[]]);
-export const proposal = z.object({ key: z.uuid(), tool: toolSchema, revision: z.int().positive() }).strict();
+/** Sous-ensemble que l'agent peut recommander : schéma de paramètres déclaré, aucun secret, aucun réseau arbitraire. */
+export const agentTools = Object.fromEntries(Object.entries(tools).filter(([, definition]) => definition.params !== undefined)) as unknown as Record<string, ToolDefinition>;
+export function agentCatalog() {
+  return Object.entries(agentTools).map(([tool, definition]) => ({
+    tool, action: definition.action, scope: definition.scope, approval: definition.approval,
+    maxCents: definition.maxCents, description: definition.description
+  }));
+}
+export const proposal = z.object({ key: z.string().min(1).max(160), tool: toolSchema, revision: z.int().positive() }).strict();
 export interface EnginePort {
   invoke(
-    job: { id: string; accountId: string; projectId: string; tool: Tool; revision: number; maxCents: number },
+    job: { id: string; accountId: string; projectId: string; tool: Tool; revision: number; maxCents: number; params: unknown },
     signal: AbortSignal
-  ): Promise<{ costCents: number } | { pendingMedia: true }>;
+  ): Promise<
+    | { costCents: number; result?: unknown }
+    | { failed: { code: string; message: string } }
+    | { pendingMedia: true }
+  >;
 }

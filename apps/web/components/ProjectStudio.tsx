@@ -20,6 +20,7 @@ import CampaignJourney from './CampaignJourney';
 import ProjectAssetsStep from './ProjectAssetsStep';
 import BrainstormPanel from './BrainstormPanel';
 import ArtDirections from './ArtDirections';
+import ProjectExecutionStatus from './ProjectExecutionStatus';
 import type { ProjectAssetDecision } from '../lib/api';
 import { projectJourney } from '../lib/projectJourney';
 import CreationDelivery from './CreationDelivery';
@@ -466,6 +467,7 @@ export default function ProjectStudio({ id }: { id: string }) {
         {assetDecision?.confirmed ? <>
           <BrainstormPanel projectId={bundle.project.id} contextId={bundle.context.id} />
           <ArtDirections projectId={bundle.project.id} onDirections={setDirectionsCount} />
+          <ProjectExecutionStatus projectId={bundle.project.id} />
           <ProjectAssistant key={bundle.project.id} projectId={bundle.project.id} contextId={bundle.context.id} creativeHead={live.state?.revisions[0]?.version} preferredOffer={calendarSource?.offerId} useCta={(cta) => {
             setBriefCta(cta); setBriefEdited(true); focusStudioSection('brief-heading');
             notify('Appel à l’action repris. Enregistrez le brief après relecture.');

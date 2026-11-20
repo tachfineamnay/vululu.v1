@@ -309,3 +309,13 @@ main :where(input,select,textarea){max-inline-size:100%;box-sizing:border-box}
 [data-vululu-theme="blue"] .art-direction-preview img { width: 100%; height: auto; max-height: 320px; object-fit: contain; background: var(--v-color-media); border-radius: var(--v-radius-control); }
 [data-vululu-theme="blue"] .art-direction-provenance { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; background: var(--v-color-background); padding: var(--v-space-8); border-radius: var(--v-radius-small); font-size: var(--v-font-size-label); }
 [data-vululu-theme="blue"] .art-directions-compare-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: var(--v-space-16); }
+
+/* P05 — statut réel des opérations outillées. */
+[data-vululu-theme="blue"] .execution-list { list-style: none; display: grid; gap: var(--v-space-8); padding: 0; margin: 0; }
+[data-vululu-theme="blue"] .execution-row { border: 1px solid var(--v-color-border); border-radius: var(--v-radius-control); background: var(--v-color-surface); padding: var(--v-space-12) var(--v-space-16); display: grid; gap: var(--v-space-8); }
+[data-vululu-theme="blue"] .execution-row-head { display: flex; align-items: center; justify-content: space-between; gap: var(--v-space-8); flex-wrap: wrap; }
+[data-vululu-theme="blue"] .execution-state.state-succeeded { color: var(--v-color-success); background: var(--v-color-success-bg); }
+[data-vululu-theme="blue"] .execution-state.state-failed, [data-vululu-theme="blue"] .execution-state.state-cancelled { color: var(--v-color-danger); background: var(--v-color-danger-bg); }
+[data-vululu-theme="blue"] .execution-state.state-proposed { color: var(--v-color-action); background: var(--v-color-selected); }
+[data-vululu-theme="blue"] .execution-state.state-unknown { color: var(--v-color-warning); background: var(--v-color-warning-bg); }
+[data-vululu-theme="blue"] .execution-result { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; background: var(--v-color-background); padding: var(--v-space-8); border-radius: var(--v-radius-small); font-size: var(--v-font-size-label); }

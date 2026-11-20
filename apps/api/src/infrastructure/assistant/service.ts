@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { type AssistantTurn, Prisma } from '@prisma/client';
 import { prisma } from '@vululu/db';
-import { assistantRequest, creativeSpec, marketingContext, type AssistantCopy, type AssistantRequest, type ActionPreview, type BrainstormOutput } from '@vululu/contracts';
+import { assistantRequest, creativeSpec, marketingContext, type AgentOutput, type AssistantCopy, type AssistantRequest, type ActionPreview, type BrainstormOutput } from '@vululu/contracts';
 import { HttpError } from '../../errors';
 import { localTranslator, previewOf } from '../../application/creativeActions';
 import { proposeTx } from '../execution/broker';
@@ -10,7 +10,8 @@ import { compile, fallback, sensitive } from '../marketing/editorial';
 import { evaluateAssetDecision, type AssetDecisionSnapshot } from '@vululu/application';
 import { readAssetDecisionRow } from '../prisma/assetDecisionRepository';
 import { receipt, vertexConfig, vertexProfile, vertexProvider, type AssistantProvider, type ModelInput } from './vertex';
-import { minimizeModelData, vettedBrainstorm, vettedChanges, vettedCopy } from './safety';
+import { minimizeModelData, vettedAgentOutput, vettedBrainstorm, vettedChanges, vettedCopy } from './safety';
+import { agentCatalog, agentTools } from '../execution/registry';
 
 export const assistantTool = 'assistant.draft@1';
 const unavailable = () => new HttpError(409, 'assistant_unavailable', 'IA indisponible pour ce projet. Utilisez le brouillon hors ligne.');
@@ -48,6 +49,19 @@ async function creativeSource(tx: Tx, projectId: string, input: Extract<Assistan
   if (index === -1) throw missing();
   return { spec, scene: spec.scenes[index], index, checksum: hash(spec) };
 }
+async function agentDepth(tx: Tx, projectId: string, parentId?: string): Promise<number> {
+  let depth = 0;
+  let id: string | undefined = parentId;
+  while (id && depth < 8) {
+    const row = await tx.assistantTurn.findFirst({ where: { id, projectId }, select: { request: true, parentId: true } });
+    if (!row) break;
+    const prior = assistantRequest.parse(row.request);
+    if (prior.kind !== 'agent') break;
+    depth += 1;
+    id = row.parentId ?? undefined;
+  }
+  return depth;
+}
 async function assetDecision(tx: Tx, userId: string, projectId: string) {
   const row = await readAssetDecisionRow(tx, projectId, userId);
   if (!row) throw missing();
@@ -72,6 +86,10 @@ async function snapshot(tx: Tx, userId: string, projectId: string, input: Assist
     const offer = input.offerId ? await offerName(tx, userId, projectId, input.offerId) : null;
     return { profile, offer, assets };
   }
+  if (input.kind === 'agent') {
+    // L'agent recommande des outils ; il n'exécute rien. Seules les ressources confirmées sont exposées.
+    return { profile, assets };
+  }
   if (input.kind === 'marketing') {
     const c = await marketingSnapshot(tx, userId, projectId, input.offerId, input.week,
       input.regulated || sensitive([profile.description, input.prompt, profile.objective].join(' ')));
@@ -87,6 +105,7 @@ async function snapshot(tx: Tx, userId: string, projectId: string, input: Assist
 function sameScope(a: AssistantRequest, b: AssistantRequest) {
   if (a.kind === 'marketing' && b.kind === 'marketing') return a.offerId === b.offerId;
   if (a.kind === 'brainstorm' && b.kind === 'brainstorm') return true;
+  if (a.kind === 'agent' && b.kind === 'agent') return true;
   return a.kind === 'creative' && b.kind === 'creative' && a.scope.target.sceneKey === b.scope.target.sceneKey;
 }
 async function lineage(tx: Tx, projectId: string, input: AssistantRequest) {
@@ -96,10 +115,12 @@ async function lineage(tx: Tx, projectId: string, input: AssistantRequest) {
     const row = await tx.assistantTurn.findFirst({ where: { id, projectId } });
     const prior = row && assistantRequest.parse(row.request);
     if (!row || !prior || !sameScope(input, prior) || !row.result) throw missing();
-    const result = row.result as { copy?: AssistantCopy; preview?: ActionPreview; ack?: string; angles?: Array<{ title: string }> };
+    const result = row.result as { copy?: AssistantCopy; preview?: ActionPreview; ack?: string; angles?: Array<{ title: string }>; reply?: string; tools?: Array<{ tool: string }> };
     const suggestion = prior.kind === 'brainstorm'
       ? { ack: trimmed(result.ack ?? '', 200), angles: (result.angles ?? []).map((a) => a.title).slice(0, 4) }
-      : result.copy
+      : prior.kind === 'agent'
+        ? { reply: trimmed(result.reply ?? '', 200), tools: (result.tools ?? []).map((tool) => tool.tool).slice(0, 4) }
+        : result.copy
         ? { campaign: result.copy.campaign, strategy: result.copy.strategy, headlines: result.copy.posts.map((p) => p.headline) }
         : { changes: result.preview?.action.changes.map((c) => c.operation === 'cta' || c.operation === 'text'
           ? { operation: c.operation, text: trimmed(c.parameters.text, 200) } : { operation: c.operation }) ?? [] };
@@ -168,6 +189,12 @@ async function creativePreview(tx: Tx, projectId: string, input: Extract<Assista
 async function fallbackResult(tx: Tx, projectId: string, input: AssistantRequest, s: Awaited<ReturnType<typeof snapshot>>) {
   if (input.kind === 'marketing') return marketingResult(s);
   if (input.kind === 'brainstorm') return brainstormResult(s as unknown as BrainstormSource);
+  if (input.kind === 'agent') {
+    const offlineAgent: AgentOutput = { schemaVersion: 1,
+      reply: 'Hors ligne, je ne propose pas d’action automatique. Décrivez ce que vous voulez accomplir ; les recommandations outillées reviennent avec le fournisseur IA ou un opérateur humain.',
+      tools: [] };
+    return offlineAgent;
+  }
   try { return await creativePreview(tx, projectId, input); }
   catch (e) {
     if (!(e instanceof HttpError || (e instanceof Error && e.name === 'ZodError'))) throw e;
@@ -195,6 +222,9 @@ export async function createTurn(userId: string, projectId: string, raw: unknown
       if (existing.projectId !== projectId) throw missing();
       if (hash(existing.request) !== hash(input)) throw new HttpError(409, 'assistant_key_conflict', 'Identifiant de demande déjà utilisé.');
       return tx.assistantTurn.findUniqueOrThrow({ where: { id: input.requestId }, select: turnSelect });
+    }
+    if (input.kind === 'agent' && (await agentDepth(tx, projectId, input.parentId)) >= 6) {
+      throw new HttpError(422, 'agent_steps_exhausted', 'Plafond d’étapes atteint. Concluez ou repartez d’une nouvelle conversation.');
     }
     const source = await snapshot(tx, userId, projectId, input);
     const context = { source, previous: await lineage(tx, projectId, input) };
@@ -229,7 +259,9 @@ export async function generateAssistantClaim(job: { id: string; accountId: strin
     ? { kind: 'marketing', data: minimizeModelData({ request: input.prompt, previous, business: source.profile, offer: c!.offer, week: c!.week, slots: marketingResult(source).slots, professionalReview: c!.regulated }) }
     : input.kind === 'creative'
       ? { kind: 'creative', data: minimizeModelData({ request: input.prompt, previous, business: source.profile, selectedScene: source.selected }) }
-      : { kind: 'brainstorm', data: minimizeModelData({ request: input.prompt, previous, business: source.profile, offer: (source as unknown as BrainstormSource).offer?.name ?? null, assets: assetNames((source as unknown as BrainstormSource).assets) }) };
+      : input.kind === 'agent'
+        ? { kind: 'agent', data: minimizeModelData({ request: input.prompt, previous, business: source.profile, assets: assetNames((source as unknown as BrainstormSource).assets), tools: agentCatalog() }) }
+        : { kind: 'brainstorm', data: minimizeModelData({ request: input.prompt, previous, business: source.profile, offer: (source as unknown as BrainstormSource).offer?.name ?? null, assets: assetNames((source as unknown as BrainstormSource).assets) }) };
   const fresh = await snapshot(prisma, job.accountId, job.projectId, input).then((s) => hash(s) === hash(source)).catch((error: unknown) => {
     if (error instanceof HttpError && [404, 409, 422].includes(error.statusCode)) return false;
     throw error;
@@ -257,6 +289,9 @@ export async function generateAssistantClaim(job: { id: string; accountId: strin
     } else if (input.kind === 'brainstorm') {
       const br = sanitizeBrainstorm(outcome.output, source as unknown as BrainstormSource);
       if (br) result = br;
+    } else if (input.kind === 'agent') {
+      const out = vettedAgentOutput(outcome.output);
+      if (out) result = { ...out, tools: out.tools.filter((tool) => Object.prototype.hasOwnProperty.call(agentTools, tool.tool)) };
     } else if (outcome.output !== undefined) {
       try { result = await creativePreview(prisma, job.projectId, input, outcome.output); }
       catch (e) { if (!(e instanceof HttpError || (e instanceof Error && e.name === 'ZodError'))) throw e; }

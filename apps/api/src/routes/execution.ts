@@ -1,8 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '@vululu/db';
+import { agentOutput } from '@vululu/contracts';
 import { approve, cancel, propose, resolveIncident } from '../infrastructure/execution/broker';
-import { tools, toolSchema } from '../infrastructure/execution/registry';
+import { tools, toolSchema, type Tool } from '../infrastructure/execution/registry';
 import { rateLimitPreHandler } from '../infrastructure/security/rateLimiter';
 import {demoDisabled} from '../releaseMode';
 import { HttpError } from '../errors';
@@ -30,7 +31,13 @@ export async function executionRoutes(app: FastifyInstance) {
       }
     })
   );
-  app.get('/api/execution/tools', auth, () => Object.fromEntries(Object.entries(tools).filter(([k])=>!demoDisabled()||!k.startsWith('sandbox.'))));
+  app.get('/api/execution/tools', auth, () => Object.fromEntries(Object.entries(tools)
+    .filter(([key]) => !demoDisabled() || !key.startsWith('sandbox.'))
+    .map(([key, definition]) => [key, {
+      action: definition.action, scope: definition.scope, approval: definition.approval,
+      maxCents: definition.maxCents, description: definition.description,
+      proposable: definition.params !== undefined
+    }])));
   app.put('/api/admin/execution/accounts/:account', admin, async (r) => {
     const { account } = z.object({ account: z.string().min(1).max(128) }).parse(r.params);
     const data = z
@@ -62,6 +69,38 @@ export async function executionRoutes(app: FastifyInstance) {
   app.post('/api/projects/:projectId/execution', auth, (r) =>
     propose(r.currentUser!.id, z.object({ projectId: z.string().max(128) }).parse(r.params).projectId, r.body)
   );
+  // P05 : l'agent recommande, Vululu valide puis autorise. Statut réel des opérations du projet.
+  app.get('/api/projects/:projectId/execution', auth, async (r) => {
+    const { projectId } = z.object({ projectId: z.string().max(128) }).parse(r.params);
+    const items = await prisma.executionOperation.findMany({
+      where: { projectId, accountId: r.currentUser!.id, project: { userId: r.currentUser!.id } },
+      orderBy: { createdAt: 'desc' }, take: 30,
+      select: { id: true, tool: true, state: true, costState: true, maxCents: true, reportedCents: true,
+        result: true, createdAt: true, agentTurnId: true, step: true, digest: true, approvedBy: true }
+    });
+    return { items };
+  });
+  app.post('/api/projects/:projectId/execution/agent', auth, async (r) => {
+    const { projectId } = z.object({ projectId: z.string().max(128) }).parse(r.params);
+    const body = z.strictObject({ turnId: z.uuid(), index: z.int().min(0).max(3) }).parse(r.body);
+    const user = r.currentUser!.id;
+    const turn = await prisma.assistantTurn.findFirst({
+      where: { id: body.turnId, projectId, kind: 'agent', project: { userId: user } },
+      select: { id: true, result: true }
+    });
+    if (!turn) throw new HttpError(404, 'assistant_not_found', 'Tour d’agent introuvable.');
+    const output = agentOutput.safeParse(turn.result);
+    if (!output.success) throw new HttpError(422, 'agent_output_invalid', 'Recommandation invalide.');
+    const recommendation = output.data.tools[body.index];
+    if (!recommendation) throw new HttpError(422, 'agent_proposal_missing', 'Recommandation absente à cet index.');
+    const definition = tools[recommendation.tool as Tool];
+    if (!definition?.params) throw new HttpError(403, 'tool_not_proposable', 'Outil non proposable par l’agent.');
+    // Paramètres revalidés ici, jamais repris tels quels du modèle.
+    const params = definition.params.parse(recommendation.params);
+    return propose(user, projectId,
+      { key: turn.id + ':' + body.index, tool: recommendation.tool as Tool, revision: 1 },
+      { agentTurnId: turn.id, step: body.index, params });
+  });
   app.get('/api/execution/:id', auth, async (r) => {
     const o = await prisma.executionOperation.findFirst({
       where: { id: id(r.params), accountId: r.currentUser!.id, project: { userId: r.currentUser!.id } }
