@@ -120,7 +120,8 @@ export async function proposeTx(tx: Tx, actor: string, projectId: string, input:
       .update(JSON.stringify([projectId, p.tool, p.revision, p.key, contentChecksum(meta.params)]))
       .digest('hex');
   }
-  if (p.tool.startsWith('media.')) {
+  // Seuls les outils historiques de scène s'appuient sur une ligne MediaGeneration (P07 utilise meta.params).
+  if (p.tool === 'media.image@1' || p.tool === 'media.video@1') {
     const g = await tx.mediaGeneration.findFirst({
       where: {
         id: p.key,

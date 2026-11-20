@@ -170,7 +170,21 @@ Implémenté depuis l'inventaire (commit P02, `BUILD_UNVERIFIED`, aucun test ex�
 
 Limites P02 : les suites existantes qui appellent l'assistant/le plan marketing sans confirmer les ressources échoueront jusqu'au réalignement P12 ; aucune exécution réelle (tests, build, lint, typecheck) en P02 ; le client Prisma doit être régénéré avant toute vérification TypeScript.
 
-## 8. Mise à jour P06 — boîte à outils Python interne (2026-11-20)
+## 8. Mise à jour P07 — production et édition d’image IA (2026-11-20)
+
+Implémenté depuis l’inventaire (commit P07, `BUILD_UNVERIFIED`, aucun test complet, aucun appel fournisseur réel) :
+
+- Contrat additif `imageEditRequest` : opération (`generate`, `edit`, `replace-background`, `remove-object`, `variation`, `enhance`), source/masque par identifiants de versions, prompt borné, ratios sociaux, préservation du sujet, confirmation des droits. `imageEditApply` pour l’application à une composition.
+- Outil `media.image.edit@1` : `scope: project`, GENERATE, approbation humaine, plafond 8 ¢, `agentProposable: false` ; réservation/claim/réconciliation via le broker P05.
+- Adaptateur réel `GeminiImageProvider` (Vertex `gemini-2.5-flash-image`, ADC, `responseModalities: IMAGE`, source/masque en `inlineData`, extraction `inlineData.data`, retry unique sans `imageConfig` si 400) ; capacités déclarées sans sonde payante ; Replicate conservé `scene-flow-only`.
+- Contrôles : source/masque limités au propriétaire et à la marque, formats PNG/JPEG/WebP, tailles bornées, droits connus ; sortie vérifiée (signature, inspection Sharp ≤ 4096 px, ≤ 12 Mio) ; échecs déterministes `FAILED` à coût nul ; issues ambiguës `UNKNOWN` jamais rejouées.
+- Stockage : `AssetUseCases.upload` → nouvelle version immuable avec provenance fournisseur/modèle/opération/source/requête ; l’original n’est jamais modifié.
+- API : `GET /api/image-editing/capabilities`, `POST/GET /api/projects/:id/image-edits`, `POST /api/projects/:id/image-edits/:operationId/apply` (nouvelle révision Studio via calque image).
+- UI `ImageEditingPanel` : choix d’une image source/masque, opération, ratio, préservation du sujet, confirmation des droits, préparation puis autorisation du coût, suivi d’état, comparaison originale/éditée, application à la composition, erreurs et récupération.
+
+Limites P07 : **aucun appel Gemini réel n’a été exécuté** (aucun credential, fournisseur désactivé par défaut) : `providerCallVerified: false` est annoncé dans les capacités ; l’édition par masque est guidée par prompt (pas de paramètre API formel) ; pas de tests/build/typecheck (P12).
+
+## 9. Mise à jour P06 — boîte à outils Python interne (2026-11-20)
 
 Implémenté depuis l'inventaire (commit P06, `BUILD_UNVERIFIED`, aucun test complet) :
 

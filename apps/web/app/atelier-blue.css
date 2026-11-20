@@ -319,3 +319,11 @@ main :where(input,select,textarea){max-inline-size:100%;box-sizing:border-box}
 [data-vululu-theme="blue"] .execution-state.state-proposed { color: var(--v-color-action); background: var(--v-color-selected); }
 [data-vululu-theme="blue"] .execution-state.state-unknown { color: var(--v-color-warning); background: var(--v-color-warning-bg); }
 [data-vululu-theme="blue"] .execution-result { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; background: var(--v-color-background); padding: var(--v-space-8); border-radius: var(--v-radius-small); font-size: var(--v-font-size-label); }
+
+/* P07 — studio d'édition d'image IA. */
+[data-vululu-theme="blue"] .image-editing .two-col { align-items: end; }
+[data-vululu-theme="blue"] .image-edit-source { width: 100%; max-width: 280px; max-height: 180px; object-fit: contain; background: var(--v-color-media); border-radius: var(--v-radius-control); }
+[data-vululu-theme="blue"] .image-edit-compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: var(--v-space-12); }
+[data-vululu-theme="blue"] .image-edit-compare figure { margin: 0; display: grid; gap: var(--v-space-4); }
+[data-vululu-theme="blue"] .image-edit-compare img { width: 100%; max-height: 260px; object-fit: contain; background: var(--v-color-media); border-radius: var(--v-radius-control); }
+[data-vululu-theme="blue"] .image-edit-compare figcaption { font-size: var(--v-font-size-label); color: var(--v-color-text-muted); }

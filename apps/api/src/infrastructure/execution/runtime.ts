@@ -8,6 +8,7 @@ import { PrismaCreativeRepository } from '../prisma/creativeRepository';
 import { PrismaCreativeDirectionRepository } from '../prisma/creativeDirectionRepository';
 import { readAssetDecisionRow } from '../prisma/assetDecisionRepository';
 import { runPythonCapability } from '../python/adapter';
+import { runImageEdit } from '../imageEditing/service';
 import { createArtifactStorage, createArtifactStorageRegistry } from '../storage/storageFactory';
 import type { EnginePort } from './registry';
 import { dispatchPublication } from '../publishing/service';
@@ -74,6 +75,9 @@ export function studioEngine(creativeStudio: CreativeStudio): EnginePort {
         case 'image.segment@1':
           return runPythonCapability({ id: job.id, accountId: job.accountId, projectId: job.projectId,
             tool: job.tool, maxCents: job.maxCents, params: job.params });
+        case 'media.image.edit@1':
+          return runImageEdit({ id: job.id, accountId: job.accountId, projectId: job.projectId,
+            maxCents: job.maxCents, params: job.params }, signal);
         default:
           throw new Error('unregistered_tool');
       }

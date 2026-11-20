@@ -1,7 +1,7 @@
 import { z } from 'zod';
 // Version is part of each immutable tool identity. No dynamic URLs, secrets, prompts or provider selection.
 import { caps } from '../mediaGeneration/providers';
-import { creativeDirectionInput } from '@vululu/contracts';
+import { creativeDirectionInput, imageEditRequest } from '@vululu/contracts';
 
 export type ToolScope = 'project' | 'revision' | 'assets';
 export type ToolApproval = 'auto' | 'human';
@@ -14,6 +14,8 @@ export type ToolDefinition = {
   scope: ToolScope;
   approval: ToolApproval;
   description: string;
+  /** false = l'agent ne peut pas proposer cet outil lui-même (action réservée à l'utilisateur). */
+  agentProposable?: boolean;
 };
 export const tools = {
   'media.image@1': { provider: caps.image.provider, action: 'GENERATE', maxCents: caps.image.maxCents, scope: 'revision', approval: 'human', description: 'Générer une image externe (fournisseur, budget requis).' },
@@ -33,12 +35,14 @@ export const tools = {
   'creative.direction@1': { provider: 'vululu@1', action: 'GENERATE', maxCents: 0, scope: 'project', approval: 'human', description: 'Créer des directions artistiques versionnées depuis le brainstorming.', params: creativeDirectionInput },
   // P06 — boîte à outils Python interne ; lecture libre, dérivation d'assets avec approbation humaine.
   'image.analyze@1': { provider: 'python-tools@1', action: 'READ', maxCents: 0, scope: 'assets', approval: 'auto', description: 'Analyser une image confirmée (exposition, netteté, couleurs, empreinte perceptuelle) via le service Python interne.', params: z.strictObject({ versionId: z.string().min(1).max(128) }) },
-  'image.segment@1': { provider: 'python-tools@1', action: 'GENERATE', maxCents: 0, scope: 'assets', approval: 'human', description: 'Détourer une image confirmée (PNG transparent + masque alpha) via le service Python interne, puis enregistrer de nouvelles versions.', params: z.strictObject({ versionId: z.string().min(1).max(128), outputs: z.array(z.enum(['cutout', 'mask'])).min(1).max(2).optional(), maxDimension: z.int().min(256).max(4096).optional() }) }
+  'image.segment@1': { provider: 'python-tools@1', action: 'GENERATE', maxCents: 0, scope: 'assets', approval: 'human', description: 'Détourer une image confirmée (PNG transparent + masque alpha) via le service Python interne, puis enregistrer de nouvelles versions.', params: z.strictObject({ versionId: z.string().min(1).max(128), outputs: z.array(z.enum(['cutout', 'mask'])).min(1).max(2).optional(), maxDimension: z.int().min(256).max(4096).optional() }) },
+  // P07 — édition/génération d'image IA : action utilisateur explicite (droits + source choisis), jamais auto-proposée par l'agent.
+  'media.image.edit@1': { provider: 'gemini-image@1', action: 'GENERATE', maxCents: 8, scope: 'project', approval: 'human', agentProposable: false, description: 'Éditer ou générer une image (Gemini Image via Vertex) à partir d’une ressource choisie, avec ratio social et préservation du sujet ; nouvelle version d’asset, jamais d’écrasement.', params: imageEditRequest }
 } as const satisfies Record<string, ToolDefinition>;
 export type Tool = keyof typeof tools;
 export const toolSchema = z.enum(Object.keys(tools) as [Tool, ...Tool[]]);
 /** Sous-ensemble que l'agent peut recommander : schéma de paramètres déclaré, aucun secret, aucun réseau arbitraire. */
-export const agentTools = Object.fromEntries(Object.entries(tools).filter(([, definition]) => definition.params !== undefined)) as unknown as Record<string, ToolDefinition>;
+export const agentTools = Object.fromEntries(Object.entries(tools).filter(([, definition]) => definition.params !== undefined && definition.agentProposable !== false)) as unknown as Record<string, ToolDefinition>;
 export function agentCatalog() {
   return Object.entries(agentTools).map(([tool, definition]) => ({
     tool, action: definition.action, scope: definition.scope, approval: definition.approval,
