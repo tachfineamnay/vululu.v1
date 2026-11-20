@@ -1,5 +1,7 @@
 # VULULU — BASELINE ARENA (Mission A00)
 
+> **Bannière P00 (2026-11-20) — photo de sandbox historique.** Cette baseline date du 2026-11-19 (SHA `93e1360`) et ne décrit plus l'état courant. Depuis, C02–C13, F01–F07 et BETA01 ont été livrés ; l'état courant est `docs/implementation/VULULU_FEATURE_INVENTORY.md`. Le corps est conservé comme preuve datée.
+
 - **Date d'exécution** : 2026-11-19
 - **Dépôt** : `tachfineamnay/vululu.v1` (public, branche par défaut `main`)
 - **Branche analysée** : `arena/c3982856-vululu-v1`

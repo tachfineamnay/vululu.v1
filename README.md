@@ -1,122 +1,100 @@
 # Vululu AI
 
-**Studio de production créative agentique multimodèle.**
+**Studio de création et de marketing assisté par l'IA pour les entrepreneurs.**
 
-Vululu AI crée, orchestre et livre des contenus professionnels pour TikTok, Instagram et LinkedIn : contextes de marque structurés, briefs versionnés, agents spécialisés, production média multi-fournisseurs, contrôle qualité, validation humaine et transfert vers Postiz.
+Vululu accompagne un entrepreneur non designer de l'objectif à la publication : il précise l'intention, le canal et le format, réunit les assets de l'utilisateur, brainstorme avec lui, propose des directions artistiques, laisse un choix humain, produit une création éditable et versionnée, la fait relire et approuver, puis l'exporte ou la programme — et suit les résultats.
 
-> **Statut — 2026-11-04 : socle V1 local ; finalisation V1-DEMO autorisée.**
-> API, Web/Admin, domaine, application, média déterministe et tests sont déjà présents dans main. La [V1-DEMO](docs/releases/V1_DEMO_SCOPE_2026-11-04.md) vise les parcours complets avec compte démo sans connexion IA. Son [plan](docs/superpowers/plans/2026-11-04-v1-demo-complete-coolify.md) est en exécution ; la recette Coolify reste à réaliser. Les fournisseurs IA et Postiz sont MOCK. Le corpus V1.2 reste intact ; aucun GO production n’est revendiqué. L’[analyse de l’existant](docs/reports/ANALYSE_EXISTANT_2026-11-04.md) distingue code, preuves historiques et vérifications récentes.
+> **Statut — 2026-11-20.** L'application est construite et fonctionne en **bêta gratuite** : aucun paiement client, commerce gelé, fournisseurs payants non activés. Les lots C02–C13, F01–F07 et BETA01 sont livrés ; la campagne de complétion P00–P13 est en cours et ses lots restent `BUILD_UNVERIFIED` jusqu'à la vérification finale (P12–P13). **Aucun déploiement public, aucune publication réelle, aucune certification.** L'état courant fait foi dans [l'inventaire des fonctionnalités](docs/implementation/VULULU_FEATURE_INVENTORY.md) ; les règles de la campagne sont dans le [contrat de finition](docs/implementation/VULULU_FINISH_CONTRACT.md).
 
-## Le problème
+## Parcours produit
 
-Produire du contenu professionnel pour les réseaux sociaux impose aujourd'hui d'orchestrer manuellement une dizaine d'outils IA, de perdre les références de style, de recommencer une vidéo entière pour changer un plan et de répéter le même contexte à chaque brief.
+```text
+Objectif → Canal → Format → Assets utilisateur → Brainstorming IA
+→ Directions artistiques → Choix humain → Création éditable
+→ Revue → Approbation → Export / Publication → Résultats
+```
 
-Vululu AI répond par un studio de production supervisé : un workflow explicite, des agents spécialisés, un catalogue de fournisseurs IA évolutif, des artefacts versionnés et une validation humaine avant tout transfert vers Postiz. La créativité reste supervisée ; l'utilisateur garde le droit d'interrompre, de corriger et d'approuver.
+- **Les assets de l'utilisateur sont disponibles avant le brainstorming principal** : l'IA ne propose pas d'angles sans savoir quelles photos, quel logo, quelles couleurs et quelles offres sont autorisés.
+- **L'IA simplifie l'expérience, elle ne multiplie pas les écrans.** L'interface propose des choix concrets ; les paramètres techniques restent accessibles sans être imposés.
+- **Tout reste un brouillon éditable et versionné** jusqu'à l'approbation d'une version exacte (version + checksum). Rien n'est téléchargé, payé ou publié par simple proposition.
+- **Le contrôle humain est réel** : choisir, corriger, refuser, comparer, approuver.
 
-## Périmètre V1
+## Ce qui est construit aujourd'hui
 
-- Outil interne, accès sur invitation, super-utilisateur et utilisateurs invités.
-- Contextes de marque structurés, réutilisables et versionnés.
-- Workflow guidé : contexte, réseau, format, brief, production.
-- Agents multimodèles : direction créative, spécialistes, validateurs QA.
-- Production image, carrousel, motion design, vidéo multiscène et audio.
-- Correction ciblée par Scene ID sans relancer toute la production.
-- Interface web et serveur MCP sur les mêmes services métier.
-- Contrôle qualité, approbation d'une version exacte, transfert Postiz.
-- Journalisation, reprise sur erreur, gestion des coûts, tests automatisés.
+Statuts de présence de code, **pas** des certifications (aucun test complet exécuté pendant P00–P11). Détail et preuves fichier par fichier : [inventaire](docs/implementation/VULULU_FEATURE_INVENTORY.md).
 
-## Hors périmètre V1 (V2)
-
-Mémoire sémantique persistante et Memory Bank, apprentissage des préférences, contextes hiérarchiques enrichis, modes de liberté créative avancés, monétisation, abonnements, crédits, marketplace et Everything LLM. Ces sujets sont décrits dans la [note V2](docs/v2/NOTE_SPECIALE_PROPOSITIONS_V2.md) et ne doivent pas être implémentés pendant les lots V1.
-
-## État du dépôt
-
-| Étape | Contenu | Statut |
-|---|---|---|
-| Mission 00 | Inauguration documentaire, structure, ADR, roadmap | Livrée |
-| V0 prototype | Référence historique du parcours déterministe | Audit conservé dans docs/reviews |
-| V1-01 | Audit V0, corrections, gaps et baseline V1 | Livré dans docs/reviews |
-| Socle V1 | Domaine/application, sessions/RBAC, agents/mock, outbox/worker, stockage, Studio/Admin | Présent ; couverture dans docs/releases/V1_DEMO_TRACEABILITY.md |
-| V1-DEMO | Parcours complets et compte démo, sans clé IA | Exécution autorisée ; lots non tous clos |
-| Coolify | Images, reprise, sauvegarde/restauration et recette sur HTTPS | Non certifié ; NO-GO staging historique maintenu jusqu’aux nouvelles preuves |
-
-## Documentation fondatrice
-
-| Document | Rôle |
+| Domaine | État |
 |---|---|
-| [Index documentaire](docs/README.md) | Provenance, statut, règles de modification |
-| [PRD V1.2](docs/01_PRD_V1.md) | Exigences produit et parcours |
-| [Cahier des charges V1.2](docs/02_CAHIER_DES_CHARGES_V1.md) | Exigences testables, sécurité, recette |
-| [Architecture V1](docs/03_ARCHITECTURE_V1.md) | Domain Core, orchestration, stockage, MCP |
-| [Backlog](docs/11_BACKLOG.md) | Épics, stories, Definition of Done |
-| [Prompt maître](docs/PROMPT_DEEPSEEK_HARNESS.md) | Cadre de travail des agents |
-| [Note V2](docs/v2/NOTE_SPECIALE_PROPOSITIONS_V2.md) | Vision différée, hors périmètre |
-| [ADR](docs/adr/README.md) | Décisions d'architecture |
-| [Roadmap V1](docs/backlog/ROADMAP_V1.md) | Lots priorisés et critères de sortie |
-| [P0-0](docs/backlog/P0_0_AUDIT_FONDATIONS.md) | Premier lot technique proposé |
-| [Rapport d'inauguration](docs/INAUGURATION_REPORT.md) | État initial, audit, décisions ouvertes |
+| Comptes clients (inscription vérifiée, session, mot de passe, RGPD), RBAC et isolation propriétaire | IMPLEMENTED |
+| Profils d'activité, offres confirmées, contextes de marque versionnés | IMPLEMENTED / PARTIAL (offres = référentiel de nom) |
+| Campagnes et projets, briefs versionnés, plan marketing | IMPLEMENTED / PARTIAL |
+| Bibliothèque d'assets : upload borné, inspection, versions, droits, sélection | IMPLEMENTED |
+| Studio : compositions natives, révisions append-only, rendu Sharp/FFmpeg, rendu durable en file | IMPLEMENTED (édition multiscène = pipeline historique démo) |
+| Formats Post / Story / Carrousel / Reel / Vidéo, export et téléchargement | IMPLEMENTED |
+| Calendrier éditorial, variantes par plateforme, approbation éditoriale | IMPLEMENTED |
+| Revue, approbation d'une version exacte, audit, résultats/exports, assistance, admin, observabilité | IMPLEMENTED |
+| Bêta gratuite : gel commercial serveur, accès sans pass, retours bêta typés | IMPLEMENTED |
 
-## Principes d'architecture
+## Ce qui dépend d'un fournisseur (flags désactivés, appels réels NON VÉRIFIÉS)
 
-- **Domain Core indépendant** des fournisseurs IA, de la base et de l'infrastructure.
-- **Application Layer** portant les cas d'usage, les autorisations, les budgets et l'idempotence.
-- **Monolithe modulaire** : une API et des workers spécialisés, pas de microservices prématurés.
-- **PostgreSQL** comme source de vérité ; **stockage S3-compatible** pour les binaires.
-- **Orchestration durable** derrière un port, avec Hatchet sous réserve de validation P0-0.
-- **Registre dynamique** des agents, capacités, modèles et fournisseurs.
-- **Artefacts immuables**, versionnés, avec checksums et provenance.
-- **Identifiants permanents** pour projets, scènes et personnages.
-- **Web et MCP** branchés sur les mêmes cas d'usage et le même RBAC.
-- **Postiz externe** : transfert après approbation d'une version exacte.
-- **V1 sans V2** : les points d'extension sont prévus, le code V2 est interdit.
+Assistant Vertex (`ASSISTANT_VERTEX_ENABLED`, repli local déterministe), génération image Replicate et vidéo Runway (`MEDIA_GENERATION_ENABLED`), publication Postiz (`POSTIZ_PUBLISH_ENABLED`), facturation Stripe (`BILLING_STRIPE_MODE`, gelée par la bêta), e-mails de compte (Resend). **Aucun n'est activé** et aucun appel réel n'est prouvé ; l'activation exige une autorisation humaine explicite, un budget et les procédures des livraisons F03/F04/F05.
+
+## Ce qui est absent à ce stade
+
+Serveur MCP, TTS/voix/audio/mixage, motion design, propositions de directions artistiques comme objet de première classe, édition avancée de vidéo/audio importés, MFA, analytique leads/ventes. Un pipeline historique MOCK reste présent à côté des fournisseurs réels (transfert Postiz mock, registre de capacités déterministe) : ne jamais le présenter comme opérationnel.
+
+## Stack et architecture
+
+Next.js 16 / React 19 (web), Fastify 5 (API), TypeScript, PostgreSQL + Prisma 6.19.3, Hatchet (orchestration durable optionnelle), Sharp + FFmpeg (média), Postiz (publication externe), stockage local ou S3-compatible. Monolithe modulaire : Domain Core pur → Application (cas d'usage, RBAC, budgets, idempotence) → Infrastructure (adaptateurs derrière ports) → API/Web. PostgreSQL source de vérité, artefacts immuables versionnés, approbation d'une version exacte avant tout effet externe. Aucune CI externe n'est requise : la vérité de preuve est locale.
 
 ## Structure du dépôt
 
-    .
-    |-- README.md
-    |-- AGENTS.md
-    |-- .gitignore
-    |-- .gitattributes
-    |-- .env.example
-    |-- docs/
-    |   |-- README.md et INAUGURATION_REPORT.md
-    |   |-- documents fondateurs V1.2 (PRD, CDC, architecture, backlog, prompt)
-    |   |-- source/ (originaux docx et empreintes SHA256)
-    |   |-- adr/ (décisions d'architecture)
-    |   |-- backlog/ (roadmap et proposition P0-0)
-    |   |-- v2/ (propositions différées)
-    |-- scripts/ (validation documentaire et scan de secrets)
-    |-- _inbox/ (fichiers locaux non publiés, ignorés par Git)
+```text
+apps/api            API Fastify : 22 fichiers de routes, auth/session/CSRF, container, worker
+apps/web            Next 16 : 32 pages (accueil, comptes, projets, calendrier, créations, résultats, admin), Studio
+packages/domain     Domain Core pur (23 fichiers, zéro dépendance runtime)
+packages/application Ports + 20 cas d'usage (30 fichiers)
+packages/contracts  Schémas Zod partagés web/API
+packages/db         Prisma : schéma (66 modèles), 34 migrations, seed
+packages/media      Composition Sharp, texte, assets, assemblage FFmpeg
+tests/              85 fichiers Vitest (domaine, API, V1, média, sécurité, bêta)
+e2e/                26 specs Playwright
+scripts/            Gates PowerShell, scripts préprod/arena
+docs/               Corpus fondateur VERBATIM, ADR 0001–0034, delivery/, product/, implementation/
+infra/              Compose/Dockerfiles préprod et Coolify, modèles d'env sans secrets
+```
 
-## Démarrage
+## Démarrage local
 
-Le corpus reste la référence. Le prototype V0 se lance localement via [docs/execution/V0_RUNBOOK.md](docs/execution/V0_RUNBOOK.md), avec PostgreSQL et FFmpeg locaux. Il ne doit pas être déployé ni présenté comme une validation V1.
+```powershell
+pnpm install --frozen-lockfile
+pnpm db:generate
+pnpm db:migrate          # base locale 127.0.0.1:55432/vululu_v1_00
+pnpm db:seed             # exige V1_BOOTSTRAP_EMAIL / V1_BOOTSTRAP_PASSWORD
+pnpm dev                 # API 3101 + Web 3100
+```
 
-Pour contribuer ou préparer la V1 :
+Vérifier `GET http://127.0.0.1:3101/api/health`. La pile locale, les variables réellement lues et les pièges Windows/WSL sont documentés dans le skill `vululu-local-stack` et `docs/execution/`. Ne jamais viser une base non locale, ne jamais afficher de secret.
 
-1. Lire [AGENTS.md](AGENTS.md) puis [docs/README.md](docs/README.md).
-2. Lire le corpus fondateur dans l'ordre indiqué.
-3. Lire l'audit et la baseline V1 dans [docs/reviews](docs/reviews).
-4. Vérifier l'intégrité documentaire et l'absence de secrets.
-5. Proposer toute décision nouvelle via un ADR, jamais par modification silencieuse d'une spécification.
+## Documentation
 
-Outillage constaté sur le poste de référence : Git 2.48, Node 24, pnpm 10, Python 3.11, Docker 29. Le choix de stack reste une décision ouverte, à trancher en P0-0.
+- [Index documentaire](docs/README.md) — provenance, intégrité, index complet.
+- [PRD V1.2](docs/01_PRD_V1.md) · [Cahier des charges V1.2](docs/02_CAHIER_DES_CHARGES_V1.md) · [Architecture V1](docs/03_ARCHITECTURE_V1.md) · [Backlog](docs/11_BACKLOG.md) — corpus fondateur **VERBATIM**.
+- [Vision d'expérience](docs/product/VULULU_EXPERIENCE_VISION_2026-11-20.md) — promesse produit et séquence (révisée P00 : assets avant brainstorming).
+- [Contrat de finition](docs/implementation/VULULU_FINISH_CONTRACT.md) · [Inventaire](docs/implementation/VULULU_FEATURE_INVENTORY.md) · [Carte P01–P11](docs/implementation/VULULU_COMPLETION_PLAN.md) — campagne en cours.
+- [ADR](docs/adr/README.md) · [Livraisons](docs/delivery/) — décisions et preuves datées.
 
 ## Sécurité
 
-- Aucun secret, clé API, fichier .env ou identifiant ne doit être commité.
-- Le fichier [.env.example](.env.example) ne contient que des placeholders.
-- Les secrets sont stockés côté serveur, jamais exposés au frontend ni aux logs.
-- Le script scripts/check-secrets.ps1 est exécuté avant chaque commit.
-- Toute donnée utilisateur est isolée par propriétaire ; les accès sont vérifiés côté serveur.
+Aucun secret dans le dépôt ni dans les sorties ; secrets côté serveur uniquement ; RBAC et isolation par propriétaire vérifiés côté serveur ; validation des entrées, uploads bornés, protection SSRF ; audit et traçabilité des effets externes. Un fichier `.env` local n'est jamais versionné. Voir [AGENTS.md](AGENTS.md) §9.
 
 ## Gouvernance
 
-Le développement suit des lots courts, testables et réversibles. Chaque lot identifie ses exigences PRD/CDC, ses interfaces, ses critères d'acceptation, ses preuves et ses limitations. Un lot sans preuve n'est pas déclaré terminé. Voir [AGENTS.md](AGENTS.md) et la [roadmap](docs/backlog/ROADMAP_V1.md).
+Un lot = un périmètre + des preuves honnêtes + un commit réversible. En campagne P00–P11 : un commit par lot, statut `BUILD_UNVERIFIED`, aucune suite complète exécutée ; la vérification (P12) et la décision de sortie (P13) sont séparées et exigent des preuves rejouées. Aucun `PASS`, aucun déploiement, aucune publication sans autorisation explicite. Voir [AGENTS.md](AGENTS.md) et le [contrat de finition](docs/implementation/VULULU_FINISH_CONTRACT.md).
 
 ## Licence
 
-Aucune licence n'est définie à ce stade. Le dépôt est public mais tous les droits sont réservés par défaut ; ne pas réutiliser, distribuer ou exploiter le contenu sans accord écrit du porteur du projet. Ce point est une décision ouverte (D-09).
+Aucune licence n'est définie à ce stade (décision ouverte D-09). Le dépôt est public mais tous les droits sont réservés par défaut ; ne pas réutiliser, distribuer ou exploiter le contenu sans accord écrit du porteur du projet.
 
 ## Dépôt
 

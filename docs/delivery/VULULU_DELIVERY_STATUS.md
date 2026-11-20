@@ -1,5 +1,7 @@
 # VULULU — STATUT DE LIVRAISON
 
+> **Bannière P00 (2026-11-20) — document historique.** Cette photographie date du 2026-11-19 (HEAD `ccc1977`) et **ne décrit plus l'état courant**. Depuis, C02–C13 et F01–F07 ont livré le calendrier, les compositions/versions, les formats multiples, l'assistant Vertex, la génération média, la publication Postiz, la facturation Stripe (gelée), les comptes clients, les résultats, le rendu durable et la bêta gratuite (BETA01). L'état courant fait foi dans `docs/implementation/VULULU_FEATURE_INVENTORY.md` ; le corps ci-dessous est conservé **comme preuve datée**. Aucune affirmation du corps n'est améliorée sans commande rejouée.
+
 - **Mission courante** : **R00 — Baseline & socle de livraison** — `DONE` (documents produits, code inchangé)
 - **Date** : 2026-11-19
 - **Branche de session** : `arena/c3982856-vululu-v1`
@@ -7,9 +9,9 @@
 - **Dernière preuve exécutée** : 2026-11-19 (voir §4)
 - **Verdict global** : **NO-GO PRODUIT** — **GO CONDITIONNEL INGÉNIERIE** (C0–C2 uniquement)
 
-> Ce document est la **seule vérité d'avancement**. Il ne remplace pas `docs/certification/`,
-> qui est une photographie datée du 2026-10-25. Toute divergence doit être tranchée **en faveur de ce
-> document**, parce qu'il est adossé à des commandes rejouées.
+> Ce document était la **seule vérité d'avancement au 2026-11-19** ; il ne décrit plus l'état courant.
+> L'état courant est `docs/implementation/VULULU_FEATURE_INVENTORY.md`, adossé au code présent.
+> Le corps ci-dessous reste une photographie datée, adossée à des commandes rejouées.
 
 ---
 

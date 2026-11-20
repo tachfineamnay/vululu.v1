@@ -1,14 +1,14 @@
 # Feuille de route V1 — Vululu AI
 
-- **Statut courant** : finalisation V1-DEMO autorisée le 2026-11-04 ; plan d’exécution lié ci-dessous
-- **Date** : 2026-11-04 ; proposition initiale conservée ci-dessous (2026-10-21)
+- **Statut courant** : 2026-11-20 — bêta gratuite, lots C02–C13 et F01–F07 livrés ; campagne P00–P13 en cours. État courant : [inventaire](../implementation/VULULU_FEATURE_INVENTORY.md) et [contrat de finition](../implementation/VULULU_FINISH_CONTRACT.md).
+- **Date** : 2026-11-20 (mise à jour) ; proposition initiale conservée ci-dessous (2026-10-21)
 - **Sources** : [PRD V1.2](../01_PRD_V1.md), [CDC V1.2](../02_CAHIER_DES_CHARGES_V1.md), [Architecture V1](../03_ARCHITECTURE_V1.md), [Backlog](../11_BACKLOG.md), [Rapport d'inauguration](../INAUGURATION_REPORT.md)
 
 ## 1. État de départ
 
 La proposition initiale partait d’un dépôt documentaire. Au 2026-11-04, main contient un socle V1 avec API, Web/Admin, média déterministe, couches domaine/application, adaptateurs et tests. Cette mise à jour explicite corrige le statut ancien sans déclarer les lots P0 terminés : la couverture reste partielle.
 
-L’utilisateur a autorisé la **V1-DEMO complète sans connexion IA** : [périmètre](../releases/V1_DEMO_SCOPE_2026-11-04.md), [traçabilité et preuves](../releases/V1_DEMO_TRACEABILITY.md), [plan](../superpowers/plans/2026-11-04-v1-demo-complete-coolify.md). Le périmètre documentaire est réconcilié ; bootstrap démo, campagnes, bibliothèque versionnée et contextes relus/révisés ont des preuves locales. Les lots release/infra restent non clos. Prochaine tranche fonctionnelle : brief/wizard démo complet puis médias et compositing, en poursuivant la qualification serveur séparée. Les sections 2 à 7 conservent la proposition de séquencement initiale ; les statuts courants et la prochaine action sont ceux de cette section.
+L’utilisateur a autorisé la **V1-DEMO complète sans connexion IA** : [périmètre](../releases/V1_DEMO_SCOPE_2026-11-04.md), [traçabilité et preuves](../releases/V1_DEMO_TRACEABILITY.md), [plan](../superpowers/plans/2026-11-04-v1-demo-complete-coolify.md). Le périmètre documentaire est réconcilié ; bootstrap démo, campagnes, bibliothèque versionnée et contextes relus/révisés ont des preuves locales. Les lots release/infra restent non clos. Les tranches brief/wizard, médias et compositing sont livrées depuis (C03–C13, F01–F07). La suite est la campagne de complétion P00–P13 ; les sections 2 à 7 conservent la proposition de séquencement initiale. Les statuts courants et la prochaine action sont ceux de cette section et de l'inventaire.
 
 ### F01 — Ouverture du parcours client (2026-11-20)
 
@@ -34,6 +34,14 @@ Séparation test/réel, Checkout et webhooks signés, droits et crédits sur le 
 
 Post, Story, Carrousel, Reel et vidéo multiscène du projet à l’export, avec rendu Studio durable et révisions scellées : [livraison et recette](../delivery/F06_UNIFIED_PRODUCTION.md).
 
+### F07 — Parcours client (2026-11-20)
+
+De l’accueil public au téléchargement, à la programmation ou au kit manuel, avec deux approbations distinctes (éditoriale et créative) : [livraison](../delivery/F07_CUSTOMER_JOURNEY.md). Aucun fournisseur activé, aucun déploiement.
+
+### BETA01 — Bêta gratuite et gel commercial (2026-11-20)
+
+Commutateur serveur `VULULU_BETA_MODE` (défaut sûr : bêta), gel commercial audité au démarrage, UI et retours bêta : [livraison](../delivery/BETA01_FREE_TESTING.md). Aucun paiement possible pendant la bêta ; réactivation = procédure F05 et GO humain.
+
 ## 2. Principes de séquencement
 
 ### Studio du 2026-11-06
@@ -46,7 +54,7 @@ Diagnostic Product Design, fondations bleues à portée limitée et parcours Mar
 
 ### Tranche Mes projets du 2026-11-06
 
-Mes projets et démarrage guidé Idée → Références → Destination → Création, reprise de contexte et validation du brief : [livraison et preuves](../reports/PRODUCT_DESIGN_PROJETS_2026-11-06.md). 27 tests ciblés et cinq scénarios E2E distincts validés après rejeux. Brouillon initial dans l’onglet explicitement distingué des enregistrements serveur ; estimation et plafond MOCK conservés. Aucun changement backend ni activation de format supplémentaire. Prochaine tranche visuelle : Studio complet ; recette globale et qualification live séparées.
+Mes projets et démarrage guidé Idée → Références → Destination → Création (ordre UX du 2026-11-06 ; **remplacé** pour l’ordre produit courant par la vision §2 : objectif → canal → format → assets → brainstorming), reprise de contexte et validation du brief : [livraison et preuves](../reports/PRODUCT_DESIGN_PROJETS_2026-11-06.md). 27 tests ciblés et cinq scénarios E2E distincts validés après rejeux. Brouillon initial dans l’onglet explicitement distingué des enregistrements serveur ; estimation et plafond MOCK conservés. Aucun changement backend ni activation de format supplémentaire. Prochaine tranche visuelle : Studio complet ; recette globale et qualification live séparées.
 
 ### Tranches parcours puis livraison du 2026-11-06
 

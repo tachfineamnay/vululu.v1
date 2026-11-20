@@ -2,6 +2,8 @@
 
 **Décision produit du 20 novembre 2026 — cadrage conceptuel, non spécification d'implémentation.**
 
+> **Révision P00 (2026-11-20) :** l'ordre de la séquence §2 est corrigé — les assets/références de l'utilisateur précèdent désormais le brainstorming principal. La version initiale plaçait le brainstorming avant les assets ; l'écart est corrigé ici, repris dans `AGENTS.md` et fixé par `docs/implementation/VULULU_FINISH_CONTRACT.md`. L'historique Git conserve la version antérieure.
+
 ## 1. Promesse utilisateur
 
 Vululu accompagne les entrepreneurs et indépendants dans leur communication. Le produit doit être **simple, efficace, rapide et créatif** : moins de décisions techniques, de meilleurs choix créatifs, un résultat réellement utilisable.
@@ -17,14 +19,14 @@ Le chemin conceptuel à respecter est :
 1. **Intention : « Que veux-tu faire ? »** L'utilisateur exprime librement son objectif, en termes simples.
 2. **Canal : « Où ? »** Instagram, TikTok, LinkedIn ou une autre destination réellement prise en charge.
 3. **Format : « Sous quelle forme ? »** Par exemple Reel Instagram, vidéo TikTok, slides/carrousel TikTok ou image ; seules les capacités effectivement disponibles sont proposées.
-4. **Brainstorming avec l'agent.** Vululu échange sur le message, le public et les angles possibles ; il ne transforme pas immédiatement une phrase en résultat figé.
-5. **Références et assets.** L'utilisateur fournit ou sélectionne photos, logo, éléments de marque et références qu'il souhaite employer. Réutiliser les éléments déjà autorisés.
+4. **Références et assets.** L'utilisateur fournit ou sélectionne photos, logo, éléments de marque et références qu'il souhaite employer ; les éléments déjà autorisés sont réutilisés. Les assets sont disponibles **avant** le brainstorming principal : l'agent ne propose pas d'angles sans savoir de quelles matières il dispose.
+5. **Brainstorming avec l'agent.** Vululu échange sur le message, le public et les angles possibles ; il ne transforme pas immédiatement une phrase en résultat figé.
 6. **Propositions créatives et directions artistiques.** L'agent élabore plusieurs idées/DA ancrées dans l'identité confirmée du client, explicables et faciles à comparer.
 7. **Choix humain.** L'utilisateur accepte, rejette ou demande une variation ; ses choix orientent la suite, sans imposer une succession de réglages techniques.
 8. **Production et édition adaptées au média.** Une fois une direction choisie, le schéma spécifique à l'image, à la vidéo ou à l'audio s'ouvre seulement lorsque nécessaire.
 9. **Relecture et validation exacte.** Prévisualisation, correction, comparaison, approbation explicite ; la publication ou une dépense externe requiert toujours les autorisations applicables.
 
-Ces étapes sont un **modèle de conversation et de décision**, pas neuf pages obligatoires : les étapes simples peuvent tenir sur un même écran. L'agent peut regrouper ou différer les questions si le contexte confirmé fournit déjà les réponses. Canal puis format précèdent le brainstorming approfondi.
+Ces étapes sont un **modèle de conversation et de décision**, pas neuf pages obligatoires : les étapes simples peuvent tenir sur un même écran. L'agent peut regrouper ou différer les questions si le contexte confirmé fournit déjà les réponses. Canal, format puis assets de l'utilisateur précèdent le brainstorming approfondi.
 
 ## 3. Principe directeur : « brouillon permanent »
 
@@ -60,7 +62,7 @@ Ces priorités sont **de conception et d'affinage**, pas des déclarations que l
 
 ## 6. Conséquences pour l'architecture et l'UI
 
-- **Une campagne / un projet** constitue le fil conducteur : objectif, destination, format, brainstorming, assets, propositions, révisions et résultat.
+- **Une campagne / un projet** constitue le fil conducteur : objectif, destination, format, assets, brainstorming, propositions, révisions et résultat.
 - L'identité et les assets sont des données **confirmées et réutilisables**, pas une mémoire implicite non consentie.
 - L'assistant rend le parcours plus court et contextualisé ; l'interface n'expose pas la complexité des workflows ou des modèles par défaut.
 - Les propositions créatives sont des objets persistants et versionnables ; une direction refusée ne détruit pas le travail.

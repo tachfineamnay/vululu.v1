@@ -6,10 +6,10 @@ Ce dossier contient les skills DSH spécifiques au dépôt Vululu AI. Ils sont c
 
 | Skill | Usage principal |
 |---|---|
-| `vululu-project-orientation` | Entrée de session : autorités documentaires, carte du dépôt, état réel (HEAD, verdicts, MOCK/absences), vocabulaire des exigences, pièges de lecture. |
-| `vululu-lot-delivery` | Exécuter un lot conforme à `AGENTS.md` : cadrage PRD/CDC, périmètre V1, preuves PASS/SKIP/MOCK/NOT_RUN, ADR, git, Definition of Done. |
+| `vululu-project-orientation` | Entrée de session : autorités documentaires, carte du dépôt, état réel au HEAD courant (2026-11-20), capacités IMPLEMENTED / PROVIDER_DEPENDENT / MOCK / MISSING, vocabulaire de la campagne P00–P13, pièges de lecture. |
+| `vululu-lot-delivery` | Exécuter un lot conforme à `AGENTS.md` : d'abord le mode BUILD-FIRST P00–P11 (un commit `BUILD_UNVERIFIED` par lot), puis la procédure complète (preuves PASS/SKIP/MOCK/NOT_RUN, ADR, git, DoD) pour P12–P13. |
 | `vululu-local-stack` | Démarrer/vérifier/arrêter la pile locale : PostgreSQL portable 55432, API 3101, Web 3100, FFmpeg, worker/Hatchet et S3 préprod optionnels. |
-| `vululu-quality-gates` | Choisir et exécuter les tests/gates, interpréter un échec, rapporter des preuves honnêtes, échecs connus et statut CI `NOT_RUN`. |
+| `vululu-quality-gates` | Choisir et exécuter les tests/gates (P12–P13 et maintenance vérifiée uniquement), interpréter un échec, rapporter des preuves honnêtes, échecs connus et statut CI `NOT_RUN`. |
 | `vululu-architecture-change` | Modifier le code sans casser les couches ni les invariants : recettes domaine/use case/adaptateur/route/migration, contrôles, ADR. |
 | `vululu-ops-readiness` | Préparer/valider préproduction et staging sans déployer : verdicts, topologie, runbooks, backup/restore, rollback, conditions de GO. |
 
@@ -23,7 +23,8 @@ Ordre de chargement conseillé : `vululu-project-orientation` d'abord, puis `vul
 4. **Sources de vérité** : `AGENTS.md`, corpus fondateur, ADR et code priment sur un skill. En cas de contradiction, corriger le skill et signaler le conflit.
 5. **Format** : corps en français, commandes/identifiants en anglais, ~90–200 lignes par skill, références en chemins du dépôt, pas de duplication inutile d'`AGENTS.md` ou des runbooks.
 6. **Découverte** : un skill valide apparaît dans le catalogue DSH de la session ; un fichier sans frontmatter valide est ignoré silencieusement. Vérifier après ajout/renommage.
-7. **Versionnement** : `.dsh/` est actuellement non suivi au moment de la rédaction (2026-11-04). Committer ce dossier avec un message `docs(skills): ...` après revue ; aucun push sans autorisation humaine. Plusieurs skills citent `docs/reports/ANALYSE_EXISTANT_2026-11-04.md`, rapport local **non suivi** à la même date : le committer avec les skills ou remplacer la référence par un état de référence suivi.
+7. **Versionnement** : `.dsh/` est suivi par Git ; le committer avec un message `docs(skills): ...` après revue, sans push non autorisé. Les skills ne doivent plus citer de rapport local non suivi : l'état courant est `docs/implementation/VULULU_FEATURE_INVENTORY.md`.
+8. **Campagne P00–P13** : les skills chargent le [contrat de finition](../docs/implementation/VULULU_FINISH_CONTRACT.md) et l'[inventaire courant](../docs/implementation/VULULU_FEATURE_INVENTORY.md). En cas de conflit, ces deux documents priment sur tout état daté ; en P00–P11, aucun test complet n'est exécuté et aucun `PASS` n'est déclaré.
 
 ## Vérification rapide après édition
 

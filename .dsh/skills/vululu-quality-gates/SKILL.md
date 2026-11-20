@@ -8,6 +8,8 @@ whenToUse: Avant d'annoncer un lot terminé, de dire qu'une CI est verte ou de c
 
 **But** : choisir la bonne vérification, l'exécuter avec les bons prérequis et rapporter son résultat réel (PASS, SKIP motivé, MOCK, NOT_RUN, FAIL). Une étape non exécutée s'écrit **NOT_RUN**, jamais PASS (AGENTS.md §3/§6).
 
+> **Mode campagne P00–P11 (depuis 2026-11-20)** : les gates de ce skill ne sont **pas exécutés** pendant la construction. Ils appartiennent à **P12–P13** (voir `docs/implementation/VULULU_FINISH_CONTRACT.md` §5 et §9). En P00–P11, un lot est `BUILD_UNVERIFIED` ; une vérification manuelle minimale n'est jamais une certification. Ce skill reste la référence pour P12–P13 et la maintenance vérifiée.
+
 ## Quand l'utiliser
 
 - Avant de déclarer un lot/document terminé, ou de dire « CI verte ».
@@ -16,9 +18,11 @@ whenToUse: Avant d'annoncer un lot terminé, de dire qu'une CI est verte ou de c
 
 **Ne pas l'utiliser pour** : démarrer/arrêter la pile locale (`vululu-local-stack`), dérouler le protocole de lot, ADR et git (`vululu-lot-delivery`), modifier l'architecture (`vululu-architecture-change`), préparer staging/Coolify (`vululu-ops-readiness`).
 
-## État vérifié (2026-11-04, HEAD `bb0bc3a`, branche `main`)
+## État vérifié — HISTORIQUE (2026-11-04, HEAD `bb0bc3a`, branche `main`)
 
-Statuts : **VÉRIFIÉ** = commande réellement exécutée ce jour ; **DOCUMENTÉ** = lu dans un rapport, non rejoué ; **NOT_RUN** = non exécuté.
+> **État courant au 2026-11-20 (HEAD `f5d515b`, lecture seule)** : 34 migrations, ~84 fichiers de test Vitest, 26 specs Playwright, 22 fichiers de routes API. Aucun gate complet n'a été rejoué depuis le 2026-11-04 ; des preuves **ciblées et datées** existent dans `docs/delivery/` (C02–C13, F01–F07, BETA01) et ne valent que pour leur périmètre. Tout chiffre ci-dessous (12 migrations, 82 tests domaine, 3 E2E…) est **daté** : le vérifier sur disque avant de le citer.
+
+Statuts : **VÉRIFIÉ** = commande réellement exécutée ce jour ; **DOCUMENTÉ** = lu dans un rapport, non rejoué ; **NOT_RUN** = non exécuté. Les compteurs du tableau ci-dessous datent du 2026-11-04 et ne décrivent plus le dépôt courant (voir l'encadré ci-dessus).
 
 | Élément | Constat | Statut |
 |---|---|---|
@@ -87,7 +91,7 @@ Conditions E2E de référence : base isolée (jamais la démo), `DATABASE_URL`/`
 |---|---|---|
 | **PASS** | commande réellement exécutée, exit attendu, sortie citée | jamais déduit d'une lecture de code |
 | **SKIP** | test volontairement ignoré, **motif obligatoire** | jamais compté comme échec, jamais comme PASS |
-| **MOCK** | fournisseur simulé (Postiz, providers IA, coûts) | « transféré MOCK » ≠ « publié » ; MOCK explicite dans tout rapport |
+| **MOCK** | fournisseur simulé historique (Postiz mock, registre déterministe) | « transféré MOCK » ≠ « publié » ; un provider réel désactivé s'écrit `PROVIDER_DEPENDENT`, un appel non exécuté `NOT_RUN` |
 | **NOT_RUN** | étape non exécutée (services absents, `-Skip*`, CI non lancée) | toujours écrire le motif ; ne jamais convertir en PASS |
 | **FAIL** | exit non attendu ou sortie en échec | peut être un échec connu qualifié (§3), jamais masqué |
 | BLOCKED | impossible d'exécuter pour cause externe (réseau, service) | usage CI documenté ; ne pas confondre avec PASS |

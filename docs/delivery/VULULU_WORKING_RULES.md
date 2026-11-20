@@ -69,7 +69,7 @@ importante de ce document.
 ```bash
 pnpm lint                                    # 0 erreur, 0 warning
 pnpm -r typecheck                            # 0 erreur
-pnpm exec vitest run tests/domain             # 141 tests, doit rester ≥ 141 PASS
+pnpm exec vitest run tests/domain             # exécuter et rapporter le total courant (141 était la mesure au 2026-11-19 ; ne pas figer le chiffre ; en P00–P11, ne pas lancer)
 pnpm exec vitest run <tests du périmètre>    # tests ciblés
 ```
 

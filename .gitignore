@@ -88,3 +88,6 @@ apps/web/AGENTS.md
 # Preproduction locale (binaires, volumes, sauvegardes)
 infra/preprod/runtime/
 infra/preprod/backups/
+
+# Graphe de code graphify (généré localement, jamais commité)
+graphify-out/
