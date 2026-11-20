@@ -67,6 +67,7 @@ export default function ContextsPage() {
           {selected ? <>
             <ContextReviewPanel key={selected.id} contextId={selected.id} onBusy={setBusy} onDirty={setDirty} onSaved={(value) => setItems((current) => current.map((item) => item.id === value.id ? value : item))} />
             <section className="context-section stack" aria-label="Projets de ce contexte"><h3>Projets associés</h3>{projectsLoading ? <p role="status">Chargement des projets associés…</p> : projectError ? <p className="hint">{projectError}</p> : projects.some((p) => p.contextId === selected.id) ? <ul className="context-projects">{projects.filter((p) => p.contextId === selected.id).map((p) => <li key={p.id}><Link href={'/projects/' + encodeURIComponent(p.id)}>{p.title}</Link></li>)}</ul> : <p className="muted">Aucun projet associé. Votre contexte est prêt pour un premier brief.</p>}
+              <Link className="text-link" href={'/contexts/offers/new?context=' + encodeURIComponent(selected.id)}>{t('Ajouter une offre', 'Add an offer')}</Link>
               <Link className="btn btn-secondary" href={'/projects/new?context=' + encodeURIComponent(selected.id)}>Créer un projet avec ce contexte</Link>
             </section>
           </> : <h2 id="context-detail-heading">{t("Sélectionnez un contexte","Select a profile")}</h2>}

@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { User } from '@prisma/client';
+import type { Prisma, User } from '@prisma/client';
 import type { SessionUser } from '@vululu/contracts';
 import { prisma } from '@vululu/db';
 import { randomToken, safeEqualHex, safeEqualString, sha256Hex } from './crypto';
@@ -15,8 +15,12 @@ export const CSRF_HEADER = 'x-csrf-token';
 
 export const MUTATING_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
 
-/** Login and activation are public: they cannot rely on a session-bound CSRF hash. */
-export const CSRF_EXEMPT_PATHS = new Set(['/api/auth/login', '/api/auth/activate', '/api/publishing/relay', '/api/billing/stripe-webhook']);
+/** Public entry points cannot rely on a session-bound CSRF hash. */
+export const CSRF_EXEMPT_PATHS = new Set([
+  '/api/auth/login', '/api/auth/activate', '/api/auth/register', '/api/auth/resend-verification',
+  '/api/auth/verify-email', '/api/auth/forgot-password', '/api/auth/reset-password',
+  '/api/publishing/relay', '/api/billing/stripe-webhook'
+]);
 
 const LAST_USED_REFRESH_MS = 5 * 60 * 1000;
 
@@ -58,13 +62,13 @@ function cookieSecure(): boolean {
  * Creates a persistent session. The random token and the CSRF token are returned
  * to the caller (to be written in cookies); only their SHA-256 digests are stored.
  */
-export async function createSession(userId: string): Promise<CreatedSession> {
+export async function createSession(userId: string, db: Prisma.TransactionClient = prisma): Promise<CreatedSession> {
   const token = randomToken();
   const csrfToken = randomToken();
   const tokenHash = sha256Hex(token);
   const csrfHash = sha256Hex(csrfToken);
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
-  const session = await prisma.session.create({
+  const session = await db.session.create({
     data: { userId, tokenHash, csrfHash, expiresAt },
     select: { id: true, expiresAt: true }
   });

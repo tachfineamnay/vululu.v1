@@ -1,3 +1,4 @@
+import { findAccountsForEmail, lockAccountEmail } from '../security/accountIdentity';
 import type { FastifyInstance } from 'fastify';
 import type { Invitation } from '@prisma/client';
 import { prisma } from '@vululu/db';
@@ -46,23 +47,18 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/api/admin/invitations', superAdminOnly, async (request, reply) => {
     const input = invitationInputSchema.parse(request.body);
-    const existingUser = await prisma.user.findUnique({ where: { email: input.email } });
-    if (existingUser) {
-      throw new HttpError(409, 'email_already_registered', 'Un compte existe deja pour cet email.');
-    }
-
     const token = randomToken();
     const tokenHash = sha256Hex(token);
     const expiresAt = new Date(Date.now() + INVITATION_TTL_MS);
-    const invitation = await prisma.invitation.create({
-      data: {
-        email: input.email,
-        role: input.role,
-        tokenHash,
-        createdBy: request.currentUser!.id,
-        expiresAt
-      },
-      select: invitationSelect
+    const invitation = await prisma.$transaction(async (tx) => {
+      await lockAccountEmail(tx, input.email);
+      if ((await findAccountsForEmail(tx, input.email)).length) {
+        throw new HttpError(409, 'email_already_registered', 'Un compte existe deja pour cet email.');
+      }
+      return tx.invitation.create({
+        data: { email: input.email, role: input.role, tokenHash, createdBy: request.currentUser!.id, expiresAt },
+        select: invitationSelect
+      });
     });
 
     await recordAuditEvent({

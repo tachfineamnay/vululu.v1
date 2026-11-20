@@ -62,3 +62,5 @@ Le registre d’inauguration reste historique. La stack présente est décrite d
 - [Cahier des charges V1.2](../02_CAHIER_DES_CHARGES_V1.md)
 
 - [ADR 0028 — Mots de passe de recette](0028-mots-de-passe-de-recette.md)
+
+- [ADR 0033 — Inscription vérifiée des clients](0033-comptes-clients.md)

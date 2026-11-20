@@ -10,6 +10,10 @@ La proposition initiale partait d’un dépôt documentaire. Au 2026-11-04, main
 
 L’utilisateur a autorisé la **V1-DEMO complète sans connexion IA** : [périmètre](../releases/V1_DEMO_SCOPE_2026-11-04.md), [traçabilité et preuves](../releases/V1_DEMO_TRACEABILITY.md), [plan](../superpowers/plans/2026-11-04-v1-demo-complete-coolify.md). Le périmètre documentaire est réconcilié ; bootstrap démo, campagnes, bibliothèque versionnée et contextes relus/révisés ont des preuves locales. Les lots release/infra restent non clos. Prochaine tranche fonctionnelle : brief/wizard démo complet puis médias et compositing, en poursuivant la qualification serveur séparée. Les sections 2 à 7 conservent la proposition de séquencement initiale ; les statuts courants et la prochaine action sont ceux de cette section.
 
+### F01 — Ouverture du parcours client (2026-11-20)
+
+Inscription vérifiée sans invitation pour le rôle client, récupération et sécurité du compte, puis profil d’activité → offre → premier projet : [décision](../adr/0033-comptes-clients.md) et [livraison](../delivery/F01_CUSTOMER_ACCOUNT.md). Un envoi fournisseur réel reste à qualifier séparément sur un domaine et un expéditeur autorisés.
+
 ## 2. Principes de séquencement
 
 ### Studio du 2026-11-06

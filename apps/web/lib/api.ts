@@ -201,6 +201,10 @@ function readCookie(name: string): string {
   return '';
 }
 
+export class ApiRequestError extends Error {
+  constructor(message: string, public readonly status: number) { super(message); }
+}
+
 export async function apiResponse(path: string, init?: RequestInit): Promise<Response> {
   const method = (init && init.method ? init.method : 'GET').toUpperCase();
   const headers: Record<string, string> = init && init.body ? { 'Content-Type': 'application/json' } : {};
@@ -226,7 +230,7 @@ export async function apiResponse(path: string, init?: RequestInit): Promise<Res
     } catch {
       // Keep the status message.
     }
-    throw new Error(message);
+    throw new ApiRequestError(message, response.status);
   }
   return response;
 }

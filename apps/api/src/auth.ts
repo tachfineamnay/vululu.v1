@@ -10,6 +10,10 @@ import {
 } from './security/session';
 import './security/types';
 
+const ACCOUNT_SECURITY_PATHS = new Set([
+  '/api/auth/logout', '/api/auth/logout-all', '/api/auth/logout-others', '/api/auth/profile', '/api/auth/change-password'
+]);
+
 function requestPath(request: Pick<FastifyRequest, 'url'>): string {
   const queryIndex = request.url.indexOf('?');
   return queryIndex === -1 ? request.url : request.url.slice(0, queryIndex);
@@ -86,7 +90,7 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
       throw new HttpError(403, 'csrf_invalid', 'Jeton CSRF absent ou invalide.');
     }
     const path = requestPath(request);
-    if (path.startsWith('/api/billing/') || path === '/api/auth/logout' ||
+    if (path.startsWith('/api/billing/') || ACCOUNT_SECURITY_PATHS.has(path) ||
         /^\/api\/(execution\/[^/]+\/cancel|publishing\/[^/]+\/prepare-cancel)$/.test(path)) return;
     if ((await prisma.billingAccount.findUnique({ where: { userId: session.userId } }))?.suspended) {
       // A suspended customer may still stop a previously scheduled publication.

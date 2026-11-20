@@ -8,6 +8,8 @@ datasource db {
 }
 
 model User {
+  selfRegisteredAt DateTime?
+  accountTokens AccountToken[]
   billingAccount BillingAccount?
   serviceTickets ServiceTicket[]
   resultEvents ResultEvent[]
@@ -27,6 +29,19 @@ model User {
   projects     Project[]
   sessions     Session[]
   invitations  Invitation[] @relation("InvitationCreator")
+}
+
+model AccountToken {
+  tokenHash String   @id
+  purpose   String
+  email     String
+  userId    String?
+  expiresAt DateTime
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([email, purpose])
+  @@index([expiresAt])
+  @@index([userId])
 }
 
 model BrandContext {
