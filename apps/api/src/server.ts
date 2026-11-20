@@ -32,6 +32,8 @@ import {marketingRoutes} from "./routes/marketing";
 import { executionRoutes } from './routes/execution';
 import { productionRoutes } from './routes/production';
 import { opsRoutes } from './routes/ops';
+import { betaRoutes } from './routes/beta';
+import { betaStatus } from './betaMode';
 
 export async function buildServer({ accountMail = configuredAccountMail(), billingStripe }: { accountMail?: AccountMailTransport | null; billingStripe?: Stripe } = {}) {
   const app = Fastify({
@@ -127,6 +129,7 @@ export async function buildServer({ accountMail = configuredAccountMail(), billi
     return respond(500, { error: 'internal_error', message: 'Erreur interne.' });
   });
 
+  await app.register(betaRoutes);
   await app.register(billingRoutes, { stripe: billingStripe });
   await app.register(billingWebhook);
   await app.register(resultsRoutes);
@@ -151,7 +154,8 @@ export async function buildServer({ accountMail = configuredAccountMail(), billi
   await app.register(opsRoutes);
 
   app.get('/api/health', async () => {
-    return { status: 'ok', service: 'vululu-api', version: 'v1' };
+    // Le mode est publié pour la supervision : il n'ouvre aucun droit.
+    return { status: 'ok', service: 'vululu-api', version: 'v1', beta: betaStatus().beta };
   });
 
   return app;

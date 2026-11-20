@@ -25,6 +25,7 @@ import {
   erase,
 } from '../infrastructure/billing/support';
 import { activationPhrase, billingConfig, requestedBillingMode } from '../infrastructure/billing/config';
+import { betaPaymentsFrozen } from '../betaMode';
 import { rateLimitPreHandler } from '../infrastructure/security/rateLimiter';
 const key = z.string().min(1).max(160),
   message = z.string().trim().min(2).max(3000),
@@ -82,8 +83,16 @@ export async function billingRoutes(app: FastifyInstance, { stripe }: { stripe?:
   app.post('/api/billing/orders/:id/receipt', auth, (r) => paymentReceipt(r.currentUser!.id, id(r.params), stripe));
   app.get('/api/billing/tickets', auth, (r) => threads({ userId: r.currentUser!.id }));
   app.post('/api/billing/tickets', auth, (r) => {
-    const b = z.strictObject({ subject: z.string().trim().min(2).max(120), message }).parse(r.body);
-    return openTicket(r.currentUser!.id, 'SUPPORT', b.subject, b.message);
+    const b = z
+      .strictObject({
+        subject: z.string().trim().min(2).max(120),
+        message,
+        // BETA01 : typage optionnel, sans collecte supplémentaire.
+        kind: z.enum(['SUPPORT', 'BETA_FEEDBACK']).default('SUPPORT'),
+      })
+      .parse(r.body);
+    if (b.kind === 'BETA_FEEDBACK' && !betaPaymentsFrozen()) return fail(400, 'beta_mode_inactive');
+    return openTicket(r.currentUser!.id, b.kind, b.subject, b.message);
   });
   const update = z.strictObject({ expected: status, status, message });
   app.post('/api/billing/tickets/:id', auth, (r) => {
@@ -94,7 +103,8 @@ export async function billingRoutes(app: FastifyInstance, { stripe }: { stripe?:
     prisma.$transaction(async (tx) => {
       await audit(tx, r.currentUser!.id, 'support.queue_read', 'support');
       return tx.serviceTicket.findMany({
-        where: { kind: 'SUPPORT' },
+        // BETA01 : les retours de bêta arrivent dans la même file d'assistance.
+        where: { kind: { in: ['SUPPORT', 'BETA_FEEDBACK'] } },
         orderBy: { updatedAt: 'desc' },
         take: 100,
         include: { entries: { orderBy: { createdAt: 'asc' } } },
@@ -138,15 +148,19 @@ export async function billingRoutes(app: FastifyInstance, { stripe }: { stripe?:
   app.get('/api/admin/commerce', admin, async (r) => {
     await prisma.$transaction((tx) => audit(tx, r.currentUser!.id, 'admin.overview_read', 'commerce'));
     const mode = requestedBillingMode();
+    const frozen = betaPaymentsFrozen();
     const control = await prisma.billingControl.findUniqueOrThrow({ where: { id: 'commercial' } });
     return {
       mode,
       activeMode: control.mode,
+      // BETA01 : état de gel lu côté serveur, jamais déduit de l'interface.
+      beta: { enabled: frozen, paymentsFrozen: frozen },
       activationPhrase: mode ? activationPhrase(mode) : null,
       checkoutConfigured: !!billingConfig()?.checkoutEnabled,
       audit: await prisma.auditEvent.findMany({ where: { targetType: 'commercial', action: { in: [
         'commerce.enforcement.enabled', 'commerce.catalog.approved', 'commerce.catalog.visibility',
-        'commerce.refund.reconciled', 'commerce.account.suspension', 'commerce.credit.reconciled'
+        'commerce.refund.reconciled', 'commerce.account.suspension', 'commerce.credit.reconciled',
+        'commerce.beta.frozen'
       ] } }, orderBy: { createdAt: 'desc' }, take: 40,
         select: { id: true, action: true, targetId: true, actorId: true, createdAt: true, metadata: true } }),
       products: await prisma.billingProduct.findMany({ orderBy: { createdAt: 'desc' }, take: 100 }),
