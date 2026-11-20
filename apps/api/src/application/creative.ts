@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { buffer } from 'node:stream/consumers';
-import { creativeSpec, type CreativeSpec } from '@vululu/contracts';
+import { creativeSpec, type CreativeAssetApply, type CreativeSpec } from '@vululu/contracts';
 import type { ArtifactStoragePort } from '@vululu/application';
 import { creativeFrame, assembleMaster, clipPoster, masterDurationTolerance } from '@vululu/media';
 import { HttpError } from '../errors';
@@ -85,6 +85,47 @@ export class CreativeStudio {
   async restore(userId: string, id: string, version: number, expectedVersion: number) {
     const row = await this.get(userId, id, version);
     return this.save(userId, id, expectedVersion, creativeSpec.parse(row.spec));
+  }
+  /** P08 — applique une ressource existante à un calque image, sans écraser la révision courante. */
+  async applyAsset(userId: string, id: string, input: CreativeAssetApply) {
+    const row = await this.get(userId, id, input.expectedRevision),
+      p = await this.repo.project(userId, id),
+      source = (await this.repo.sources(userId, p.contextId, p.usage, [input.versionId])).get(input.versionId);
+    if (!source?.mimeType?.startsWith('image/'))
+      throw new HttpError(422, 'creative_asset_unsupported', 'Seules les images peuvent être appliquées à un calque image.');
+    const spec = row.spec,
+      scene = input.sceneKey ? spec.scenes.find((s) => s.key === input.sceneKey) : spec.scenes[0];
+    if (!scene) throw new HttpError(404, 'creative_not_found', 'Scène introuvable.');
+    if (input.layerIndex !== undefined) {
+      const layer = scene.layers[input.layerIndex];
+      if (!layer) throw new HttpError(422, 'creative_layer_missing', 'Calque introuvable.');
+      if (layer.type !== 'image')
+        throw new HttpError(422, 'creative_layer_unsupported', "Le calque ciblé n'est pas une image.");
+      layer.versionId = input.versionId;
+      layer.fit = input.fit;
+    } else {
+      const hero = scene.layers.findIndex((l) => l.type === 'image' && l.x === 0 && l.y === 0 && l.w === 1),
+        layer = hero >= 0 ? scene.layers[hero] : undefined;
+      if (layer?.type === 'image') {
+        layer.versionId = input.versionId;
+        layer.fit = input.fit;
+      } else {
+        if (scene.layers.length >= 16)
+          throw new HttpError(422, 'creative_layer_limit', 'Nombre maximal de calques atteint.');
+        scene.layers.unshift({
+          type: 'image',
+          versionId: input.versionId,
+          x: 0,
+          y: 0,
+          w: 1,
+          h: scene.clip ? 0.65 : 1,
+          fit: input.fit,
+          gravity: 'centre',
+          opacity: 1
+        });
+      }
+    }
+    return this.save(userId, id, input.expectedRevision, spec);
   }
   async approve(userId: string, id: string, version: number, checksum: string) {
     const row = await this.get(userId, id, version);

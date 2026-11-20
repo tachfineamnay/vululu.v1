@@ -52,6 +52,7 @@ Chaque décision suit [template.md](template.md) :
 | [0036](0036-execution-outillee-agentique.md) | Exécution outillée agentique contrôlée (registre, scopes, résultats) | Acceptée pour la campagne P05 | 2026-11-20 |
 | [0037](0037-boite-outils-python-interne.md) | Boîte à outils Python interne (FastAPI, registre, réseau privé) | Acceptée pour la campagne P06 | 2026-11-20 |
 | [0038](0038-edition-image-ia-gemini-vertex.md) | Édition d’image IA via Gemini Image (Vertex) | Acceptée pour la campagne P07 | 2026-11-20 |
+| [0039](0039-atelier-visuel-canvas-et-brouillons.md) | Atelier visuel : canvas rendu serveur, historique local et brouillons | Acceptée pour la campagne P08 | 2026-11-20 |
 
 ## Décisions encore ouvertes
 

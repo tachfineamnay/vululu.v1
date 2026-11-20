@@ -11,6 +11,7 @@ import {
   actionScope,
   creativeAction,
   creativeApproval,
+  creativeAssetApply,
   creativeDirectionInput,
   creativeSpec,
   creativeWrite,
@@ -99,6 +100,11 @@ export async function creativeRoutes(app: FastifyInstance) {
   app.post(base, auth, (r) => {
     const b = creativeWrite.parse(r.body);
     return service.save(r.currentUser!.id, id.parse(r.params).id, b.expectedVersion, b.spec);
+  });
+  // Applique une ressource de marque existante à un calque image (nouvelle révision, jamais d'écrasement).
+  app.post(base + '/asset', auth, (r) => {
+    const b = creativeAssetApply.parse(r.body);
+    return service.applyAsset(r.currentUser!.id, id.parse(r.params).id, b);
   });
   app.get(base + '/:version', auth, (r) => {
     const p = revision.parse(r.params);

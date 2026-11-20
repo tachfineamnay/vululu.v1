@@ -22,13 +22,16 @@ const delivery = z.object({
 const unit = z.number().min(0).max(1);
 const box = { x: unit, y: unit, w: unit.min(0.01), h: unit.min(0.01), opacity: unit };
 const color = z.string().regex(/^#[0-9a-f]{6}$/i);
+const sceneKey = z.string().regex(/^SCENE-\d{3,8}$/);
 export const creativeLayer = z.discriminatedUnion('type', [
   z.object({
     ...box,
     type: z.literal('image'),
     versionId: z.string().min(1).max(128),
     fit: z.enum(['cover', 'contain']),
-    gravity: z.enum(['centre', 'north', 'south', 'east', 'west'])
+    gravity: z.enum(['centre', 'north', 'south', 'east', 'west']),
+    /** Cadrage manuel : zoom 1 = plein cadre, point de mire normalisé. */
+    crop: z.object({ zoom: z.number().min(1).max(4), focusX: unit, focusY: unit }).optional()
   }),
   z.object({
     ...box,
@@ -40,7 +43,11 @@ export const creativeLayer = z.discriminatedUnion('type', [
     size: z.int().min(10).max(240),
     bold: z.boolean(),
     family: z.enum(['sans', 'serif', 'monospace']).optional(),
-    color
+    color,
+    /** Alignement horizontal du bloc de texte dans sa boîte. */
+    align: z.enum(['left', 'center', 'right']).optional(),
+    /** Interligne du texte, en points (0 = interligne de la police). */
+    spacing: z.int().min(0).max(200).optional()
   })
 ]);
 export const creativeSpec = z
@@ -54,7 +61,7 @@ export const creativeSpec = z
     scenes: z
       .array(
         z.object({
-          key: z.string().regex(/^SCENE-\d{3,8}$/),
+          key: sceneKey,
           background: color.optional(),
           transition: z.enum(['cut', 'dip']).optional(),
           seconds: z.number().min(0.5).max(30).multipleOf(0.5),
@@ -97,6 +104,16 @@ export const creativeSpec = z
 export type CreativeSpec = z.infer<typeof creativeSpec>;
 export type CreativeLayer = z.infer<typeof creativeLayer>;
 export const creativeWrite = z.object({ expectedVersion: z.int().nonnegative(), spec: creativeSpec });
+
+/** P08 — applique une ressource de marque existante à un calque image (nouvelle révision, jamais d'écrasement). */
+export const creativeAssetApply = z.strictObject({
+  expectedRevision: z.int().nonnegative(),
+  versionId: mediaId,
+  sceneKey: sceneKey.optional(),
+  layerIndex: z.int().min(0).max(15).optional(),
+  fit: z.enum(['cover', 'contain']).default('cover')
+});
+export type CreativeAssetApply = z.infer<typeof creativeAssetApply>;
 
 /** Direction artistique : brouillon CreativeRevision enrichi (ADR-0035), jamais une approbation. */
 export const creativeDirectionInput = z.strictObject({
