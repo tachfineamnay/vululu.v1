@@ -5,7 +5,7 @@ import path from 'node:path';
 import { buffer } from 'node:stream/consumers';
 import { creativeSpec, type CreativeSpec } from '@vululu/contracts';
 import type { ArtifactStoragePort } from '@vululu/application';
-import { creativeFrame, assembleMaster, clipPoster } from '@vululu/media';
+import { creativeFrame, assembleMaster, clipPoster, masterDurationTolerance } from '@vululu/media';
 import { HttpError } from '../errors';
 
 const missing = () => new HttpError(404, 'creative_not_found', 'Projet, révision ou ressource introuvable.');
@@ -123,7 +123,8 @@ export class CreativeStudio {
       if (scene.clip) {
         const r = rows.get(scene.clip.versionId);
         if (r?.mimeType !== 'video/mp4') throw missing();
-        if (Number((r.metadata as { duration: number }).duration) + 0.001 < scene.clip.start + scene.seconds)
+        const duration = (r.metadata as { duration?: number } | null)?.duration ?? NaN;
+        if (!Number.isFinite(duration) || duration + 0.001 < scene.clip.start + scene.seconds)
           throw new HttpError(422, 'clip_duration', 'Le clip est trop court pour cette scène.');
       }
     }
@@ -167,7 +168,7 @@ export class CreativeStudio {
       await fs.rm(dir, { recursive: true, force: true });
     }
   }
-  async render(userId: string, id: string, version: number) {
+  async render(userId: string, id: string, version: number, seal = (manifest: Manifest) => this.repo.seal(userId, id, version, manifest)) {
     const row = await this.get(userId, id, version);
     if (row.manifest) return row.manifest;
     const spec = creativeSpec.parse(row.spec),
@@ -253,7 +254,7 @@ export class CreativeStudio {
         });
       }
       if (spec.delivery && spec.delivery.kind !== 'short') {
-        await this.repo.seal(userId, id, version, {
+        await seal({
           renderer: 'creative-2',
           approvalSha256: hash(JSON.stringify(frames.map((f) => [f.sceneKey, f.sha256]))),
           frames,
@@ -287,7 +288,7 @@ export class CreativeStudio {
         master.audioCodec !== 'aac' ||
         master.width !== spec.width ||
         master.height !== spec.height ||
-        Math.abs(master.duration - master.expectedDurationSeconds) > 0.25
+        Math.abs(master.duration - master.expectedDurationSeconds) > masterDurationTolerance()
       )
         throw new Error('creative_master_integrity');
       const key = `creative/${id}/${master.checksum}.mp4`,
@@ -306,7 +307,7 @@ export class CreativeStudio {
         seconds: master.duration
       };
       // Never replace a sealed manifest, even on concurrent render requests.
-      await this.repo.seal(userId, id, version, manifest);
+      await seal(manifest);
       return (await this.get(userId, id, version)).manifest!;
     } finally {
       await fs.rm(dir, { recursive: true, force: true });

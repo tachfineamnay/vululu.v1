@@ -3,6 +3,7 @@ import { useState } from 'react';
 import {
   composeGuide,
   formatLabels,
+  productionCapability,
   outputKind,
   platformSchema,
   type CreativeSpec,
@@ -30,7 +31,7 @@ export function FormatGuide({
   apply: (f: () => CreativeSpec) => void;
 }) {
   const [concept,selectConcept]=useState<'editorial'|'immersive'>('editorial');
-  const [kind, format] = useState<OutputKind>(bundle.project.format==='Carrousel'?'carousel':bundle.project.format==='Reel'?'short':'square'),
+  const [kind, format] = useState<OutputKind>(productionCapability(bundle.project.format)?.studio ?? 'square'),
     [platform, channel] = useState<Platform>(platformSchema.parse(bundle.project.platform)),
     [dest, link] = useState(''),
     [photos, pick] = useState<string[]>([]),
@@ -149,7 +150,8 @@ export function FormatGuide({
               cta: variant?.cta || bundle.brief?.cta || 'Nous contacter',
               photos,
               logo,
-              clip
+              clip,
+              sceneDurationSeconds: bundle.brief?.settings?.defaultSceneDurationSeconds ?? bundle.project.sceneDurationSeconds
             })
           )
         }

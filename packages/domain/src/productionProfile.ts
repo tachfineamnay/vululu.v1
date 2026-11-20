@@ -11,7 +11,7 @@ export type ProductionSettings = {
 export type ProductionSettingsInput = Partial<Omit<ProductionSettings, 'audio'>> & { audio?: Partial<ProductionSettings['audio']> };
 const profiles: Record<Platform, { ratios: readonly AspectRatio[]; formats: readonly ProjectFormat[] }> = {
   TikTok: { ratios: ['9:16'], formats: ['Video', 'Reel', 'Motion'] },
-  Instagram: { ratios: ['9:16', '4:5', '1:1'], formats: ['Affiche', 'Carrousel', 'Video', 'Reel'] },
+  Instagram: { ratios: ['9:16', '4:5', '1:1'], formats: ['Affiche', 'Story', 'Carrousel', 'Video', 'Reel'] },
   LinkedIn: { ratios: ['1:1', '16:9'], formats: ['Affiche', 'Carrousel', 'Video'] }
 };
 function invalid(): never { throw new DomainError('invalid_input', 'Paramètres de production incompatibles avec le profil démo.'); }
@@ -39,7 +39,7 @@ export function normalizeProductionSettings(platform: Platform, format: ProjectF
   const spokenText = audio.spokenText === undefined ? '' : audio.spokenText;
   const ducking = audio.ducking === undefined ? true : audio.ducking;
   if (typeof spokenText !== 'string' || spokenText.length > 2000 || typeof ducking !== 'boolean' || (spokenText.trim() && !voiceVersionId)) invalid();
-  if ((format === 'Affiche' || format === 'Carrousel') && (voiceVersionId || musicVersionId || spokenText.trim())) invalid();
+  if ((format === 'Affiche' || format === 'Story' || format === 'Carrousel') && (voiceVersionId || musicVersionId || spokenText.trim())) invalid();
   return deepFreeze({ schemaVersion: 1, profileVersion: 'v1-demo-2026-11-04', ratio, visualStyle, direction: direction.trim(),
     defaultSceneDurationSeconds: bounded(input.defaultSceneDurationSeconds === undefined ? 2 : input.defaultSceneDurationSeconds, 1, 15, true),
     maxMockCents: bounded(input.maxMockCents === undefined ? 1000 : input.maxMockCents, 0, 100000, true),
@@ -53,4 +53,4 @@ export function profileDimensions(ratio: AspectRatio): { width: number; height: 
   if (!Object.hasOwn(dimensions, ratio)) invalid();
   return deepFreeze({ ...dimensions[ratio] });
 }
-export function plannedSceneCount(format: ProjectFormat): number { return assertProjectFormat(format) === 'Affiche' ? 1 : 5; }
+export function plannedSceneCount(format: ProjectFormat): number { return ['Affiche', 'Story'].includes(assertProjectFormat(format)) ? 1 : 5; }

@@ -1,7 +1,9 @@
 'use client';
 import { useEffect, useState } from 'react';
+import type { productionCapability } from '@vululu/contracts';
 export type StudioState = {
   cursor: number;
+  production?: NonNullable<ReturnType<typeof productionCapability>> | null;
   project: { campaign: { name: string } | null; context: { name: string; offers: { name: string }[] } };
   revisions: { version: number; approvedAt: string | null }[];
   operations: {

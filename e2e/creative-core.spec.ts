@@ -32,7 +32,6 @@ test('Studio : composer, prévisualiser et retrouver une révision approuvée', 
   };
   await open();
   await panel.getByRole('button', { name: 'Dupliquer la scène' }).click();
-  await panel.getByRole('button', { name: 'Dupliquer la scène' }).click();
   expect(await panel.getByRole('combobox', { name: 'Timeline' }).locator('option').count()).toBe(3);
   await panel.getByRole('combobox', { name: 'Timeline' }).selectOption('1');
   await panel.getByText('Calque 2 · cta').click();
@@ -41,8 +40,8 @@ test('Studio : composer, prévisualiser et retrouver une révision approuvée', 
   await expect(panel.getByRole('img', { name: 'Aperçu du rendu de SCENE-002' })).toBeVisible();
   await panel.getByRole('button', { name: 'Enregistrer une nouvelle révision' }).click();
   await panel.getByRole('button', { name: 'Rendre le master v1' }).click();
-  await expect(panel.getByRole('link', { name: 'Exporter le master v1' })).toBeVisible();
   await panel.getByRole('button', { name: 'Approuver cette version' }).click();
+  await expect(panel.getByRole('link', { name: 'Exporter le master v1' })).toBeVisible();
   await expect(panel.getByRole('button', { name: 'Version approuvée' })).toBeDisabled();
   await page.reload();
   await open();

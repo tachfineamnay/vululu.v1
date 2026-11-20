@@ -10,6 +10,7 @@ import {MarketingAssistant} from "./MarketingAssistant";
 import {StudioDesk} from './StudioDesk';
 import {useStudioFeed} from '../lib/useStudioFeed';
 import { ProjectAssistant } from './ProjectAssistant';
+import { projectFormatLabels } from "../lib/projectPresentation";
 import { CreativeEditor } from "./CreativeEditor";
 import ConversationProposalCard from './ConversationProposalCard';
 import { useUnsavedChanges } from '../lib/useUnsavedChanges';
@@ -68,9 +69,10 @@ function formatDate(value: string | undefined | null): string {
 type ToastState = { id: number; message: string; tone: 'success' | 'error' } | null;
 
 export default function ProjectStudio({ id }: { id: string }) {
-  const {demo,t}=useWorkspace();
+  const {demo: demoMode,t}=useWorkspace();
   const router = useRouter();
   const [bundle, setBundle] = useState<ProjectBundle | null>(null);
+  const demo = demoMode && bundle?.project.format === 'Video';
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
@@ -412,7 +414,7 @@ export default function ProjectStudio({ id }: { id: string }) {
       <main id="studio-main" tabIndex={-1} className="page studio-page">
         <section className="studio-head">
           <div>
-            <p className="eyebrow">Studio · {bundle.project.platform} · {bundle.project.format === 'Video' ? 'Vidéo' : bundle.project.format}</p>
+            <p className="eyebrow">Studio · {bundle.project.platform} · {projectFormatLabels[bundle.project.format] ?? bundle.project.format}</p>
             <h1 data-testid="project-title-heading">{bundle.project.title}</h1>
             <p className="muted">{bundle.project.objective}</p>
             <div className="studio-head-links">
@@ -425,7 +427,7 @@ export default function ProjectStudio({ id }: { id: string }) {
         </section>
 
         <StudioDesk bundle={bundle} state={live.state} connection={live.connection} go={focusStudioSection}/>
-        <CreativeEditor bundle={bundle} serverHead={live.state?.revisions[0]?.version}/>
+        <CreativeEditor bundle={bundle} serverHead={live.state?.revisions[0]?.version} serverRenders={live.state?.renders}/>
         <ProjectAssistant key={bundle.project.id} projectId={bundle.project.id} contextId={bundle.context.id} creativeHead={live.state?.revisions[0]?.version} />
         <MarketingAssistant key={bundle.project.id} project={bundle.project.id} context={bundle.context.id}/>
         {demo&&<details className="studio-demo">
@@ -559,6 +561,10 @@ export default function ProjectStudio({ id }: { id: string }) {
 
 
         </details>
+        {!demo && !!bundle.masterVersions.length && <details className="card stack">
+          <summary>Vidéos historiques</summary>
+          {bundle.masterVersions.map((version) => <a key={version.id} href={`/api/projects/${id}/master?version=${version.version}&export=1`} download={`v${version.version}.mp4`}>Télécharger le MP4 v{version.version}</a>)}
+        </details>}
         {demo&&<><CreationDelivery bundle={bundle} refresh={load} blocked={Boolean(busy) || briefEdited || briefDirty || !!refreshError} correct={() => correctionRef.current?.focus()} studio={{ scene: selectedScene, mode: previewMode, onModeChange: setPreviewMode }} scenes={<>
           <section className="studio-scenes" aria-labelledby="storyboard-heading">
             <div className="section-head"><h2 id="storyboard-heading" tabIndex={-1}>Scènes</h2><span className="muted small" data-testid="duration-summary">{bundle.scenes.length} {bundle.scenes.length === 1 ? 'scène' : 'scènes'} · {totalDurationSeconds} s</span></div>

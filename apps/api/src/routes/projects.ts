@@ -2,6 +2,8 @@ import {requireDemo} from '../releaseMode';
 import type { FastifyInstance } from 'fastify';
 import {
   briefInputSchema,
+  availableFormats,
+  productionFormats,
   briefConfirmationSchema,
   messageInputSchema,
   projectInputSchema,
@@ -11,6 +13,7 @@ import { actorOf, briefs, briefConfirmations, bundles, messages, projects, scene
 import { rateLimitPreHandler, RATE_LIMITS } from '../infrastructure/security/rateLimiter';
 
 export async function projectRoutes(app: FastifyInstance): Promise<void> {
+  app.get('/api/production/formats', { preHandler: [app.authenticate] }, () => ({ formats: productionFormats, destinations: availableFormats }));
   app.get('/api/projects/:id/production-plan', { preHandler: [app.authenticate] }, async (request) => ({ plan: await productionPlanning.preview(actorOf(request.currentUser), (request.params as { id: string }).id) }));
   app.post('/api/projects/:id/brief/confirm', { preHandler: [app.authenticate] }, async (request) => {
     const input = briefConfirmationSchema.parse(request.body);

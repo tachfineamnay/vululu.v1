@@ -13,12 +13,14 @@ import {
   creativeApproval,
   creativeSpec,
   creativeWrite,
+  studioExportExtension,
 } from '@vululu/contracts';
 import { creativeStudio as service } from '../application/container';
 import {draftThumbnail} from '@vululu/media';
 import { sendArtifact } from './production';
 import { rateLimitPreHandler, RATE_LIMITS } from '../infrastructure/security/rateLimiter';
 import { HttpError } from '../errors';
+import { queueRender, renderStatus } from '../infrastructure/creative/renderJobs';
 
 export async function creativeRoutes(app: FastifyInstance) {
   const auth = { preHandler: [app.authenticate] };
@@ -196,27 +198,50 @@ export async function creativeRoutes(app: FastifyInstance) {
         return (await prisma.billingControl.findUniqueOrThrow({where:{id:'commercial'}})).enabled ? draftThumbnail(frame) : frame;
       }));
   });
-  app.post(base + '/:version/render', renderAuth, (r) => {
+  app.post(base + '/:version/render', renderAuth, async (r, reply) => {
     const p = revision.parse(r.params);
-    return withSlot(async () => {
-      const revision = await service.get(r.currentUser!.id, p.id, p.version);
-      if (revision.manifest) return revision.manifest;
-      const attempt = await prisma.studioRender.create({
-        data: { projectId: p.id, revision: p.version, state: 'running' },
-      });
-      try {
-        const result = await service.render(r.currentUser!.id, p.id, p.version);
-        await prisma.studioRender.update({ where: { id: attempt.id }, data: { state: 'succeeded' } });
-        return result;
-      } catch (e) {
-        const reason =
-          e instanceof Error && 'code' in e && e.code === 'media_text_overflow'
-            ? 'Texte trop long pour le cadre.'
-            : 'Rendu non terminé : vérifier les médias et le stockage.';
-        await prisma.studioRender.update({ where: { id: attempt.id }, data: { state: 'failed', reason } });
-        throw e;
+    const job = await queueRender(r.currentUser!.id, p.id, p.version);
+    return reply.code(job.state === 'succeeded' ? 200 : 202).send(job);
+  });
+  app.get(base + '/:version/render', auth, async (r, reply) => {
+    const p = revision.parse(r.params);
+    reply.header('Cache-Control', 'private, no-store');
+    return renderStatus(r.currentUser!.id, p.id, p.version);
+  });
+  app.get(base + '/:version/export', auth, async (r, reply) => {
+    const p = revision.parse(r.params), user = r.currentUser!.id;
+    const row = await service.get(user, p.id, p.version);
+    if (!row.approvedAt || !row.manifest)
+      throw new HttpError(409, 'creative_unapproved', 'Approuvez cette révision avant de la télécharger.');
+    const ext = studioExportExtension(row.spec.delivery?.kind);
+    reply.header('Cache-Control', 'private, no-store');
+    if (ext !== 'zip') {
+      const file = await service.file(user, p.id, p.version);
+      markExport(r, reply, p.id, p.version, 'Master créatif approuvé');
+      reply.header('Content-Disposition', `attachment; filename="creation-v${p.version}.${ext}"`);
+      return sendArtifact(r, reply, file);
+    }
+    const data = await withSlot(async () => {
+      const files: Record<string, Uint8Array> = {};
+      const slides = [];
+      let size = 0;
+      for (const [i, frame] of row.manifest!.frames.entries()) {
+        const f = await service.file(user, p.id, p.version, frame.sceneKey);
+        size += f.size;
+        if (size > 100 * 1024 * 1024) throw new HttpError(413, 'package_limit', 'Le lot dépasse 100 Mio.');
+        const bytes = await buffer(await f.openRead());
+        if (bytes.length !== f.size || createHash('sha256').update(bytes).digest('hex') !== f.sha256)
+          throw new HttpError(409, 'creative_integrity', 'Le fichier enregistré ne correspond pas à la version approuvée.');
+        const name = `${String(i + 1).padStart(3, '0')}-${frame.sceneKey}.png`;
+        files[name] = bytes;
+        slides.push({ name, sha256: f.sha256 });
       }
+      files['manifest.json'] = strToU8(JSON.stringify({ revision: p.version, slides }, null, 2));
+      return Buffer.from(zipSync(files, { level: 0 }));
     });
+    markExport(r, reply, p.id, p.version, 'Carrousel approuvé');
+    return reply.header('Content-Disposition', `attachment; filename="creation-v${p.version}.zip"`)
+      .type('application/zip').send(data);
   });
   app.get(base + '/:version/master', auth, async (r, reply) => {
     const p = revision.parse(r.params);

@@ -882,6 +882,10 @@ model StudioEvent {
  @@id([projectId,cursor])
 }
 model StudioRender {
+ managed Boolean @default(false)
+ leaseToken String?
+ leaseUntil DateTime?
+ attempts Int @default(0)
  id String @id @default(uuid())
  projectId String
  revision Int

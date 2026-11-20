@@ -21,7 +21,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       <body><WorkspacePreferences locale={locale} demo={demo}>
         {process.env.DEMO_MODE === '1' ? (
           <aside className="demo-mode-banner" role="note" aria-label="Mode demonstration">
-            <strong>MODE DÉMO</strong> — IA simulée. Médias déterministes, coûts et transfert Postiz simulés.
+            <strong>MODE DÉMO</strong> — Le parcours vidéo historique utilise une assistance, des coûts et un transfert simulés. La composition et les exports Studio sont réels.
           </aside>
         ) : null}
         {children}

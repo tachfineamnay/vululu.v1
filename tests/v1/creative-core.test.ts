@@ -23,6 +23,7 @@ vi.hoisted(() => {
 import { prisma } from '@vululu/db';
 import { LocalFilesystemArtifactStorage } from '../../apps/api/src/infrastructure/storage/localArtifactStorage';
 import { buildServer } from '../../apps/api/src/server';
+import { runNextStudioRender } from '../../apps/api/src/infrastructure/creative/renderJobs';
 import type { CreativeSpec, CreativeLayer } from '@vululu/contracts';
 const sharp = createRequire(path.resolve('packages/media/package.json'))('sharp');
 const sha = (v: Buffer) => createHash('sha256').update(v).digest('hex');
@@ -167,7 +168,15 @@ it('seals an approved master, changes only CTA 2, retrieves both masters and res
       }))
     };
     await post(base, { expectedVersion: 0, spec });
-    const m1 = await post(base + '/1/render', {});
+    expect((await app.inject({ method: 'POST', url: base + '/1/render', headers: other, payload: {} })).statusCode).toBe(404);
+    expect((await app.inject({ url: base + '/1/render', headers: other })).statusCode).toBe(404);
+    expect((await app.inject({ url: base + '/1/export', headers })).statusCode).toBe(409);
+    const jobs = await Promise.all([post(base + '/1/render', {}), post(base + '/1/render', {})]);
+    expect(jobs[0].state).toBe('queued');
+    expect(jobs[0].id).toBe(jobs[1].id);
+    expect((await app.inject({ method: 'POST', url: base + '/1/approve', headers, payload: { checksum: 'a'.repeat(64) } })).statusCode).toBe(409);
+    expect((await Promise.all([runNextStudioRender(), runNextStudioRender()])).sort()).toEqual([false, true]);
+    const m1 = JSON.parse((await get(base + '/1')).toString()).manifest;
     await post(base + '/1/approve', { checksum: m1.master.sha256 });
     const target = { projectId: project.id, sceneKey: 'SCENE-001' };
     const proposal = await post(base + '/actions/translate', {
@@ -194,7 +203,16 @@ it('seals an approved master, changes only CTA 2, retrieves both masters and res
     const concurrent = await Promise.all([apply(payload), apply(payload)]);
     expect(concurrent.map((r) => r.statusCode).sort()).toEqual([200, 409]);
     const writes = vi.spyOn(LocalFilesystemArtifactStorage.prototype, 'putObject');
-    const m2 = await post(base + '/2/render', {});
+    const queued = await post(base + '/2/render', {});
+    // Simulate an interrupted worker, then let a new worker reclaim the same attempt.
+    await prisma.studioRender.update({ where: { id: queued.id }, data: {
+      state: 'running', leaseToken: randomUUID(), leaseUntil: new Date(0), attempts: 1
+    } });
+    expect(await runNextStudioRender()).toBe(true);
+    expect(await prisma.studioRender.findUnique({ where: { id: queued.id } })).toMatchObject({
+      attempts: 2, state: 'succeeded', leaseToken: null
+    });
+    const m2 = JSON.parse((await get(base + '/2')).toString()).manifest;
     expect(
       writes.mock.calls.filter(([input]) => input.contentType === 'image/png').map(([input]) => input.sha256)
     ).toEqual([m2.frames[1].sha256]);
@@ -233,6 +251,27 @@ it('seals an approved master, changes only CTA 2, retrieves both masters and res
     const restored = await post(base + '/1/restore', { expectedVersion: 2 });
     expect(restored.version).toBe(3);
     expect(restored.spec).toEqual(original.spec);
+    const broken = vi.spyOn(LocalFilesystemArtifactStorage.prototype, 'putFile').mockRejectedValueOnce(new Error('fixture storage error'));
+    const failed = await post(base + '/3/render', {});
+    expect(await runNextStudioRender()).toBe(true);
+    broken.mockRestore();
+    expect(JSON.parse((await get(base + '/3/render')).toString())).toMatchObject({ state: 'failed' });
+    expect(JSON.parse((await get(base + '/3')).toString()).manifest).toBeNull();
+    const retry = await post(base + '/3/render', {});
+    expect(retry.id).not.toBe(failed.id);
+    const put = LocalFilesystemArtifactStorage.prototype.putFile;
+    const expiredWhileRendering = vi.spyOn(LocalFilesystemArtifactStorage.prototype, 'putFile').mockImplementationOnce(async function (this: LocalFilesystemArtifactStorage, input) {
+      const output = await put.call(this, input);
+      await prisma.studioRender.update({ where: { id: retry.id }, data: { leaseUntil: new Date(0) } });
+      return output;
+    });
+    expect(await runNextStudioRender()).toBe(true);
+    expiredWhileRendering.mockRestore();
+    expect(JSON.parse((await get(base + '/3')).toString()).manifest).toBeNull();
+    expect(await runNextStudioRender()).toBe(true);
+    expect(JSON.parse((await get(base + '/3/render')).toString())).toMatchObject({ state: 'succeeded' });
+    expect(await post(base + '/1/render', {})).toMatchObject({ state: 'succeeded' });
+    expect(sha(await get(base + '/1/export'))).toBe(m1.master.sha256);
     const raced = await Promise.all(
       [1, 2].map(() =>
         app.inject({ method: 'POST', url: base, headers, payload: { expectedVersion: 3, spec } })

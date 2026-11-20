@@ -139,6 +139,7 @@ export class PrismaProductionRunRepository implements ProductionRunRepository {
           if (!project.context) {
             throw new ApplicationError('context_not_found', 'Contexte introuvable.', 404);
           }
+          if (project.format !== 'Video') throw new ApplicationError('format_not_qualified', 'Ce parcours est réservé à la vidéo multiscène. Pour les autres formats, ouvrez la composition Studio.', 409);
           let masterSourceInputChecksum: string | undefined;
           if (input.type === 'produce') {
             if (!project.brief) {
@@ -177,7 +178,6 @@ export class PrismaProductionRunRepository implements ProductionRunRepository {
           }
           const briefRevision = project.brief?.revisions[0] ?? null;
           const settings = normalizeProductionSettings(project.platform as Platform, project.format as ProjectFormat, (project.brief.settings as unknown as ProductionSettings | null) ?? { defaultSceneDurationSeconds: project.sceneDurationSeconds, maxMockCents: 100 });
-          if (project.format !== 'Video') throw new ApplicationError('format_not_qualified', 'Ce format attend sa qualification média.', 409);
           if (settings?.audio.voiceVersionId || settings?.audio.musicVersionId) throw new ApplicationError('audio_not_qualified', 'Les fichiers et le mix audio attendent leur qualification média.', 409);
           const dimensions = profileDimensions(settings.ratio);
           const executionPolicy = await captureRunPolicy(tx, { steps: input.steps, durable: Boolean(input.outbox), usage: project.usage, maxMockCents: settings.maxMockCents });

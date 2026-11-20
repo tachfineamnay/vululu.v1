@@ -1,8 +1,10 @@
 import './env';
 import { env } from './env';
 import { buildServer } from './server';
+import { startStudioRenderPump } from './infrastructure/creative/renderJobs';
 
 const app = await buildServer();
+if (env.orchestratorMode === 'local') app.addHook('onClose', startStudioRenderPump());
 
 if (env.orchestratorMode === 'hatchet') {
   const { outboxDispatcher } = await import('./application/container');

@@ -50,6 +50,7 @@ test('authorizes mock image and video generations and exports a composition with
   const video = (await placed.json()).spec.scenes[0].clip;
   await expect(page.getByRole('combobox', { name: 'Clip de la bibliothèque' })).toHaveValue(video.versionId);
   await render.click();
+  await page.getByRole('button', { name: 'Approuver cette version' }).click();
   const link = page.getByRole('link', { name: 'Exporter le master v3' });
   await expect(link).toBeVisible();
   const exportFile = await page.request.get((await link.getAttribute('href'))!);

@@ -27,6 +27,7 @@ export type GuideInput = {
   photos: string[];
   logo?: string;
   clip?: string;
+  sceneDurationSeconds?: number;
 };
 /** Assemble editable layers, not a flattened mockup. No synthetic copy, prices or asset URLs. */
 export function composeGuide({
@@ -39,7 +40,8 @@ export function composeGuide({
   cta,
   photos,
   logo,
-  clip
+  clip,
+  sceneDurationSeconds = 2
 }: GuideInput): CreativeSpec {
   const { kind } = delivery,
     [width, height] = outputSize[kind];
@@ -152,7 +154,7 @@ export function composeGuide({
       }
       return {
         key: 'SCENE-' + String(i + 1).padStart(3, '0'),
-        seconds: 2,
+        seconds: kind === 'short' ? sceneDurationSeconds : 2,
         layers,
         ...(video ? { clip: { versionId: clip, start: 0, height: 0.7 } } : {})
       };

@@ -21,6 +21,7 @@ vi.hoisted(() => {
 import { prisma } from '@vululu/db';
 
 import { buildServer } from '../../apps/api/src/server';
+import { runNextStudioRender } from '../../apps/api/src/infrastructure/creative/renderJobs';
 import { composeGuide, outputKind, outputSize } from '@vululu/contracts';
 const sharp = createRequire(path.resolve('packages/media/package.json'))('sharp');
 const sha = (v: Buffer) => createHash('sha256').update(v).digest('hex');
@@ -160,11 +161,17 @@ it('exports every guided format and a checksummed calendar-linked campaign', asy
       });
       await post(base, { expectedVersion: version, spec });
       version++;
-      const m = await post(base + '/' + version + '/render', {});
+      expect(await post(base + '/' + version + '/render', {})).toMatchObject({ state: 'queued' });
+      expect(await runNextStudioRender()).toBe(true);
+      const m = JSON.parse((await get(base + '/' + version)).toString()).manifest;
+      await post(base + '/' + version + '/approve', { checksum: m.approvalSha256 ?? m.master.sha256 });
+      const exported = await get(base + '/' + version + '/export');
+      if (kind === 'carousel') expect(exported.toString('ascii', 0, 2)).toBe('PK');
+      else expect(sha(exported)).toBe(m.master.sha256);
       const b = await get(base + '/' + version + '/master');
       expect(sha(b)).toBe(m.master.sha256);
       if (kind === 'short') {
-        expect(m.seconds).toBeCloseTo(8, 1);
+        expect(Math.abs(m.seconds - 8)).toBeLessThanOrEqual(2 / 30);
         if (evidence) await fs.writeFile(path.join(evidence, 'short.mp4'), b);
       } else
         for (const [i, scene] of spec.scenes.entries()) {

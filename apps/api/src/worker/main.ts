@@ -5,6 +5,7 @@ import { hatchet, durableWorkerWorkflow } from './pipeline';
 import { seedDurableAgentIfMissing } from './bootstrap';
 import { prisma } from '@vululu/db';
 import { logEvent } from '../observability/logger';
+import { startStudioRenderPump } from '../infrastructure/creative/renderJobs';
 
 const heartbeatId = process.env.DURABLE_WORKER_ID || 'worker-' + process.pid;
 
@@ -59,12 +60,13 @@ async function main() {
     workflows: [durableWorkerWorkflow, secure],
     slots: 2
   });
-  process.on('SIGTERM', () => {
+  const stopRender = startStudioRenderPump();
+  const shutdown = () => {
+    void stopRender();
     void heartbeat('stopped').finally(() => worker.stop().finally(() => process.exit(0)));
-  });
-  process.on('SIGINT', () => {
-    void heartbeat('stopped').finally(() => worker.stop().finally(() => process.exit(0)));
-  });
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
   await worker.start();
 }
 

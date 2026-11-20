@@ -6,8 +6,10 @@ import {RevisionCompare} from "./RevisionCompare";
 import { CreativeActionPanel } from './CreativeActionPanel';
 import { FormatGuide, type Destination } from './FormatGuide';
 import { useUnsavedChanges } from '../lib/useUnsavedChanges';
-import { outputSize, platformSchema, readableInk, creativeSpec, type CreativeSpec, type CreativeLayer } from '@vululu/contracts';
+import { outputSize, platformSchema, productionCapability, studioExportExtension, readableInk, creativeSpec, type CreativeSpec, type CreativeLayer } from '@vululu/contracts';
 import { api, apiResponse, postJson, type ProjectBundle } from '../lib/api';
+
+type RenderStatus = { revision: number; state: string; reason: string | null };
 
 type Rev = { version: number; approvedAt: string | null };
 type Revision = Rev & {
@@ -63,7 +65,9 @@ function NumberField({
     </label>
   );
 }
-export function CreativeEditor({ bundle,serverHead }: { bundle: ProjectBundle;serverHead?:number }) {
+export function CreativeEditor({ bundle, serverHead, serverRenders }: {
+  bundle: ProjectBundle; serverHead?: number; serverRenders?: { id: string; revision: number; state: string }[]
+}) {
   const {t}=useWorkspace();
   const base = '/api/projects/' + encodeURIComponent(bundle.project.id) + '/creative';
   const [spec, set] = useState<CreativeSpec | null>(null),
@@ -77,6 +81,36 @@ export function CreativeEditor({ bundle,serverHead }: { bundle: ProjectBundle;se
     [busy, work] = useState(false),
     [error, fail] = useState(''),
     [dirty, mark] = useState(false);
+  const selectedVersion = view?.version;
+  const hasManifest = !!view?.manifest;
+  const serverRender = serverRenders?.find((job) => job.revision === selectedVersion);
+  const renderSignal = serverRender ? `${serverRender.id}:${serverRender.state}` : '';
+  const [render, setRender] = useState<RenderStatus | null>(null);
+  const [renderRefresh, refreshRender] = useState(0);
+  const renderState = render?.revision === selectedVersion ? render : null;
+  useEffect(() => {
+    if (!selectedVersion || hasManifest || dirty) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const status = await api<Omit<RenderStatus, 'revision'>>(`${base}/${selectedVersion}/render`);
+        if (stopped) return;
+        setRender({ ...status, revision: selectedVersion });
+        if (status.state === 'succeeded') {
+          const result = await api<Revision>(`${base}/${selectedVersion}`);
+          if (!stopped) show((current) => current?.version === selectedVersion ? result : current);
+          return;
+        }
+        if (status.state === 'idle' || status.state === 'failed') return;
+      } catch {
+        if (!stopped) setRender({ revision: selectedVersion, state: 'offline', reason: 'Suivi indisponible. Nouvelle tentative automatique.' });
+      }
+      if (!stopped) timer = setTimeout(poll, 1500);
+    };
+    void poll();
+    return () => { stopped = true; clearTimeout(timer); };
+  }, [base, selectedVersion, hasManifest, dirty, renderRefresh, renderSignal]);
   const [preview, setPreview] = useState<{ url: string; spec: CreativeSpec; index: number } | null>(null);
   useEffect(
     () => () => {
@@ -127,13 +161,15 @@ export function CreativeEditor({ bundle,serverHead }: { bundle: ProjectBundle;se
     const chosen = all.filter((a) => selected.versionIds.includes(a.id)),
       photos = chosen.filter((a) => a.kind !== 'logo'),
       logos = chosen.filter((a) => a.kind === 'logo');
-    const seeds = bundle.scenes.length
-      ? bundle.scenes
-      : [{ sceneKey: 'SCENE-001', title: bundle.project.title, durationSeconds: 2 }];
+    const kind = productionCapability(bundle.project.format)?.studio;
+    const seed = { sceneKey: 'SCENE-001', title: bundle.project.title,
+      durationSeconds: bundle.brief?.settings?.defaultSceneDurationSeconds ?? bundle.project.sceneDurationSeconds };
+    const seeds = bundle.scenes.length ? bundle.scenes : [seed,
+      ...(kind === 'carousel' || bundle.project.format === 'Video' ? [{ ...seed, sceneKey: 'SCENE-002', title: 'En savoir plus' }] : [])
+    ];
     const ratio = bundle.brief?.settings?.ratio ?? '9:16';
     const width = ratio === '16:9' ? 1920 : 1080,
       height = ratio === '9:16' ? 1920 : ratio === '4:5' ? 1350 : 1080;
-    const kind = bundle.project.format === 'Affiche' ? 'square' : bundle.project.format === 'Carrousel' ? 'carousel' : bundle.project.format === 'Reel' ? 'short' : null;
     set({
       schemaVersion: 1,
       width: kind ? outputSize[kind][0] : width,
@@ -141,7 +177,7 @@ export function CreativeEditor({ bundle,serverHead }: { bundle: ProjectBundle;se
       ...(kind ? {delivery:{kind,platform:platformSchema.parse(bundle.project.platform)}} : {}),
       safeArea: 0.05,
       brand: { background: bundle.context.colorPrimary, accent: bundle.context.colorSecondary },
-      scenes: (kind === 'square' ? seeds.slice(0,1) : seeds).map((s, i) => ({
+      scenes: (kind === 'square' || kind === 'story' ? seeds.slice(0,1) : seeds).map((s, i) => ({
         key: s.sceneKey,
         seconds: s.durationSeconds,
         layers: [
@@ -408,14 +444,14 @@ export function CreativeEditor({ bundle,serverHead }: { bundle: ProjectBundle;se
                 Retirer la scène
               </button>
             </div>
-            <NumberField
+            {studioExportExtension(spec.delivery?.kind) === 'mp4' && <NumberField
               label="Durée (secondes)"
               value={scene.seconds}
               step={0.5}
               change={(seconds) =>
                 change({ ...spec, scenes: spec.scenes.map((s, i) => (i === index ? { ...s, seconds } : s)) })
               }
-            />
+            />}
             {spec.delivery?.kind === 'short' && (
               <label>
                 Clip de la bibliothèque
@@ -673,15 +709,12 @@ export function CreativeEditor({ bundle,serverHead }: { bundle: ProjectBundle;se
                         src={`${base}/${view.version}/master`}
                       />
                     )}
-                    <a
-                      href={`${base}/${view.version}/master?export=1`}
-                      download={`v${view.version}.${view.spec.delivery && view.spec.delivery.kind !== 'short' ? 'png' : 'mp4'}`}
+                    {view.approvedAt && <a
+                      href={`${base}/${view.version}/export`}
+                      download={`v${view.version}.${studioExportExtension(view.spec.delivery?.kind)}`}
                     >
-                      {t("Exporter le master v","Export master v")}{view.version}
-                    </a>
-                    <a href={`${base}/${view.version}/scenes/${scene.key}`} download={`${scene.key}.png`}>
-                      Exporter la scène {index + 1}
-                    </a>
+                      {t("Exporter le master v","Export master v")}{view.version} · {studioExportExtension(view.spec.delivery?.kind).toUpperCase()}
+                    </a>}
                     <button
                       type="button"
                       disabled={!!view.approvedAt}
@@ -700,17 +733,20 @@ export function CreativeEditor({ bundle,serverHead }: { bundle: ProjectBundle;se
                     </button>
                   </>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void action(async () => {
-                        await postJson(`${base}/${view.version}/render`, {});
-                        display(await api<Revision>(base + '/' + view.version));
-                      })
-                    }
-                  >
-                    {t("Rendre le master v","Render master v")}{view.version}
-                  </button>
+                  <>
+                    {renderState?.state === 'queued' || renderState?.state === 'running' ?
+                      <p role="status">{renderState.state === 'queued' ? 'Rendu en attente' : 'Rendu en cours'} · v{view.version}</p> :
+                      <>
+                        {renderState?.reason && <p role={renderState.state === 'failed' ? 'alert' : 'status'}>{renderState.reason}</p>}
+                        <button type="button" disabled={busy} onClick={() => void action(async () => {
+                          const result = await postJson<Omit<RenderStatus, 'revision'>>(`${base}/${view.version}/render`, {});
+                          setRender({ ...result, revision: view.version });
+                          refreshRender((n) => n + 1);
+                        })}>
+                          {renderState?.state === 'failed' ? 'Relancer le rendu v' : t("Rendre le master v","Render master v")}{view.version}
+                        </button>
+                      </>}
+                  </>
                 )}
               </>
             )}

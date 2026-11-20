@@ -10,6 +10,7 @@ if (process.env.APP_ENV !== 'test' || process.env.V0_TEST_DB !== '1' || !id || !
   !['localhost', '127.0.0.1'].includes(database.hostname) || !database.pathname.endsWith('_test')) throw Error('Disposable test database required');
 // Deliberately no credential or default provider router in this fixture.
 Object.assign(process.env, { MEDIA_GENERATION_ENABLED: '1', MEDIA_IMAGE_CONFIGURED: '1', MEDIA_VIDEO_CONFIGURED: '1', REPLICATE_API_TOKEN: '', RUNWAYML_API_SECRET: '' });
+const { startStudioRenderPump } = await import('../../apps/api/src/infrastructure/creative/renderJobs');
 const { buildServer } = await import('../../apps/api/src/server');
 const { prisma } = await import('@vululu/db');
 const { execute } = await import('../../apps/api/src/infrastructure/execution/broker');
@@ -48,5 +49,6 @@ const timer = setInterval(async () => {
   } catch { console.error('Fixture dispatcher failed'); }
   finally { inFlight = false; }
 }, 250);
-app.addHook('onClose', async () => { clearInterval(timer); await prisma.$disconnect(); });
+const stopRender = startStudioRenderPump();
+app.addHook('onClose', async () => { stopRender(); clearInterval(timer); await prisma.$disconnect(); });
 await app.listen({ host: '127.0.0.1', port: 3101 });

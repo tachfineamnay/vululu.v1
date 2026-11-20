@@ -289,7 +289,7 @@ export type BriefInput = {
   tone: string;
   cta: string;
   platform: 'TikTok' | 'Instagram' | 'LinkedIn';
-  format: 'Affiche' | 'Carrousel' | 'Video' | 'Reel' | 'Motion';
+  format: 'Affiche' | 'Story' | 'Carrousel' | 'Video' | 'Reel' | 'Motion';
   settings?: ProductionSettingsInput;
 };
 
@@ -367,7 +367,7 @@ export type BriefContentRecord = {
   tone: string;
   cta: string;
   platform: 'TikTok' | 'Instagram' | 'LinkedIn';
-  format: 'Affiche' | 'Carrousel' | 'Video' | 'Reel' | 'Motion';
+  format: 'Affiche' | 'Story' | 'Carrousel' | 'Video' | 'Reel' | 'Motion';
   settings?: ProductionSettings;
 };
 

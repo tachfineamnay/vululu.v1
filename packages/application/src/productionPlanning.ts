@@ -21,7 +21,7 @@ const capabilities: Record<string, string> = {
 export function createProductionPlan(input: { settings: ProductionSettings; format: Parameters<typeof plannedSceneCount>[0]; briefVersion: number; briefChecksum: string; policy: RunExecutionPolicy; sceneDurationsSeconds?: number[] }): ProductionPlan {
   const { settings, policy } = input;
   const issues: ProductionPlan['issues'] = [];
-  if (input.format !== 'Video') issues.push({ code: 'format_not_qualified', message: 'Ce format attend sa qualification média.' });
+  if (input.format !== 'Video') issues.push({ code: 'format_not_qualified', message: 'Ce plan est réservé à la vidéo multiscène. Utilisez la composition Studio pour ce format.' });
   if (settings.audio.voiceVersionId || settings.audio.musicVersionId) issues.push({ code: 'audio_not_qualified', message: 'Les fichiers et le mix audio attendent leur qualification média.' });
   let estimatedCents = 0; let maxPossibleCents = 0;
   if (policy.workflow.engine === 'hatchet') {

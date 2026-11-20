@@ -4,6 +4,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '@vululu/db';
 import { z } from 'zod';
+import { productionCapability } from '@vululu/contracts';
 import { HttpError } from '../errors';
 import { capability } from '../infrastructure/mediaGeneration/providers';
 type Tx = Prisma.TransactionClient;
@@ -46,6 +47,7 @@ export const studioState = (a: Access) =>
     const project = await tx.project.findUniqueOrThrow({
       where: { id: projectId },
       select: {
+        format: true,
         campaign: { select: { name: true } },
         context: { select: { name: true, offers: { select: { name: true }, take: 5 } } },
       },
@@ -70,7 +72,8 @@ export const studioState = (a: Access) =>
         reportedCents: true,
       },
     });
-    const renders = await tx.studioRender.findMany({ where, orderBy: { createdAt: 'desc' }, take: 8 });
+    const renders = await tx.studioRender.findMany({ where, orderBy: { createdAt: 'desc' }, take: 8,
+      select: { id: true, revision: true, state: true, reason: true, createdAt: true } });
     const media = await tx.mediaGeneration.findMany({
       where,
       orderBy: { createdAt: 'desc' },
@@ -86,6 +89,7 @@ export const studioState = (a: Access) =>
     return {
       cursor,
       project,
+      production: productionCapability(project.format) ?? null,
       revisions,
       operations,
       renders,
