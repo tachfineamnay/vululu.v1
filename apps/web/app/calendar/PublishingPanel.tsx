@@ -1,13 +1,16 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { socialChannels } from './SocialConnections';
 import { api, postJson } from '../../lib/api';
 type Panel = {
   revisions: { revision: number; platform: string }[];
-  connections: { id: string; channel: string; platform: string; expiresAt: string }[];
+  connections: { id: string; channel: string; displayName: string | null; platform: string; expiresAt: string }[];
   requests: {
     id: string;
     revision: number;
     itemVersion: number;
+    scheduledAt: string | null;
+    connection: { platform: string; channel: string; displayName: string | null; revoked: boolean };
     state: string;
     reason: string | null;
     remoteId: string | null;
@@ -22,6 +25,7 @@ type Preview = {
   revision: number;
   caption: string;
   platform: string;
+  sourcePlatform: string;
   kind: string;
   when: string;
   keys: (string | null)[];
@@ -44,20 +48,23 @@ const labels: Record<string, string> = {
   PROVIDER_UNAVAILABLE: 'Fournisseur indisponible',
   RECEIPT_UNKNOWN: 'Accusé de réception perdu',
   VALIDATION_FAILED: 'Contenu ou autorisation à revérifier',
+  REJECTED: 'Demande refusée ou créneau non annulable',
   PROVIDER_FAILED: 'Échec signalé par le fournisseur',
   editorial_approval_required: 'Contenu du calendrier à approuver',
   caption_too_long: 'Légende et appel à l’action trop longs'
 };
-export function PublishingPanel({ id }: { id: string }) {
+export function PublishingPanel({ id, connectionsVersion = 0 }: { id: string; connectionsVersion?: number }) {
   const base = `/api/calendar/${id}/publishing`;
   const [info, set] = useState<Panel>(),
     [rev, select] = useState(0),
     [p, view] = useState<Preview>(),
+    [target, destination] = useState(''),
     [channel, choose] = useState(''),
     [error, fail] = useState(''),
     [busy, work] = useState(false),
     [refresh, reload] = useState(0),
     [cmd, confirm] = useState<Cmd & { label: string }>();
+  const query = target ? `?target=${encodeURIComponent(target)}` : '';
   useEffect(() => {
     let active = true;
     api<Panel>(base)
@@ -73,19 +80,19 @@ export function PublishingPanel({ id }: { id: string }) {
     return () => {
       active = false;
     };
-  }, [base, refresh]);
+  }, [base, refresh, connectionsVersion]);
   useEffect(() => {
     let active = true;
     view(undefined);
     confirm(undefined);
     if (rev)
-      api<Preview>(`${base}/${rev}/preview`)
+      api<Preview>(`${base}/${rev}/preview${query}`)
         .then((v) => active && view(v))
         .catch(() => active && fail('Aperçu approuvé indisponible.'));
     return () => {
       active = false;
     };
-  }, [base, rev, refresh]);
+  }, [base, rev, query, connectionsVersion]);
   async function action(fn: () => Promise<void>) {
     if (busy) return;
     fail('');
@@ -98,6 +105,8 @@ export function PublishingPanel({ id }: { id: string }) {
       work(false);
     }
   }
+  const eligible = info?.connections.filter((c) => c.platform === p?.platform && Date.parse(c.expiresAt) > Date.now()) ?? [];
+  const selection = eligible.find((c) => c.id === channel);
   return (
     <section className="card stack">
       <h2>Publication et reçus</h2>
@@ -115,7 +124,7 @@ export function PublishingPanel({ id }: { id: string }) {
       {info?.requests.map((r) => (
         <article key={r.id}>
           <strong>
-            Création v{r.revision} · {labels[r.state] ?? r.state}
+            Création v{r.revision} · {r.connection.platform} · {r.connection.displayName || r.connection.channel} · {labels[r.state] ?? r.state}
           </strong>{' '}
           — exécution : {r.execution ?? 'non approuvée'} {r.reason && ` · ${labels[r.reason] ?? r.reason}`}{' '}
           {r.remoteId && ` · reçu de soumission : ${r.remoteId}`}{' '}
@@ -150,7 +159,12 @@ export function PublishingPanel({ id }: { id: string }) {
                 Préparer une nouvelle tentative
               </button>
             )}
-          {r.state === 'SUBMITTED' && (
+          {r.remoteId && !r.connection.revoked && ['SUBMITTED', 'UNKNOWN'].includes(r.state) && (
+            <button type="button" disabled={busy} onClick={() => void action(async () => {
+              await postJson(`/api/publishing/${r.id}/reconcile`, {}); reload((n) => n + 1);
+            })}>Vérifier chez Postiz</button>
+          )}
+          {r.state === 'SUBMITTED' && !r.connection.revoked && (!r.scheduledAt || Date.parse(r.scheduledAt) > Date.now()) && (
             <button
               disabled={busy}
               onClick={() =>
@@ -170,7 +184,7 @@ export function PublishingPanel({ id }: { id: string }) {
       {!!info?.revisions.length && (
         <label>
           Création approuvée
-          <select value={rev} onChange={(e) => select(+e.target.value)}>
+          <select value={rev} onChange={(e) => { select(+e.target.value); choose(''); }}>
             {info.revisions.map((r) => (
               <option key={r.revision} value={r.revision}>
                 {r.platform} · v{r.revision}
@@ -179,11 +193,18 @@ export function PublishingPanel({ id }: { id: string }) {
           </select>
         </label>
       )}
+      {!!info?.revisions.length && <label>Réseau destinataire
+        <select value={target} onChange={(e) => { destination(e.target.value); view(undefined); confirm(undefined); choose(''); }}>
+          <option value="">Réseau de la création approuvée</option>
+          {socialChannels.map((name) => <option key={name}>{name}</option>)}
+        </select>
+      </label>}
       {p && p.revision === rev && (
         <>
           <h3>
             {p.platform} · {p.kind}
           </h3>
+          {p.platform !== p.sourcePlatform && <p>La création et la légende approuvées pour {p.sourcePlatform} seront réutilisées. Vérifiez leur pertinence pour {p.platform}.</p>}
           <p style={{ whiteSpace: 'pre-wrap' }}>{p.caption}</p>
           <time>{new Date(p.when).toLocaleString('fr-FR')}</time>
           <div>
@@ -203,8 +224,9 @@ export function PublishingPanel({ id }: { id: string }) {
           </div>
           {p.issues.length ? (
             <p role="status">À corriger : {p.issues.map((x) => labels[x] ?? x).join(', ')}</p>
-          ) : (
-            <a href={`${base}/${rev}/package`} download>
+          ) : null}
+          {!p.issues.some((issue) => issue !== 'caption_too_long') && (
+            <a href={`${base}/${rev}/package${query}`} download>
               Télécharger le kit manuel (médias + légende)
             </a>
           )}
@@ -220,22 +242,16 @@ export function PublishingPanel({ id }: { id: string }) {
                   }}
                 >
                   <option value="">Choisir un compte connecté</option>
-                  {info?.connections
-                    .filter((c) => c.platform === p.platform && Date.parse(c.expiresAt) > Date.now())
-                    .map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.channel}
-                      </option>
-                    ))}
+                  {eligible.map((c) => <option key={c.id} value={c.id}>{c.displayName || c.channel}</option>)}
                 </select>
               </label>
               <button
-                disabled={!channel || busy}
+                disabled={!eligible.some((c) => c.id === channel) || busy || Date.parse(p.when) <= Date.now()}
                 onClick={() =>
                   void action(async () =>
                     confirm({
-                      ...(await postJson<Cmd>(`${base}/${rev}/prepare`, { connectionId: channel })),
-                      label: `Autoriser la programmation v${rev} sur ${info?.connections.find((c) => c.id === channel)?.channel}`
+                      ...(await postJson<Cmd>(`${base}/${rev}/prepare`, { connectionId: channel, target: p.platform })),
+                      label: `Autoriser la programmation v${rev} sur ${selection?.displayName || selection?.channel}`
                     })
                   )
                 }
@@ -244,7 +260,7 @@ export function PublishingPanel({ id }: { id: string }) {
               </button>
             </>
           )}
-          {!p.direct && <p>Réseau ou format en publication manuelle.</p>}
+          {!p.direct ? <p>Réseau ou format en publication manuelle.</p> : !eligible.length ? <p>Aucun compte actif pour ce réseau. Associez un compte ou utilisez le kit manuel.</p> : Date.parse(p.when) <= Date.now() ? <p>Choisissez une date future dans le calendrier ou utilisez le kit manuel.</p> : null}
         </>
       )}
       {cmd && (

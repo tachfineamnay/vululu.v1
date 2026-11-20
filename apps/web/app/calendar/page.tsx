@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import type { CalendarItem, Content } from '@vululu/contracts';
 import StudioNav from '../../components/StudioNav';
 import { api, postJson, type BrandContext, type CampaignSummary, type ProjectSummary } from '../../lib/api';
+import { SocialConnections } from './SocialConnections';
 import { PublishingPanel } from './PublishingPanel';
 import { Editor, labels } from './Editor';
 import { dayKey, period, shift } from './dates';
@@ -32,7 +33,7 @@ export default function CalendarPage() {
   const [name, setName] = useState(''),
     [contextId, choose] = useState(''),
     [busy, working] = useState(false),
-    [revision, refresh] = useState(0);
+    [revision, refresh] = useState(0), [connectionsVersion, connectionsChanged] = useState(0);
   const [error, fail] = useState(''),
     [notice, say] = useState('');
   useEffect(() => {
@@ -167,6 +168,7 @@ export default function CalendarPage() {
           <h1>{t("Calendrier éditorial","Editorial calendar")}</h1>
           <p className="muted">{t("Organisez vos contenus, de la première idée au suivi de publication.","Organize content from your first idea to publication tracking.")}</p>
         </header>
+        <SocialConnections onChange={() => connectionsChanged((n) => n + 1)} />
         {error && (
           <div className="error" role="alert">
             {error}{' '}
@@ -198,7 +200,7 @@ export default function CalendarPage() {
                 say('Modification enregistrée.');
               }}
             />
-            {draft.version > 0 && <PublishingPanel key={draft.id} id={draft.id} />}
+            {draft.version > 0 && <PublishingPanel key={`${draft.id}:${draft.version}`} id={draft.id} connectionsVersion={connectionsVersion} />}
           </>
         ) : (
           <>

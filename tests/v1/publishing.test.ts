@@ -247,8 +247,8 @@ it('keeps submission distinct from publication, deduplicates commands and authen
   expect(await prisma.publicationEvent.count({ where: { requestId: c.id } })).toBe(1);
   expect((await prisma.contentItem.findUniqueOrThrow({ where: { id: item } })).status).toBe('APPROVED');
 });
-it('exports unsupported Instagram as ordered, checksummed files and caption without changing state', async () => {
-  const url = `/api/calendar/${item}/publishing/2/package`;
+it('exports a manual TikTok target as ordered, checksummed files and caption without changing state', async () => {
+  const url = `/api/calendar/${item}/publishing/2/package?target=TikTok`;
   expect((await app.inject({ url, headers: ah })).statusCode).toBe(404);
   const r = await app.inject({ url, headers: h });
   expect(r.statusCode, r.body.slice(0, 50)).toBe(200);
@@ -337,4 +337,67 @@ it('refuses a changed calendar revision between approval and dispatch', async ()
     state: 'FAILED',
     reason: 'VALIDATION_FAILED'
   });
+});
+
+it('connects a verified Facebook Page as a customer, schedules via ToolBroker and reconciles the provider receipt', async () => {
+  const { PostizProvider } = await import('../../apps/api/src/infrastructure/publishing/provider');
+  const base = '/api/publishing/connections', page = 'fixture-facebook';
+  vi.stubEnv('POSTIZ_PUBLISH_ENABLED', '1');
+  const status = vi.fn(() => 'QUEUE');
+  const transport = vi.fn<typeof fetch>(async (url, init) => {
+    expect(init?.headers).toMatchObject({ Authorization: token });
+    const target = new URL(String(url));
+    if (target.pathname.endsWith('/integrations')) return Response.json([{ id: page, identifier: 'facebook', name: 'Atelier' }]);
+    if (target.pathname.endsWith('/social/facebook')) return Response.json({ url: 'https://www.facebook.com/dialog/oauth?state=fixture' });
+    if (target.pathname.endsWith('/upload')) return Response.json({ id: 'photo', path: 'https://example.test/asset.png' });
+    if (target.pathname.endsWith('/posts') && init?.method === 'POST') return Response.json([{ postId: 'facebook-receipt', integration: page }]);
+    if (target.pathname.endsWith('/posts') && init?.method === 'GET') return Response.json({ posts: [{ id: 'facebook-receipt', state: status(),
+      integration: { id: page, providerIdentifier: 'facebook' }, releaseURL: 'https://www.facebook.com/network-receipt' }] });
+    throw Error('unexpected fixture call');
+  });
+  vi.stubGlobal('fetch', transport);
+  try {
+    const oauth = await app.inject({ method: 'POST', url: base + '/authorize', headers: h, payload: { token, identifier: 'facebook' } });
+    expect(oauth.json().url).toMatch(/^https:\/\/www.facebook.com\//);
+    const attach = () => app.inject({ method: 'POST', url: base, headers: h, payload: { token, channel: page } });
+    const attached = await attach();
+    expect(attached.statusCode, attached.body).toBe(200);
+    const connected = attached.json();
+    expect(connected.platform).toBe('Facebook');
+    expect((await attach()).json().id).toBe(connected.id);
+    expect(attached.body).not.toContain(token);
+    expect((await prisma.publishingConnection.findUniqueOrThrow({ where: { id: connected.id } })).tokenCipher).not.toContain(token);
+    const calendar = `/api/calendar/${item}/publishing/1`;
+    const preview = await app.inject({ url: calendar + '/preview?target=Facebook', headers: h });
+    expect(preview.json()).toMatchObject({ direct: true, platform: 'Facebook', sourcePlatform: 'LinkedIn' });
+    const proposed = await app.inject({ method: 'POST', url: calendar + '/prepare', headers: h, payload: { connectionId: connected.id, target: 'Facebook' } });
+    expect(proposed.statusCode, proposed.body).toBe(200);
+    const c = proposed.json();
+    const provider = new PostizProvider(transport);
+    await execute(c.operationId, { invoke: (job, signal) => dispatchPublication(job, creativeStudio, provider, signal) });
+    expect(transport.mock.calls.some(([url]) => String(url).endsWith('/upload'))).toBe(false);
+    await run(c, provider);
+    const reconcile = () => app.inject({ method: 'POST', url: `/api/publishing/${c.id}/reconcile`, headers: h });
+    expect((await reconcile()).json().state).toBe('SUBMITTED');
+    status.mockReturnValue('PUBLISHED');
+    const cancellation = await command(owner, c.id, true);
+    await run(cancellation, provider);
+    expect(transport.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(false);
+    expect((await reconcile()).json().state).toBe('PUBLISHED');
+    expect(await prisma.publicationRequest.findUniqueOrThrow({ where: { id: c.id } })).toMatchObject({ remoteId: 'facebook-receipt', networkReceipt: 'https://www.facebook.com/network-receipt' });
+    expect((await app.inject({ method: 'DELETE', url: `${base}/${connected.id}`, headers: ah })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'DELETE', url: `${base}/${connected.id}`, headers: h })).statusCode).toBe(200);
+    expect(await prisma.publishingConnection.findUniqueOrThrow({ where: { id: connected.id } })).toMatchObject({ revoked: true, tokenCipher: '' });
+  } finally { vi.unstubAllGlobals(); vi.unstubAllEnvs(); }
+});
+
+it('can re-prepare a withdrawn local schedule, with a new approval and no reuse of the cancelled operation', async () => {
+  const { cancel } = await import('../../apps/api/src/infrastructure/execution/broker');
+  const first = await prepare(owner, item, 1, conn);
+  await cancel(owner, first.operationId);
+  const fresh = await prepare(owner, item, 1, conn);
+  expect(fresh.id).toBe(first.id);
+  expect(fresh.operationId).not.toBe(first.operationId);
+  expect(fresh.digest).not.toBe(first.digest);
+  expect(fresh.state).toBe('PROPOSED');
 });

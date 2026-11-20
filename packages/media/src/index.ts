@@ -345,3 +345,9 @@ export async function runQa(scenes: SceneRenderOutput[], master: MasterOutput, e
 }
 
 export { creativeFrame, draftThumbnail } from './creativeFrame';
+
+/** Encode the already approved render as a single opaque photo for publishing APIs. */
+export function publishingJpeg(png: Buffer) {
+  return sharp(png, { limitInputPixels: 4_000_000, failOn: 'warning' })
+    .flatten({ background: '#ffffff' }).jpeg({ quality: 92, chromaSubsampling: '4:4:4' }).toBuffer();
+}
