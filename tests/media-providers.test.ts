@@ -119,3 +119,18 @@ it('a presence hint displays configuration but cannot construct a worker transpo
     vi.unstubAllEnvs();
   }
 });
+
+it('can disable either configured provider without activating it through a presence hint', async () => {
+  const { capability, mediaRouter } = await import('../apps/api/src/infrastructure/mediaGeneration/providers');
+  try {
+    vi.stubEnv('MEDIA_GENERATION_ENABLED', '1');
+    vi.stubEnv('MEDIA_IMAGE_ENABLED', '0');
+    vi.stubEnv('MEDIA_VIDEO_ENABLED', '1');
+    vi.stubEnv('REPLICATE_API_TOKEN', 'fixture');
+    vi.stubEnv('RUNWAYML_API_SECRET', 'fixture');
+    expect(capability('image').availability).toBe('disabled');
+    expect(mediaRouter('image')).toBeNull();
+    expect(capability('video').availability).toBe('configured');
+    expect(mediaRouter('video')).toBeInstanceOf(RunwayVideo);
+  } finally { vi.unstubAllEnvs(); }
+});

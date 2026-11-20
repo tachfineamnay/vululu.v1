@@ -18,6 +18,10 @@ Inscription vérifiée sans invitation pour le rôle client, récupération et s
 
 Brouillons conversationnels par projet, Vertex AI derrière le budget ToolBroker, propositions créatives relues et repli local : [ADR](../adr/0034-assistant-vertex.md), [livraison et recette](../delivery/F02_PROJECT_ASSISTANT.md). L’inférence externe reste non vérifiée.
 
+### F03 — Génération image et vidéo (2026-11-20)
+
+Adaptateurs Replicate et Runway conservés, suivi et récupération dans ToolBroker, import vérifié, placement dans le Studio et export : [activation et recette](../delivery/F03_MEDIA_GENERATION.md). Aucun fournisseur réel activé.
+
 ## 2. Principes de séquencement
 
 ### Studio du 2026-11-06

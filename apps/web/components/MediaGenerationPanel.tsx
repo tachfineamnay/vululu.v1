@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { MediaCapability, MediaRequest } from '@vululu/contracts';
 import { api, postJson } from '../lib/api';
 type Row = {
@@ -19,6 +19,24 @@ type Row = {
     state: string;
     costState: string;
   };
+};
+function mediaStatus(row: Row) {
+  if (row.operation.state === 'CANCELLED') return 'Annulé avant envoi';
+  if (row.operation.state === 'UNKNOWN') {
+    if (row.state === 'MATERIALIZING') return 'Stockage interrompu : vérifier la bibliothèque';
+    if (['DRAFT', 'SUBMITTING', 'PENDING'].includes(row.state)) return 'Suivi interrompu : résultat non confirmé';
+  }
+  return statuses[row.state] ?? row.state;
+}
+const active = ['QUEUED', 'POLLING', 'CLAIMED'];
+const statuses: Record<string, string> = {
+  DRAFT: 'En attente', SUBMITTING: 'Envoi en cours', PENDING: 'En cours chez le fournisseur',
+  MATERIALIZING: 'Vérification et stockage', READY: 'Disponible dans la bibliothèque', FAILED: 'Échec fournisseur', CANCELLED: 'Annulation signalée',
+  UNAVAILABLE: 'Fournisseur indisponible', CREDENTIAL_REJECTED: 'Accès fournisseur refusé',
+  QUOTA_REJECTED: 'Quota fournisseur atteint ; aucune génération lancée',
+  PROVIDER_REJECTED: 'Paramètres refusés par le fournisseur', INVALID_INPUT: 'Source modifiée ou invalide',
+  INVALID_OUTPUT: 'Fichier reçu mais invalide ou non conservé', SUBMISSION_UNKNOWN: 'Envoi incertain : ne pas relancer',
+  OUTCOME_UNKNOWN: 'Résultat non confirmé', COST_INCIDENT: 'Coût hors plafond : contrôle nécessaire'
 };
 export function MediaGenerationPanel({
   project,
@@ -44,18 +62,38 @@ export function MediaGenerationPanel({
     [prompt, write] = useState(''),
     [ref, source] = useState(''),
     [size, resize] = useState('1280:720'),
-    [rights, confirm] = useState(false);
+    [rights, confirm] = useState(false),
+    [open, setOpen] = useState(false),
+    [refreshError, setRefreshError] = useState(false);
+  const pending = rows.some((row) => active.includes(row.operation.state));
+  useEffect(() => {
+    if (!open || !pending) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    async function poll() {
+      try {
+        const next = await api<Row[]>(base);
+        if (!stopped) { list(next); setRefreshError(false); }
+      } catch { if (!stopped) setRefreshError(true); }
+      if (!stopped) timer = setTimeout(poll, 10000);
+    }
+    timer = setTimeout(poll, 10000);
+    return () => { stopped = true; clearTimeout(timer); };
+  }, [base, open, pending]);
   const cap = caps.find((c) => c.kind === kind);
   async function refresh() {
     const [c, h] = await Promise.all([api<MediaCapability[]>('/api/media/capabilities'), api<Row[]>(base)]);
     config(c);
     list(h);
+    setRefreshError(false);
   }
   return (
     <details
       className="card stack"
       onToggle={(e) => {
-        if (e.target === e.currentTarget && e.currentTarget.open) void run(refresh);
+        if (e.target !== e.currentTarget) return;
+        setOpen(e.currentTarget.open);
+        if (e.currentTarget.open) void run(refresh);
       }}
     >
       <summary>Générer un média pour {sceneKey}</summary>
@@ -106,15 +144,16 @@ export function MediaGenerationPanel({
                 </select>
               </label>
               <label>
-                Dimensions
+                Format du clip
                 <select value={size} onChange={(e) => resize(e.target.value)}>
                   {cap.sizes.map((x) => (
-                    <option key={x}>{x}</option>
+                    <option key={x} value={x}>{x === '1280:720' ? 'Paysage · 16:9' : 'Portrait · 9:16'} ({x})</option>
                   ))}
                 </select>
               </label>
             </>
           )}
+          {kind === 'image' && <p>Format carré · PNG. Aucune image de référence.</p>}
           <label>
             <input type="checkbox" checked={rights} onChange={(e) => confirm(e.target.checked)} /> J’ai les
             droits nécessaires et j’autorise l’envoi des données sélectionnées.
@@ -150,6 +189,7 @@ export function MediaGenerationPanel({
       <button type="button" onClick={() => void run(refresh)}>
         Actualiser les générations
       </button>
+      {refreshError && <p role="status">Actualisation indisponible ; nouvelle tentative automatique.</p>}
       {rows
         .filter((r) => r.sceneKey === sceneKey)
         .map((r) => (
@@ -164,12 +204,13 @@ export function MediaGenerationPanel({
                 : ''}
             </p>
             <p>
-              Média : {r.state}. Exécution : {r.operation.state}. Coût :{' '}
+              Média : {mediaStatus(r)}. Coût :{' '}
               {r.operation.reportedCents === null
-                ? r.operation.costState
+                ? r.operation.costState === 'UNKNOWN' ? 'incertain, réservation conservée pour rapprochement' : r.operation.costState
                 : r.operation.reportedCents + ' centime(s) USD'}
               .
             </p>
+            {r.cancelRequested && active.includes(r.operation.state) && <p>Annulation demandée, non garantie. Le suivi continue.</p>}
             {r.operation.state === 'PROPOSED' && (
               <button
                 onClick={() =>
@@ -197,6 +238,7 @@ export function MediaGenerationPanel({
                 Demander l’annulation
               </button>
             )}
+            {r.outputVersion && r.revision !== revision && <p>La scène a changé. Réutilisez le fichier depuis la bibliothèque dans l’éditeur, sans écraser la révision actuelle.</p>}
             {r.outputVersion && (
               <button
                 disabled={r.revision !== revision}

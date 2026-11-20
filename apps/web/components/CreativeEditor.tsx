@@ -14,7 +14,7 @@ type Revision = Rev & {
   spec: CreativeSpec;
   manifest: { approvalSha256?: string; master: { sha256: string } } | null;
 };
-type Source = { metadata?: { width?: number; height?: number }; id: string; name: string; kind: string };
+type Source = { mimeType?: string; license?: string; sizeBytes?: number; metadata?: { width?: number; height?: number; duration?: number }; id: string; name: string; kind: string };
 const copy = (text: string, role: 'headline' | 'body' | 'cta'): CreativeLayer => ({
   type: 'text',
   role,
@@ -106,7 +106,7 @@ export function CreativeEditor({ bundle,serverHead }: { bundle: ProjectBundle;se
   async function load() {
     const [revs, assets, selected, linked] = await Promise.all([
       api<Rev[]>(base),
-      api<{ items: { kind: string; versions: { id: string; name: string; mimeType: string }[] }[] }>(
+      api<{ items: { kind: string; versions: (Omit<Source, 'kind'> & { mimeType: string })[] }[] }>(
         '/api/contexts/' + bundle.context.id + '/assets'
       ),
       api<{ versionIds: string[] }>(`/api/projects/${bundle.project.id}/assets`),
@@ -247,7 +247,11 @@ export function CreativeEditor({ bundle,serverHead }: { bundle: ProjectBundle;se
                   project={bundle.project.id}
                   revision={expected}
                   sceneKey={scene.key}
-                  images={sources}
+                  images={sources.filter((v) => ['image/png', 'image/jpeg'].includes(v.mimeType ?? '') &&
+                    ['internal', 'commercial'].includes(v.license ?? '') && (v.sizeBytes ?? Infinity) <= 3 * 1024 * 1024 &&
+                    (v.metadata?.width ?? 0) >= 320 && (v.metadata?.height ?? 0) >= 320 &&
+                    (v.metadata?.width ?? 0) / (v.metadata?.height ?? 1) >= 0.5 &&
+                    (v.metadata?.width ?? 0) / (v.metadata?.height ?? 1) <= 2)}
                   short={spec.delivery?.kind === 'short' && scene.seconds <= 5}
                   run={action}
                   reload={async () => {
@@ -412,6 +416,22 @@ export function CreativeEditor({ bundle,serverHead }: { bundle: ProjectBundle;se
                 change({ ...spec, scenes: spec.scenes.map((s, i) => (i === index ? { ...s, seconds } : s)) })
               }
             />
+            {spec.delivery?.kind === 'short' && (
+              <label>
+                Clip de la bibliothèque
+                <select value={scene.clip?.versionId ?? ''} onChange={(event) => {
+                  const versionId = event.target.value;
+                  change({ ...spec, scenes: spec.scenes.map((s, i) => i === index
+                    ? { ...s, clip: versionId ? { versionId, start: 0, height: s.clip?.height ?? 0.65 } : undefined }
+                    : s) });
+                }}>
+                  <option value="">Aucun clip</option>
+                  {assets.filter((v) => v.mimeType === 'video/mp4' &&
+                    (v.id === scene.clip?.versionId || (v.metadata?.duration ?? 0) + 0.001 >= scene.seconds))
+                    .map((v) => <option key={v.id} value={v.id}>{v.name} · {v.metadata?.duration ?? '—'} s</option>)}
+                </select>
+              </label>
+            )}
             {scene.clip && (
               <NumberField
                 label="Début du clip (secondes)"
