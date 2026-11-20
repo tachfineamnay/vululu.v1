@@ -281,6 +281,12 @@ limitation, see §7). The single failing test is `tests/project-presentation.tes
 `apps/web/lib/projectPresentation.ts`); it imports nothing from the media or application packages and is unrelated to
 this change.
 
+**GitHub Actions (PR #16):** all four CI jobs (Quality, Security & Architecture, Unit & Integration, E2E) report
+`failure` after 3 s with **no step executed**; the job annotation is
+`The job was not started because your account is locked due to a billing issue.` (`gh run view 44660564753`). This is a
+repository/account infrastructure block, not a code signal: the equivalent checks were run locally (§5 table). The CI
+status must be re-read once the GitHub billing lock is lifted.
+
 ---
 
 ## 6. QA gate behaviour
@@ -367,6 +373,7 @@ None within FIX01 scope. Every in-scope criterion above was re-executed on the f
 | Creative export path (`apps/api/src/application/creative.ts`) | intentionally not modified: it is not the durable approval path, already rejects `|duration − expected| > 0.25 s` plus codec/dimension mismatches before sealing an output, and now benefits from the exact still-image encoder. A dedicated QA pass on that path is a separate backlog item |
 | Production / preproduction deployment, external publication, paid provider calls | explicitly out of scope for FIX01 |
 | `tests/project-presentation.test.ts` | pre-existing failure in `apps/web/lib/projectPresentation.ts`, unrelated to media/QA |
+| GitHub Actions CI on PR #16 | jobs never started: GitHub account locked for billing (`The job was not started because your account is locked due to a billing issue`) — infrastructure, not code; local equivalents in §5 |
 
 ---
 
