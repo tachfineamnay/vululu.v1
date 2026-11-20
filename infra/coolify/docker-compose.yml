@@ -45,6 +45,10 @@ x-api-env: &api-env
   ASSISTANT_VERTEX_OUTPUT_MICROUSD: ${ASSISTANT_VERTEX_OUTPUT_MICROUSD:-}
   RATE_LIMIT_ENABLED: "1"
   LOG_LEVEL: info
+  # P06 — boîte à outils Python interne, jamais exposée publiquement.
+  PYTHON_TOOLS_URL: http://python-tools:8090
+  PYTHON_TOOLS_TOKEN: ${PYTHON_TOOLS_TOKEN:-}
+  PYTHON_TOOLS_TIMEOUT_MS: ${PYTHON_TOOLS_TIMEOUT_MS:-30000}
 
 services:
   db:
@@ -149,6 +153,43 @@ services:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3101/api/ready').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - internal
+
+  # P06 — capacités de vision locales (FastAPI). Réseau interne uniquement, non-root,
+  # rootfs en lecture seule, limites mémoire/CPU/PID, aucun modèle téléchargé.
+  python-tools:
+    build:
+      context: ../../services/python-tools
+      dockerfile: Dockerfile
+    image: vululu-python-tools:${VULULU_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      PYTHON_TOOLS_TOKEN: ${PYTHON_TOOLS_TOKEN:?PYTHON_TOOLS_TOKEN requis (32+ caracteres)}
+      PYTHON_TOOLS_MAX_SOURCE_BYTES: "16777216"
+      PYTHON_TOOLS_MAX_PIXELS: "24000000"
+      PYTHON_TOOLS_MAX_DIMENSION: "4096"
+      PYTHON_TOOLS_TIMEOUT_SECONDS: "25"
+      PYTHON_TOOLS_MAX_CONCURRENCY: "2"
+    expose:
+      - "8090"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid
+    user: "10001:10001"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: 768m
+    cpus: "1.0"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8090/healthz',timeout=2); sys.exit(0 if json.load(r).get('status')=='ok' else 1)"]
       interval: 10s
       timeout: 5s
       retries: 12

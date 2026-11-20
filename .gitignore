@@ -91,3 +91,9 @@ infra/preprod/backups/
 
 # Graphe de code graphify (généré localement, jamais commité)
 graphify-out/
+
+# Python toolbox (runtime local, jamais commité)
+__pycache__/
+*.pyc
+.pytest_cache/
+services/python-tools/.venv/

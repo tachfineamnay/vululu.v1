@@ -50,6 +50,7 @@ Chaque décision suit [template.md](template.md) :
 | [0027](0027-mvp-coolify-et-cles-ia.md) | MVP Coolify et clés IA optionnelles | Acceptée pour mise en œuvre du MVP | 2026-11-05 |
 | [0035](0035-directions-artistiques-creative-revision.md) | Directions artistiques comme brouillons CreativeRevision | Acceptée pour la campagne P04 | 2026-11-20 |
 | [0036](0036-execution-outillee-agentique.md) | Exécution outillée agentique contrôlée (registre, scopes, résultats) | Acceptée pour la campagne P05 | 2026-11-20 |
+| [0037](0037-boite-outils-python-interne.md) | Boîte à outils Python interne (FastAPI, registre, réseau privé) | Acceptée pour la campagne P06 | 2026-11-20 |
 
 ## Décisions encore ouvertes
 

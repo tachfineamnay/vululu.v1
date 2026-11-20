@@ -7,6 +7,7 @@ import { CreativeDirections } from '../../application/creativeDirections';
 import { PrismaCreativeRepository } from '../prisma/creativeRepository';
 import { PrismaCreativeDirectionRepository } from '../prisma/creativeDirectionRepository';
 import { readAssetDecisionRow } from '../prisma/assetDecisionRepository';
+import { runPythonCapability } from '../python/adapter';
 import { createArtifactStorage, createArtifactStorageRegistry } from '../storage/storageFactory';
 import type { EnginePort } from './registry';
 import { dispatchPublication } from '../publishing/service';
@@ -69,6 +70,10 @@ export function studioEngine(creativeStudio: CreativeStudio): EnginePort {
           const created = await new CreativeDirections(new PrismaCreativeDirectionRepository()).create(job.accountId, job.projectId, input);
           return { costCents: 0, result: { created: created.created ?? [], count: created.directions.length } };
         }
+        case 'image.analyze@1':
+        case 'image.segment@1':
+          return runPythonCapability({ id: job.id, accountId: job.accountId, projectId: job.projectId,
+            tool: job.tool, maxCents: job.maxCents, params: job.params });
         default:
           throw new Error('unregistered_tool');
       }

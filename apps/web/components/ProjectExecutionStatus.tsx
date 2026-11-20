@@ -26,7 +26,9 @@ const toolLabels: Record<string, [string, string]> = {
   'postiz.schedule@1': ['Programmation Postiz', 'Postiz scheduling'],
   'postiz.cancel@1': ['Annulation Postiz', 'Postiz cancellation'],
   'studio.inspect@1': ['Lecture de composition', 'Composition read'],
-  'studio.render@1': ['Rendu de composition', 'Composition render']
+  'studio.render@1': ['Rendu de composition', 'Composition render'],
+  'image.analyze@1': ['Analyse d’image (Python)', 'Image analysis (Python)'],
+  'image.segment@1': ['Détourage d’image (Python)', 'Image cutout (Python)']
 };
 
 /** Statut réel des opérations outillées du projet : recommandations agent, autorisation, exécution, résultat. */

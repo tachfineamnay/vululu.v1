@@ -30,7 +30,10 @@ export const tools = {
   'project.summary@1': { provider: 'vululu@1', action: 'READ', maxCents: 0, scope: 'project', approval: 'auto', description: 'Résumé du projet : objectif, canal, format, identité, décision de ressources.', params: z.strictObject({}) },
   'assets.list@1': { provider: 'vululu@1', action: 'READ', maxCents: 0, scope: 'assets', approval: 'auto', description: 'Lister les ressources confirmées du projet (version, type, empreinte, droits).', params: z.strictObject({}) },
   'assets.inspect@1': { provider: 'vululu@1', action: 'READ', maxCents: 0, scope: 'assets', approval: 'auto', description: 'Inspecter une ressource confirmée (métadonnées et empreinte).', params: z.strictObject({ versionId: z.string().min(1).max(128) }) },
-  'creative.direction@1': { provider: 'vululu@1', action: 'GENERATE', maxCents: 0, scope: 'project', approval: 'human', description: 'Créer des directions artistiques versionnées depuis le brainstorming.', params: creativeDirectionInput }
+  'creative.direction@1': { provider: 'vululu@1', action: 'GENERATE', maxCents: 0, scope: 'project', approval: 'human', description: 'Créer des directions artistiques versionnées depuis le brainstorming.', params: creativeDirectionInput },
+  // P06 — boîte à outils Python interne ; lecture libre, dérivation d'assets avec approbation humaine.
+  'image.analyze@1': { provider: 'python-tools@1', action: 'READ', maxCents: 0, scope: 'assets', approval: 'auto', description: 'Analyser une image confirmée (exposition, netteté, couleurs, empreinte perceptuelle) via le service Python interne.', params: z.strictObject({ versionId: z.string().min(1).max(128) }) },
+  'image.segment@1': { provider: 'python-tools@1', action: 'GENERATE', maxCents: 0, scope: 'assets', approval: 'human', description: 'Détourer une image confirmée (PNG transparent + masque alpha) via le service Python interne, puis enregistrer de nouvelles versions.', params: z.strictObject({ versionId: z.string().min(1).max(128), outputs: z.array(z.enum(['cutout', 'mask'])).min(1).max(2).optional(), maxDimension: z.int().min(256).max(4096).optional() }) }
 } as const satisfies Record<string, ToolDefinition>;
 export type Tool = keyof typeof tools;
 export const toolSchema = z.enum(Object.keys(tools) as [Tool, ...Tool[]]);

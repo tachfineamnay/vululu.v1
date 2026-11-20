@@ -170,7 +170,19 @@ Implémenté depuis l'inventaire (commit P02, `BUILD_UNVERIFIED`, aucun test ex�
 
 Limites P02 : les suites existantes qui appellent l'assistant/le plan marketing sans confirmer les ressources échoueront jusqu'au réalignement P12 ; aucune exécution réelle (tests, build, lint, typecheck) en P02 ; le client Prisma doit être régénéré avant toute vérification TypeScript.
 
-## 8. Mise à jour P05 — exécution outillée agentique (2026-11-20)
+## 8. Mise à jour P06 — boîte à outils Python interne (2026-11-20)
+
+Implémenté depuis l'inventaire (commit P06, `BUILD_UNVERIFIED`, aucun test complet) :
+
+- `services/python-tools/` : FastAPI + Pydantic typés, contrats stricts (aucune URL/chemin), registre explicite `image.analyze@1` et `image.segment@1`, `uv.lock` réel, Python 3.12 épinglé, Dockerfile non-root (UID 10001), README sécurité/limites, smoke local reproductible.
+- Capacités réelles : analyse (dimensions, exposition, contraste, netteté, entropie, couleurs dominantes, pHash) et détourage GrabCut (cutout PNG transparent + masque alpha), sans modèle externe ni téléchargement.
+- Intégration worker : `apps/api/src/infrastructure/python/{client,adapter}.ts` (jeton Bearer, délai borné, erreurs structurées) ; registre P05 étendu (`scope: assets`) ; `runtime.ts` dispatche ; sorties vérifiées SHA-256 puis stockées via `AssetUseCases.upload` (versions immuables, licence héritée, provenance).
+- Compose Coolify : service `python-tools` interne (`expose: 8090`, aucun port publié), rootfs lecture seule, tmpfs, `no-new-privileges`, `cap_drop: ALL`, mémoire/CPU/PID bornés, healthcheck.
+- Preuve locale exécutée : smoke Python **16/16 PASS** (healthz, 401 sans jeton, analyse réelle, 422 sur empreinte altérée, deux sorties PNG vérifiées par SHA-256 et dimensions). **NOT_RUN** : build/pull Docker, `docker compose config`, exécution Compose, tests/typecheck TS (campagne P00–P11).
+
+Limites P06 : GrabCut est déterministe et moins précis qu'un modèle spécialisé ; le service n'est pas certifié en conteneur ; aucun appel depuis le worker réel n'a été joué (pas de base/postgres disponible dans cette session) ; P07 pourra ajouter un modèle embarqué via `PYTHON_TOOLS_MODELS_DIR` sans changer le broker.
+
+## 9. Mise à jour P05 — exécution outillée agentique (2026-11-20)
 
 Implémenté depuis l'inventaire (commit P05, `BUILD_UNVERIFIED`, aucun test exécuté) :
 

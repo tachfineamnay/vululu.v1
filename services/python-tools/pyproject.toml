@@ -1,0 +1,22 @@
+[project]
+name = "vululu-python-tools"
+version = "0.1.0"
+description = "Boîte à outils Python interne de Vululu (vision locale, exposition contrôlée au worker)."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi==0.115.6",
+  "uvicorn[standard]==0.34.0",
+  "pydantic==2.10.4",
+  "pillow==11.1.0",
+  "numpy==2.2.1",
+  "opencv-python-headless==4.10.0.84",
+]
+
+[dependency-groups]
+dev = [
+  "httpx==0.28.1",
+  "pytest==8.3.4",
+]
+
+[tool.uv]
+package = false
