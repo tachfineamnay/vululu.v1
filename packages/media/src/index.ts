@@ -10,6 +10,22 @@ import { COMPOSITION_VERSION, validTextLayout, type SceneTextLayout } from './te
 export { COMPOSITION_VERSION, type SceneTextLayout } from './textLayout';
 export { inspectAsset, type AssetInspection } from './assetInspection';
 
+/**
+ * Frequence de sortie imposee au master : 30 images/s constants.
+ * FIX01 : le master est toujours encode en CFR 30 fps, y compris pour les
+ * scenes fixes (le demuxer concat n emet qu une image par PNG).
+ */
+export const MASTER_FRAME_RATE = 30;
+
+/** Tolerance de duree du master, exprimee en images (et non en secondes flottantes). */
+export const MASTER_DURATION_TOLERANCE_FRAMES = 2;
+
+/** Tolerance de duree derivee du frame rate du master (30 fps => environ 0.067 s). */
+export function masterDurationTolerance(fps: number = MASTER_FRAME_RATE): number {
+  if (!Number.isFinite(fps) || fps <= 0) return MASTER_DURATION_TOLERANCE_FRAMES / MASTER_FRAME_RATE;
+  return MASTER_DURATION_TOLERANCE_FRAMES / fps;
+}
+
 export type SceneRenderInput = {
   projectId: string;
   artifactRoot: string;
@@ -209,20 +225,33 @@ export async function assembleMaster(input: MasterInput): Promise<MasterOutput> 
     concatLines.push("file '" + toPosix(path.join(frameDir, 'frame-' + input.scenePaths.length + '.png')) + "'");
     const concatPath = path.join(frameDir, 'concat.txt');
     await fsp.writeFile(concatPath, concatLines.join(String.fromCharCode(10)) + String.fromCharCode(10), 'utf8');
+    // FIX01 : la duree demandee doit piloter la sortie, pas l inverse.
+    // - le demuxer concat n emet qu une image par PNG (PTS espaces de 2 a 4 s) :
+    //   sans normalisation, le flux video s arrete a la premiere image ;
+    // - `-shortest` coupait la sortie des que le flux le plus court s arretait
+    //   (anullsrc infini ou video tronquee), ce qui masquait la troncature ;
+    // - `fps=30` + `-fps_mode cfr` repliquent chaque image fixe sur toute sa
+    //   duree et produisent une video CFR de duree exacte ;
+    // - le mapping explicite garantit une piste audio AAC silencieuse de meme
+    //   duree et evite toute selection implicite de flux.
     await run(findFfmpeg(), [
       '-y',
       '-f', 'concat',
       '-safe', '0',
       '-i', concatPath,
       '-f', 'lavfi',
+      '-t', String(expectedDurationSeconds),
       '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+      '-map', '0:v:0',
+      '-map', '1:a:0',
+      '-vf', 'fps=' + MASTER_FRAME_RATE + ',setsar=1',
+      '-fps_mode', 'cfr',
       '-c:v', 'libx264',
       '-pix_fmt', 'yuv420p',
-      '-r', '30',
       '-c:a', 'aac',
       '-b:a', '128k',
       '-t', String(expectedDurationSeconds),
-      '-shortest',
+      '-movflags', '+faststart',
       file
     ]);
   }
@@ -269,10 +298,24 @@ export async function runQa(scenes: SceneRenderOutput[], master: MasterOutput, e
     status: master.width === expectedDimensions.width && master.height === expectedDimensions.height ? 'PASS' : 'FAIL',
     detail: master.width + 'x' + master.height
   });
+  const durationTolerance = masterDurationTolerance(MASTER_FRAME_RATE);
+  const durationDelta = Math.abs(master.duration - master.expectedDurationSeconds);
   checks.push({
     name: 'master duration',
-    status: Math.abs(master.duration - master.expectedDurationSeconds) <= 0.75 ? 'PASS' : 'FAIL',
-    detail: master.duration.toFixed(2) + 's / attendu ' + master.expectedDurationSeconds + 's'
+    status: durationDelta <= durationTolerance ? 'PASS' : 'FAIL',
+    detail:
+      master.duration.toFixed(3) +
+      's / attendu ' +
+      master.expectedDurationSeconds +
+      's / ecart ' +
+      durationDelta.toFixed(3) +
+      's / tolerance ' +
+      durationTolerance.toFixed(3) +
+      's (' +
+      MASTER_DURATION_TOLERANCE_FRAMES +
+      ' images a ' +
+      MASTER_FRAME_RATE +
+      ' fps)'
   });
   checks.push({
     name: 'master video codec',

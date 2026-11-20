@@ -34,6 +34,19 @@ type StepFinalize = { artifactVersionId: string; masterVersion: number; checksum
 type StepApproval = { artifactVersionId: string; checksum: string; approvedBy: string };
 type StepTransfer = { transferId: string; status: string };
 
+/**
+ * FIX01 : message d echec QA explicite et diagnosticable.
+ * Il est persiste comme erreur du run et comme erreur des etapes non terminales
+ * (voir DurableProductionStore.failRun), ce qui rend l echec relisible en base
+ * sans avoir a rejouer le rendu.
+ */
+function qaFailureReason(checks: QaReport['checks']): string {
+  const failures = checks.filter((check) => check.status !== 'PASS');
+  const detail = failures.map((check) => check.name + '=' + check.status + ' [' + check.detail + ']').join(' | ');
+  const reason = 'qa_failed: controle qualite obligatoire en echec (' + failures.length + '/' + checks.length + '): ' + detail;
+  return reason.length > 2000 ? reason.slice(0, 2000) + '...' : reason;
+}
+
 function toDomainArtifact(record: {
   id: string;
   artifactId: string;
@@ -320,6 +333,18 @@ export class DurableProductionUseCases {
       run.snapshot?.render
     );
     const output = { qa };
+    if (qa.status !== 'PASS') {
+      // FIX01 : un rapport QA en echec est un etat d echec explicite, pas une
+      // simple information. La sortie QA est conservee (diagnostic) et l etape
+      // est marquee failed, donc le run ne peut plus etre considere comme un
+      // succes ni passer en attente d approbation.
+      await this.store.saveStepOutput(jobRunId, 'qa', output);
+      await this.store.transitionStep(jobRunId, 'qa', 'failed', 'worker', {
+        reason: 'qa_failed',
+        checks: qa.checks.filter((check) => check.status !== 'PASS')
+      });
+      throw new ApplicationError('qa_failed', qaFailureReason(qa.checks), 409);
+    }
     await this.finishStep(jobRunId, 'qa', output);
     return output;
   }
@@ -335,6 +360,16 @@ export class DurableProductionUseCases {
     const qa = await this.store.getStepOutput<StepQa>(jobRunId, 'qa');
     if (!rendered || !master || !qa) {
       throw new ApplicationError('media_incomplete', 'Media incomplet pour finalisation.', 409);
+    }
+    if (qa.qa.status !== 'PASS') {
+      // FIX01 : garde-fou autoritaire. Meme si l etape QA a ete rejouee et a
+      // retourne sa sortie deja persistee, ou si un master historique porte un
+      // rapport en echec, la finalisation refuse de creer une version d
+      // artefact, ne passe jamais en attente d approbation et laisse intact le
+      // master precedent (aucun appel a finalizeArtifacts).
+      const reason = qaFailureReason(qa.qa.checks);
+      await this.fail(jobRunId, reason, 'failed');
+      throw new ApplicationError('qa_failed', 'Master non finalisable. ' + reason, 409);
     }
     await this.store.transitionStep(jobRunId, 'finalize', 'running', 'worker');
     const routing = await this.store.getStepOutput<{
