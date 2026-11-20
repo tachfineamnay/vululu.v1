@@ -1,18 +1,29 @@
 'use client';
 import Link from 'next/link';
 import { LanguageControl, useWorkspace } from '../../components/WorkspacePreferences';
+import { useBetaStatus } from '../../lib/beta';
 export default function Terms() {
   const { t } = useWorkspace();
+  const beta = useBetaStatus();
   return (
     <main className="page stack">
       <LanguageControl />
       <h1>{t('Informations et conditions', 'Information and terms')}</h1>
-      <p>
-        {t(
-          'Informations produit, soumises à validation juridique avant ouverture des ventes. Mon compte indique si les achats sont indisponibles, en test sans débit, ou en mode réel. Les pass ne sont pas renouvelés automatiquement.',
-          'Product information, subject to legal review before sales open. My account shows whether purchases are unavailable, in test mode without a charge, or live. Passes do not renew automatically.',
-        )}
-      </p>
+      {beta?.beta ? (
+        <p>
+          {t(
+            'Phase de bêta gratuite : l’accès au produit ne demande aucun paiement et aucune carte bancaire, et aucun achat ne peut être ouvert. Les fonctions externes payantes restent soumises à une autorisation et à un budget configurés. Les conditions commerciales seront publiées avant toute réouverture des ventes.',
+            'Free beta phase: product access requires no payment and no credit card, and no purchase can be opened. Paid external features still require explicit authorization and a configured budget. Commercial terms will be published before any sales reopen.',
+          )}
+        </p>
+      ) : (
+        <p>
+          {t(
+            'Informations produit, soumises à validation juridique avant ouverture des ventes. Mon compte indique si les achats sont indisponibles, en test sans débit, ou en mode réel. Les pass ne sont pas renouvelés automatiquement.',
+            'Product information, subject to legal review before sales open. My account shows whether purchases are unavailable, in test mode without a charge, or live. Passes do not renew automatically.',
+          )}
+        </p>
+      )}
       <h2>{t('Contenus et diffusion', 'Content and publication')}</h2>
       <p>
         {t(

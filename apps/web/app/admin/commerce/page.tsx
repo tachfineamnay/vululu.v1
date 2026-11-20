@@ -13,6 +13,8 @@ const features = [
 ];
 type View = {
   commercial: boolean;
+  // BETA01 : gel commercial décidé côté serveur.
+  beta: { enabled: boolean; paymentsFrozen: boolean };
   mode: 'test' | 'live' | null;
   activeMode: string;
   checkoutConfigured: boolean;
@@ -53,6 +55,13 @@ export default function Commerce() {
   return (
     <div className="stack">
       <h1>Commerce{v?.mode ? ` · Stripe ${v.mode}` : ''}</h1>
+      {v?.beta.enabled ? (
+        <p className="admin-banner admin-banner--warn" role="status">
+          Mode bêta gratuite actif : les paiements sont gelés et l’activation commerciale est refusée
+          par le serveur. Catalogue, commandes, reçus et droits existants restent intacts. Pour rouvrir
+          les ventes, désactiver <code>VULULU_BETA_MODE</code> puis suivre la procédure F05.
+        </p>
+      ) : null}
       {v && <p>Mode des droits : {v.activeMode}. Paiement : {v.checkoutConfigured ? 'configuration valide' : 'indisponible'}.</p>}
       {err && <p role="alert">{err}</p>}
       {msg && <p role="status">{msg}</p>}
@@ -139,7 +148,7 @@ export default function Commerce() {
             </label>
             <button disabled={!v?.mode}>Publier cette offre {v?.mode === 'live' ? 'réelle' : 'de test'}</button>
           </form>
-          {v?.activationPhrase && (!v.commercial || v.activeMode !== v.mode) && (
+          {v?.activationPhrase && !v.beta.enabled && (!v.commercial || v.activeMode !== v.mode) && (
             <form
               onSubmit={(e) => {
                 e.preventDefault();

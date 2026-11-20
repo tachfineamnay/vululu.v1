@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, postJson } from '../../lib/api';
 import StudioNav from '../../components/StudioNav';
 import { ServiceCases, type Ticket } from '../../components/ServiceCases';
+import { betaCopy } from '../../lib/beta';
 type Product = {
   id: string;
   name: string;
@@ -31,7 +32,16 @@ type Order = {
   regular: Balance;
   premium: Balance;
 };
-type View = { mode: 'test' | 'live' | null; checkoutAvailable: boolean; commercial: boolean; suspended: boolean; catalog: Product[]; orders: Order[] };
+type View = {
+  mode: 'test' | 'live' | null;
+  checkoutAvailable: boolean;
+  commercial: boolean;
+  suspended: boolean;
+  catalog: Product[];
+  orders: Order[];
+  // BETA01 : état décidé par le serveur, jamais déduit du navigateur.
+  beta: { enabled: boolean; paymentsFrozen: boolean };
+};
 const money = (n: number, c: string) =>
   new Intl.NumberFormat('fr-FR', { style: 'currency', currency: c }).format(n / 100);
 const labels: Record<string, string> = {
@@ -47,6 +57,7 @@ const labels: Record<string, string> = {
 };
 export default function Account() {
   const {t}=useWorkspace();
+  const copy = betaCopy(t);
   const [view, set] = useState<View>(),
     [tickets, list] = useState<Ticket[]>([]),
     [error, fail] = useState(''),
@@ -91,11 +102,20 @@ export default function Account() {
       <StudioNav />
       <main className="page stack">
         <header>
-          <p className="eyebrow">ESPACE CLIENT{view?.mode ? ` · STRIPE ${view.mode.toUpperCase()}` : ''}</p>
-          <h1>{t("Facturation et assistance","Billing and support")}</h1>
-          <p>
-            Pass prépayés sans reconduction. {view?.mode === 'test' && 'Mode test : aucun paiement réel.'} Les fournisseurs externes nécessitent aussi une connexion et un budget autorisés.
+          <p className="eyebrow">
+            ESPACE CLIENT{view?.beta?.enabled ? ' · ' + copy.badge.toUpperCase() : view?.mode ? ` · STRIPE ${view.mode.toUpperCase()}` : ''}
           </p>
+          <h1>{view?.beta?.enabled ? t('Mon accès et l’assistance', 'My access and support') : t("Facturation et assistance","Billing and support")}</h1>
+          {view?.beta?.enabled ? (
+            <p>
+              <strong>{copy.access}</strong> · {copy.noPayment}{' '}
+              {t('Les fournisseurs externes restent soumis à une autorisation et à un budget configurés.', 'External providers still require explicit authorization and a configured budget.')}
+            </p>
+          ) : (
+            <p>
+              Pass prépayés sans reconduction. {view?.mode === 'test' && 'Mode test : aucun paiement réel.'} Les fournisseurs externes nécessitent aussi une connexion et un budget autorisés.
+            </p>
+          )}
         </header>
         <Link className="btn btn-secondary" href="/account/security">{t('Profil et sécurité', 'Profile and security')}</Link>
         {error && <p role="alert">{error}</p>}
@@ -111,8 +131,13 @@ export default function Account() {
               </p>
             )}
             <section className="card stack">
-              <h2>{t("Mes droits et paiements","Entitlements and payments")}</h2>
-              {!view.orders.length && <p>Aucun achat enregistré.</p>}
+              <h2>
+                {view.beta?.enabled
+                  ? t('Historique de mes achats', 'My purchase history')
+                  : t("Mes droits et paiements","Entitlements and payments")}
+              </h2>
+              {!view.orders.length && !view.beta?.enabled && <p>Aucun achat enregistré.</p>}
+              {!view.orders.length && view.beta?.enabled && <p>{t('Aucun achat enregistré. La bêta ne demande aucun paiement.', 'No purchase recorded. The beta requires no payment.')}</p>}
               {view.orders.map((o) => (
                 <article key={o.id}>
                   <h3>
@@ -151,47 +176,69 @@ export default function Account() {
                 </article>
               ))}
             </section>
-            <section className="card stack">
-              <h2>{t("Catalogue approuvé","Approved catalog")}</h2>
-              {view.mode === 'test' && <p>Stripe en mode test : aucun débit réel.</p>}
-              {!view.catalog.length && <p>Aucune offre commerciale approuvée.</p>}
-              {!view.checkoutAvailable && <p>Les nouveaux paiements sont indisponibles. Votre historique reste accessible.</p>}
-              {view.catalog.map((p) => (
-                <article key={p.id}>
-                  <h3>
-                    {p.name} · {money(p.amount, p.currency)}
-                  </h3>
-                  <p>
-                    {p.days} jours · {p.regular} créations · {p.premium} crédits média. Image : {p.imageUnits}{' '}
-                    crédits ; vidéo : {p.videoUnits}. Fonctions : {p.features.join(', ')}.
-                  </p>
-                  <p>
-                    Un échec confirmé libère la réservation ; une issue inconnue reste à vérifier.
-                    Remboursement intégral : fin des droits. Remboursement partiel : gel pour examen.
-                  </p>
-                  <button
-                    disabled={busy || view.suspended || !view.checkoutAvailable}
-                    onClick={() =>
-                      act(async () => {
-                        const requestKey = (keys.current[p.id] ??= crypto.randomUUID());
-                        const res = await postJson<{ url: string }>('/api/billing/checkout', {
-                          productId: p.id,
-                          requestKey,
-                        });
-                        window.location.assign(res.url);
-                      })
-                    }
-                  >
-                    {view.mode === 'live' ? 'Continuer vers le paiement Stripe' : 'Acheter en mode test'}
-                  </button>
-                </article>
-              ))}
-            </section>
+            {view.beta?.enabled ? (
+              <section className="card stack" data-testid="beta-access">
+                <h2>{copy.access}</h2>
+                <p>{copy.noPayment}</p>
+                <p>{copy.frozen}</p>
+                <p>
+                  {t(
+                    'Pendant la bêta, les fonctions du Studio, du calendrier, des créations, des exports et des résultats restent utilisables sans pass ni carte bancaire.',
+                    'During the beta, Studio, calendar, creations, exports and results stay usable with no pass and no credit card.',
+                  )}
+                </p>
+              </section>
+            ) : (
+              <section className="card stack">
+                <h2>{t("Catalogue approuvé","Approved catalog")}</h2>
+                {view.mode === 'test' && <p>Stripe en mode test : aucun débit réel.</p>}
+                {!view.catalog.length && <p>Aucune offre commerciale approuvée.</p>}
+                {!view.checkoutAvailable && <p>Les nouveaux paiements sont indisponibles. Votre historique reste accessible.</p>}
+                {view.catalog.map((p) => (
+                  <article key={p.id}>
+                    <h3>
+                      {p.name} · {money(p.amount, p.currency)}
+                    </h3>
+                    <p>
+                      {p.days} jours · {p.regular} créations · {p.premium} crédits média. Image : {p.imageUnits}{' '}
+                      crédits ; vidéo : {p.videoUnits}. Fonctions : {p.features.join(', ')}.
+                    </p>
+                    <p>
+                      Un échec confirmé libère la réservation ; une issue inconnue reste à vérifier.
+                      Remboursement intégral : fin des droits. Remboursement partiel : gel pour examen.
+                    </p>
+                    <button
+                      disabled={busy || view.suspended || !view.checkoutAvailable}
+                      onClick={() =>
+                        act(async () => {
+                          const requestKey = (keys.current[p.id] ??= crypto.randomUUID());
+                          const res = await postJson<{ url: string }>('/api/billing/checkout', {
+                            productId: p.id,
+                            requestKey,
+                          });
+                          window.location.assign(res.url);
+                        })
+                      }
+                    >
+                      {view.mode === 'live' ? 'Continuer vers le paiement Stripe' : 'Acheter en mode test'}
+                    </button>
+                  </article>
+                ))}
+              </section>
+            )}
           </>
         )}
         <section className="card stack" id="assistance">
-          <h2>{t("Contacter l’assistance","Contact support")}</h2>
-          <p>Ne transmettez ni numéro de carte ni secret.</p>
+          <h2>{view?.beta?.enabled ? t('Assistance et retours bêta', 'Support and beta feedback') : t("Contacter l’assistance","Contact support")}</h2>
+          <p>
+            {t('Ne transmettez ni numéro de carte ni secret.', 'Do not send card numbers or secrets.')}{' '}
+            {view?.beta?.enabled && copy.feedback + ' : '}
+            {view?.beta?.enabled &&
+              t(
+                'un retour bêta (bug, suggestion) est traité par le même support, séparément des incidents de facturation.',
+                'beta feedback (bug, suggestion) goes through the same support, separately from billing incidents.',
+              )}
+          </p>
           <form
             className="stack"
             onSubmit={(e) => {
@@ -202,16 +249,26 @@ export default function Account() {
                 await postJson('/api/billing/tickets', {
                   subject: f.get('subject'),
                   message: f.get('message'),
+                  ...(view?.beta?.enabled ? { kind: f.get('kind') ?? 'SUPPORT' } : {}),
                 });
                 form.reset();
-                say('Demande enregistrée.');
+                say(t('Demande enregistrée.', 'Request recorded.'));
               });
             }}
           >
             <label>
-              Objet
+              {t('Objet', 'Subject')}
               <input name="subject" minLength={2} maxLength={120} required />
             </label>
+            {view?.beta?.enabled && (
+              <label>
+                {t('Type de demande', 'Request type')}
+                <select name="kind" defaultValue="SUPPORT">
+                  <option value="SUPPORT">{t('Assistance', 'Support')}</option>
+                  <option value="BETA_FEEDBACK">{t('Bug ou suggestion (bêta)', 'Bug or suggestion (beta)')}</option>
+                </select>
+              </label>
+            )}
             <label>
               Message
               <textarea name="message" minLength={2} maxLength={3000} required />
