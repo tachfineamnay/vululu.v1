@@ -51,7 +51,8 @@ export function MarketingAssistant({ project, context }: { project: string; cont
     const all = await api<{ id: string; name: string; contextId: string }[]>('/api/calendar/offers');
     const own = all.filter((o) => o.contextId === context);
     setOffers(own);
-    setOffer((old) => (own.some((o) => o.id === old) ? old : (own[0]?.id ?? '')));
+    const requested = new URLSearchParams(location.search).get('offer');
+    setOffer((old) => own.find((o) => o.id === old)?.id ?? own.find((o) => o.id === requested)?.id ?? own[0]?.id ?? '');
     const h = await api<{ version: number; origin: string }[]>(base);
     list(h);
     if (h.length) display(await api<Revision>(base + '/' + h[0].version));

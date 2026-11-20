@@ -9,6 +9,8 @@ import { registerAuth } from './auth';
 import { isAllowedOrigin } from './security/origin';
 import { logEvent, newTraceId, sanitizeRequestId } from './observability/logger';
 import { authRoutes } from './routes/auth';
+import { customerAccountRoutes } from './routes/customerAccount';
+import { configuredAccountMail, type AccountMailTransport } from './infrastructure/email/accountMail';
 import { adminRoutes } from './routes/admin';
 import { adminReadRoutes } from './routes/adminRead';
 import { adminAgentRoutes } from './routes/adminAgents';
@@ -29,7 +31,7 @@ import { executionRoutes } from './routes/execution';
 import { productionRoutes } from './routes/production';
 import { opsRoutes } from './routes/ops';
 
-export async function buildServer() {
+export async function buildServer({ accountMail = configuredAccountMail() }: { accountMail?: AccountMailTransport | null } = {}) {
   const app = Fastify({
     logger: false,
     bodyLimit: 8 * 1024 * 1024,
@@ -127,6 +129,7 @@ export async function buildServer() {
   await app.register(billingWebhook);
   await app.register(resultsRoutes);
   await app.register(authRoutes);
+  await app.register(customerAccountRoutes, { mail: accountMail });
   await app.register(adminRoutes);
   await app.register(adminReadRoutes);
   await app.register(adminAgentRoutes);

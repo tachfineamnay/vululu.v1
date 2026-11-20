@@ -85,6 +85,7 @@ export default function Account() {
             une connexion et un budget autorisés.
           </p>
         </header>
+        <Link className="btn btn-secondary" href="/account/security">{t('Profil et sécurité', 'Profile and security')}</Link>
         {error && <p role="alert">{error}</p>}
         {note && <p role="status">{note}</p>}
         <button disabled={busy} onClick={() => act(load)}>

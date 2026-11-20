@@ -73,6 +73,10 @@ export class RuntimeReconciliationService {
       });
       actions.push({ kind: 'rate_limit_cleanup', id: 'global', applied: true, detail: 'deleted=' + expiredLimiters.count });
     }
+    if (!dryRun) {
+      const expiredAccountLinks = await this.db.accountToken.deleteMany({ where: { expiresAt: { lte: new Date(now) } } });
+      actions.push({ kind: 'account_token_cleanup', id: 'global', applied: true, detail: 'deleted=' + expiredAccountLinks.count });
+    }
     const incidents: RuntimeReconciliationReport['incidents'] = [];
     for (const worker of workers) {
       if (worker.lastSeenAt < workerBefore) {

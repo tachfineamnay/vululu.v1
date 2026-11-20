@@ -259,3 +259,13 @@
 main :where(article,fieldset,form,label,details){min-inline-size:0}
 main :where(input,select,textarea){max-inline-size:100%;box-sizing:border-box}
 @media(max-width:48rem){main :where(article,li,dd,p){overflow-wrap:anywhere}.language-control {margin-block:.5rem}}
+
+.account-entry .auth-card {
+  background: var(--panel);
+  width: min(100%, 30rem);
+  padding: clamp(1rem, 5vw, 2rem);
+  min-width: 0;
+}
+.account-entry .auth-card h1 { font-size: clamp(1.75rem, 5vw, 2.5rem); }
+.account-links { display: flex; flex-wrap: wrap; gap: .75rem 1rem; align-items: center; }
+.account-email { overflow-wrap: anywhere; }

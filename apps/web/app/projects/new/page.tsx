@@ -26,6 +26,7 @@ export default function NewProjectPage() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [onboarding, setOnboarding] = useState(false);
   const [retry, setRetry] = useState(0);
   const heading = useRef<HTMLHeadingElement>(null);
   const form = useRef<HTMLFormElement>(null);
@@ -39,7 +40,9 @@ export default function NewProjectPage() {
       const key = 'vululu:new-project:v1:' + me.user.id;
       let previous: ProjectDraft | null = null;
       try { previous = restoreProjectDraft(sessionStorage.getItem(key)); } catch { /* Le formulaire reste utilisable sans stockage navigateur. */ }
-      const requested = new URLSearchParams(window.location.search).get('context');
+      const query = new URLSearchParams(window.location.search);
+      setOnboarding(query.get('onboarding') === '1');
+      const requested = query.get('context');
       const chosen = data.items.find((context) => context.id === requested)?.id || data.items.find((context) => context.id === previous?.contextId)?.id || '';
       const next = { ...(previous ?? emptyProjectDraft), contextId: chosen };
       if (requested && requested !== previous?.contextId && previous?.title && previous.objective) next.step = 1;
@@ -69,7 +72,8 @@ export default function NewProjectPage() {
       const result = await postJson<{ project: ProjectSummary }>('/api/projects', { contextId: draft.contextId, title: draft.title.trim(), objective: draft.objective.trim(), platform: draft.platform, format: draft.format, sceneDurationSeconds: draft.sceneDurationSeconds });
       setSaved(true);
       try { sessionStorage.removeItem(storageKey); } catch { /* La création serveur reste confirmée même si le stockage local est indisponible. */ }
-      router.push('/projects/' + result.project.id);
+      const offer = new URLSearchParams(window.location.search).get('offer');
+      router.push('/projects/' + result.project.id + (offer ? '?offer=' + encodeURIComponent(offer) : ''));
     } catch (err) { setError(err instanceof Error ? err.message : 'Création impossible.'); }
     finally { setBusy(false); }
   }
@@ -77,7 +81,7 @@ export default function NewProjectPage() {
     <a className="skip-link" href="#project-start-main">{t("Aller au contenu","Skip to content")}</a>
     <StudioNav><Link href="/" className="text-link">{t("Retour aux projets","Back to projects")}</Link></StudioNav>
     <main id="project-start-main" tabIndex={-1} className="page project-start stack">
-      <p className="eyebrow">{t("Nouveau projet","New project")}</p><h1>{t("De votre idée à votre création","From idea to creation")}</h1>
+      <p className="eyebrow">{onboarding ? t("Bienvenue · Étape 3 sur 3", "Welcome · Step 3 of 3") : t("Nouveau projet","New project")}</p><h1>{t("De votre idée à votre création","From idea to creation")}</h1>
       {loading ? <p role="status">Chargement de vos références et du brouillon de cet onglet…</p> : loadError ? <div className="stack"><p className="error" role="alert">{loadError}</p><button type="button" className="btn btn-secondary" onClick={() => setRetry((n) => n + 1)}>{t("Réessayer","Retry")}</button><Link className="text-link" href="/login?next=/projects/new">{t("Se connecter","Sign in")}</Link></div> : <>
         <nav aria-label="Démarrage de la création"><ol className="creation-steps">{steps.map((label, index) => <li key={label}><button type="button" className="step-button" aria-current={draft.step === index ? 'step' : undefined} disabled={busy || index > draft.step} onClick={() => move(index)}><span className="step-number">{index + 1}</span>{label}</button></li>)}</ol></nav>
         <p className="hint" role="status" data-testid="project-draft-status">{persisted ? (restored ? 'Brouillon repris et conservé dans cet onglet.' : 'Brouillon conservé dans cet onglet.') : 'Brouillon non sauvegardé : le stockage de cet onglet est indisponible.'} Il n’est pas encore enregistré sur le serveur. Fermer cet onglet peut l’effacer.</p>
