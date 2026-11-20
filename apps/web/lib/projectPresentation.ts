@@ -58,7 +58,7 @@ export const campaignJourneyKeys: CampaignJourneyKey[] = [
 /** États dérivés du brouillon ou du projet : aucune étape future n'est présentée comme faite. */
 export function campaignJourneyStates(input: {
   objectiveDone: boolean; channelDone: boolean; formatDone: boolean;
-  assetsState: CampaignJourneyState;
+  assetsState: CampaignJourneyState; directionsCount?: number;
 }): Record<CampaignJourneyKey, CampaignJourneyState> {
   const states: Record<CampaignJourneyKey, CampaignJourneyState> = {
     objective: 'upcoming', channel: 'upcoming', format: 'upcoming', assets: 'upcoming',
@@ -72,5 +72,14 @@ export function campaignJourneyStates(input: {
   if (!input.formatDone) { states.format = 'current'; return states; }
   states.format = 'done';
   states.assets = input.assetsState;
+  if (input.assetsState === 'done') {
+    if ((input.directionsCount ?? 0) > 0) {
+      states.brainstorm = 'done';
+      states.directions = 'done';
+      states.selection = 'current';
+    } else {
+      states.brainstorm = 'current';
+    }
+  }
   return states;
 }

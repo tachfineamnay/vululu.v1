@@ -1,5 +1,7 @@
 import { CreativeStudio } from './creative';
+import { CreativeDirections } from './creativeDirections';
 import { PrismaCreativeRepository } from '../infrastructure/prisma/creativeRepository';
+import { PrismaCreativeDirectionRepository } from '../infrastructure/prisma/creativeDirectionRepository';
 import crypto from 'node:crypto';
 import { PrismaProviderCredentialStore } from '../infrastructure/prisma/providerCredentialStore';
 import { AesProviderCredentialCipher } from '../infrastructure/security/providerCredentialCipher';
@@ -85,6 +87,7 @@ const storage = new LocalStoragePort();
 const artifactStorage = createArtifactStorage();
 const artifactStorages = createArtifactStorageRegistry();
 export const creativeStudio = new CreativeStudio(new PrismaCreativeRepository(),artifactStorage,artifactStorages);
+export const creativeDirections = new CreativeDirections(new PrismaCreativeDirectionRepository());
 export { artifactStorage, artifactStorages, PrismaArtifactPublisher };
 const durableMode = process.env.ORCHESTRATOR_MODE === 'hatchet';
 const orchestrator = durableMode ? new HatchetOrchestratorAdapter() : null;

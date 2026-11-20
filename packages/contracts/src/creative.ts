@@ -97,3 +97,15 @@ export const creativeSpec = z
 export type CreativeSpec = z.infer<typeof creativeSpec>;
 export type CreativeLayer = z.infer<typeof creativeLayer>;
 export const creativeWrite = z.object({ expectedVersion: z.int().nonnegative(), spec: creativeSpec });
+
+/** Direction artistique : brouillon CreativeRevision enrichi (ADR-0035), jamais une approbation. */
+export const creativeDirectionInput = z.strictObject({
+  requestId: z.uuid(),
+  mode: z.enum(['generate', 'refine', 'alternative', 'combine']),
+  brainstormTurnId: z.uuid().optional(),
+  baseVersion: z.int().positive().optional(),
+  combineFrom: z.array(z.int().positive()).min(2).max(3).optional()
+});
+export type CreativeDirectionInput = z.infer<typeof creativeDirectionInput>;
+export const directionDecisionInput = z.strictObject({ decision: z.enum(['retained', 'rejected']) });
+export type DirectionDecision = z.infer<typeof directionDecisionInput>['decision'];

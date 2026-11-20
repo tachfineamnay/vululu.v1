@@ -170,7 +170,20 @@ Implémenté depuis l'inventaire (commit P02, `BUILD_UNVERIFIED`, aucun test ex�
 
 Limites P02 : les suites existantes qui appellent l'assistant/le plan marketing sans confirmer les ressources échoueront jusqu'au réalignement P12 ; aucune exécution réelle (tests, build, lint, typecheck) en P02 ; le client Prisma doit être régénéré avant toute vérification TypeScript.
 
-## 8. Mise à jour P03 — brainstorming contextuel (2026-11-20)
+## 8. Mise à jour P04 — directions artistiques versionnées (2026-11-20)
+
+Implémenté depuis l'inventaire (commit P04, `BUILD_UNVERIFIED`, aucun test exécuté) :
+
+- **ADR-0035** : une direction artistique est un brouillon `CreativeRevision` enrichi (`label`, `origin`, `provenance` JSONB) ; aucune entité parallèle, invariants append-only / concurrence optimiste / provenance exacte.
+- Migration additive `20261121110000_creative_direction_metadata` (3 colonnes nullables).
+- `apps/api/src/application/creativeDirections.ts` : génération depuis le dernier tour `brainstorm` et les ressources confirmées (`composeGuide` éditorial/immersif/contraste ; composition typographique honnête si aucune ressource), affinage (hiérarchie/plaques recalculées), alternatives, combinaison (structure + palette), idempotence par `requestId`, validation propriétaire/contexte/droits des versions utilisées.
+- API : `GET/POST /api/projects/:id/creative/directions` (liste + création), `POST /api/projects/:id/creative/:version/direction` (retenue/écart provisoire auditée, en attendant le pointeur P05).
+- UI `apps/web/components/ArtDirections.tsx` : cartes comparables, comparaison côte à côte, aperçu **réel** via la route `/creative/preview` (Sharp, première scène, étiqueté), retenir/écarter/affiner/combiner, reprise dans l'éditeur (`/:version/restore`), rechargement persistant.
+- Journée campagne : étapes brainstorming/directions passent à « terminé » quand des directions existent.
+
+Limites P04 : le choix autoritatif (`Project.selectedCreativeVersion`) et le refus/approbation définitifs arrivent en P05 ; les décisions retenue/écartées restent des événements d'audit provisoires ; aucun test/build/lint/typecheck exécuté.
+
+## 9. Mise à jour P03 — brainstorming contextuel (2026-11-20)
 
 Implémenté depuis l'inventaire (commit P03, `BUILD_UNVERIFIED`, aucun test exécuté) :
 
@@ -182,7 +195,7 @@ Implémenté depuis l'inventaire (commit P03, `BUILD_UNVERIFIED`, aucun test ex�
 
 Limites P03 : l'inférence Vertex réelle reste `NOT_VERIFIED` (aucun fournisseur activé) ; les suites assistant existantes ne couvrent pas encore le type `brainstorm` (réalignement P12).
 
-## 9. Mise à jour P01 — entrée de campagne (2026-11-20)
+## 10. Mise à jour P01 — entrée de campagne (2026-11-20)
 
 Implémenté depuis cet inventaire (commit P01, `BUILD_UNVERIFIED`, aucun test exécuté) :
 

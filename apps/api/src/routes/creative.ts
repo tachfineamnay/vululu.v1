@@ -11,11 +11,13 @@ import {
   actionScope,
   creativeAction,
   creativeApproval,
+  creativeDirectionInput,
   creativeSpec,
   creativeWrite,
+  directionDecisionInput,
   studioExportExtension,
 } from '@vululu/contracts';
-import { creativeStudio as service } from '../application/container';
+import { creativeDirections, creativeStudio as service } from '../application/container';
 import {draftThumbnail} from '@vululu/media';
 import { sendArtifact } from './production';
 import { rateLimitPreHandler, RATE_LIMITS } from '../infrastructure/security/rateLimiter';
@@ -84,6 +86,16 @@ export async function creativeRoutes(app: FastifyInstance) {
     return service.save(user, project, a.expectedRevision, editScene(row.spec, a));
   });
   app.get(base, auth, (r) => service.history(r.currentUser!.id, id.parse(r.params).id));
+  // Directions artistiques = brouillons CreativeRevision enrichis (ADR-0035), jamais une approbation.
+  app.get(base + '/directions', auth, (r) =>
+    creativeDirections.list(r.currentUser!.id, id.parse(r.params).id));
+  app.post(base + '/directions', auth, (r) =>
+    creativeDirections.create(r.currentUser!.id, id.parse(r.params).id, creativeDirectionInput.parse(r.body)));
+  app.post(base + '/:version/direction', auth, (r) => {
+    const p = revision.parse(r.params);
+    const { decision } = directionDecisionInput.parse(r.body);
+    return creativeDirections.decide(r.currentUser!.id, p.id, p.version, decision);
+  });
   app.post(base, auth, (r) => {
     const b = creativeWrite.parse(r.body);
     return service.save(r.currentUser!.id, id.parse(r.params).id, b.expectedVersion, b.spec);

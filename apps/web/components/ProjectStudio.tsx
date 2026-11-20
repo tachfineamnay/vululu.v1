@@ -19,6 +19,7 @@ import ProjectJourney from './ProjectJourney';
 import CampaignJourney from './CampaignJourney';
 import ProjectAssetsStep from './ProjectAssetsStep';
 import BrainstormPanel from './BrainstormPanel';
+import ArtDirections from './ArtDirections';
 import type { ProjectAssetDecision } from '../lib/api';
 import { projectJourney } from '../lib/projectJourney';
 import CreationDelivery from './CreationDelivery';
@@ -78,6 +79,7 @@ export default function ProjectStudio({ id }: { id: string }) {
   const router = useRouter();
   const [bundle, setBundle] = useState<ProjectBundle | null>(null);
   const [assetDecision, setAssetDecision] = useState<ProjectAssetDecision | null>(null);
+  const [directionsCount, setDirectionsCount] = useState(0);
   const demo = demoMode && bundle?.project.format === 'Video';
   const [calendarSource, setCalendarSource] = useState<Destination>();
   const [error, setError] = useState('');
@@ -447,6 +449,7 @@ export default function ProjectStudio({ id }: { id: string }) {
           formatDone={!!bundle.project.format}
           assetsActive={true}
           assetsConfirmed={!!assetDecision?.confirmed}
+          directionsCount={directionsCount}
           assetsHref={'/assets?context=' + encodeURIComponent(bundle.context.id) + '&project=' + encodeURIComponent(bundle.project.id)}
           assetsHint={assetDecision?.confirmed
             ? t('Ressources confirmées. Toute modification de la sélection demandera une reconfirmation avant le brainstorming.', 'Assets confirmed. Any change to the selection will require confirmation again before brainstorming.')
@@ -462,6 +465,7 @@ export default function ProjectStudio({ id }: { id: string }) {
         <CreativeEditor bundle={bundle} serverHead={live.state?.revisions[0]?.version} serverRenders={live.state?.renders} calendarSource={calendarSource}/>
         {assetDecision?.confirmed ? <>
           <BrainstormPanel projectId={bundle.project.id} contextId={bundle.context.id} />
+          <ArtDirections projectId={bundle.project.id} onDirections={setDirectionsCount} />
           <ProjectAssistant key={bundle.project.id} projectId={bundle.project.id} contextId={bundle.context.id} creativeHead={live.state?.revisions[0]?.version} preferredOffer={calendarSource?.offerId} useCta={(cta) => {
             setBriefCta(cta); setBriefEdited(true); focusStudioSection('brief-heading');
             notify('Appel à l’action repris. Enregistrez le brief après relecture.');

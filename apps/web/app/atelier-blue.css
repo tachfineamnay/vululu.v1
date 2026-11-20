@@ -300,3 +300,12 @@ main :where(input,select,textarea){max-inline-size:100%;box-sizing:border-box}
 [data-vululu-theme="blue"] .brainstorm-prompt { border-left: 4px solid var(--v-color-accent); padding: var(--v-space-8) var(--v-space-16); background: var(--v-color-background); border-radius: var(--v-radius-small); }
 [data-vululu-theme="blue"] .brainstorm-angles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: var(--v-space-12); }
 [data-vululu-theme="blue"] .brainstorm-angles .actions { flex-wrap: wrap; }
+
+/* P04 — directions artistiques comparables (brouillons CreativeRevision, ADR-0035). */
+[data-vululu-theme="blue"] .art-directions .asset-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
+[data-vululu-theme="blue"] .art-direction-swatches { display: flex; gap: var(--v-space-8); }
+[data-vululu-theme="blue"] .art-direction-swatches > span { width: 42px; height: 24px; border-radius: var(--v-radius-small); border: 1px solid var(--v-color-border); }
+[data-vululu-theme="blue"] .art-direction-preview { margin: 0; display: grid; gap: var(--v-space-8); }
+[data-vululu-theme="blue"] .art-direction-preview img { width: 100%; height: auto; max-height: 320px; object-fit: contain; background: var(--v-color-media); border-radius: var(--v-radius-control); }
+[data-vululu-theme="blue"] .art-direction-provenance { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; background: var(--v-color-background); padding: var(--v-space-8); border-radius: var(--v-radius-small); font-size: var(--v-font-size-label); }
+[data-vululu-theme="blue"] .art-directions-compare-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: var(--v-space-16); }

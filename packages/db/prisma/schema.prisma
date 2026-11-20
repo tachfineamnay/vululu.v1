@@ -731,6 +731,9 @@ model CreativeRevision {
   version Int
   spec Json
   manifest Json?
+  label String?
+  origin String?
+  provenance Json?
   approvedAt DateTime?
   createdAt DateTime @default(now())
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
