@@ -21,6 +21,9 @@ type Balance = { available: number; used: number; held: number };
 type Order = {
   id: string;
   status: string;
+  mode: 'test' | 'live';
+  canCancel: boolean;
+  canReceipt: boolean;
   createdAt: string;
   expiresAt: string | null;
   refunded: number;
@@ -28,7 +31,7 @@ type Order = {
   regular: Balance;
   premium: Balance;
 };
-type View = { commercial: boolean; suspended: boolean; catalog: Product[]; orders: Order[] };
+type View = { mode: 'test' | 'live' | null; checkoutAvailable: boolean; commercial: boolean; suspended: boolean; catalog: Product[]; orders: Order[] };
 const money = (n: number, c: string) =>
   new Intl.NumberFormat('fr-FR', { style: 'currency', currency: c }).format(n / 100);
 const labels: Record<string, string> = {
@@ -40,6 +43,7 @@ const labels: Record<string, string> = {
   PARTIAL_REVIEW: 'Remboursement partiel — droits gelés',
   PAID: 'Payé',
   EXPIRED: 'Expiré',
+  INACTIVE_MODE: 'Historique — droits non utilisables dans le mode actif',
 };
 export default function Account() {
   const {t}=useWorkspace();
@@ -47,7 +51,8 @@ export default function Account() {
     [tickets, list] = useState<Ticket[]>([]),
     [error, fail] = useState(''),
     [busy, work] = useState(false),
-    [note, say] = useState('');
+    [note, say] = useState(''),
+    [receipts, showReceipt] = useState<Record<string, string>>({});
   const keys = useRef<Record<string, string>>({});
   async function load() {
     const [v, t] = await Promise.all([
@@ -59,6 +64,14 @@ export default function Account() {
   }
   useEffect(() => {
     load().catch((e) => fail(e.message));
+    if (!new URLSearchParams(location.search).has('return')) return;
+    say('Retour de Stripe : seuls les paiements confirmés activent les droits.');
+    let attempts = 0;
+    const timer = setInterval(() => {
+      if (++attempts >= 5) clearInterval(timer);
+      api<View>('/api/billing/account').then(set).catch(() => { /* Manual refresh remains available. */ });
+    }, 2500);
+    return () => clearInterval(timer);
   }, []);
   async function act(fn: () => Promise<void>) {
     work(true);
@@ -78,11 +91,10 @@ export default function Account() {
       <StudioNav />
       <main className="page stack">
         <header>
-          <p className="eyebrow">ESPACE CLIENT · STRIPE TEST</p>
+          <p className="eyebrow">ESPACE CLIENT{view?.mode ? ` · STRIPE ${view.mode.toUpperCase()}` : ''}</p>
           <h1>{t("Abonnement et assistance","Billing and support")}</h1>
           <p>
-            Pass prépayés sans reconduction. Aucun paiement réel. Les fournisseurs externes nécessitent aussi
-            une connexion et un budget autorisés.
+            Pass prépayés sans reconduction. {view?.mode === 'test' && 'Mode test : aucun paiement réel.'} Les fournisseurs externes nécessitent aussi une connexion et un budget autorisés.
           </p>
         </header>
         <Link className="btn btn-secondary" href="/account/security">{t('Profil et sécurité', 'Profile and security')}</Link>
@@ -108,7 +120,7 @@ export default function Account() {
                   </h3>
                   <p>
                     {new Date(o.createdAt).toLocaleDateString('fr-FR')} ·{' '}
-                    {money(o.product.amount, o.product.currency)} · référence {o.id}
+                    {money(o.product.amount, o.product.currency)} · {o.mode === 'test' ? 'Test' : 'Réel'} · référence {o.id}
                   </p>
                   {o.expiresAt && <p>Fin du pass : {new Date(o.expiresAt).toLocaleString('fr-FR')}</p>}
                   {o.refunded > 0 && <p>Remboursement constaté : {money(o.refunded, o.product.currency)}</p>}
@@ -118,7 +130,12 @@ export default function Account() {
                       {o[k].held} réservés · {o[k].used} consommés
                     </p>
                   ))}
-                  {['PENDING', 'FAILED'].includes(o.status) && (
+                  {o.canReceipt && (receipts[o.id] ? <p><a href={receipts[o.id]} target="_blank" rel="noopener noreferrer">Ouvrir le reçu de paiement Stripe</a></p> :
+                    <button type="button" disabled={busy} onClick={() => act(async () => {
+                      const { url } = await postJson<{ url: string }>(`/api/billing/orders/${o.id}/receipt`, {});
+                      showReceipt((prev) => ({ ...prev, [o.id]: url }));
+                    })}>Afficher le lien du reçu Stripe</button>)}
+                  {o.canCancel && (
                     <button
                       disabled={busy}
                       onClick={() =>
@@ -128,7 +145,7 @@ export default function Account() {
                         })
                       }
                     >
-                      Fermer le paiement test
+                      Fermer le paiement
                     </button>
                   )}
                 </article>
@@ -137,7 +154,7 @@ export default function Account() {
             <section className="card stack">
               <h2>{t("Catalogue approuvé","Approved catalog")}</h2>
               {!view.catalog.length && <p>Aucune offre commerciale approuvée.</p>}
-              {!view.commercial && <p>Application des forfaits désactivée ; achat indisponible.</p>}
+              {!view.checkoutAvailable && <p>Les nouveaux paiements sont indisponibles. Votre historique reste accessible.</p>}
               {view.catalog.map((p) => (
                 <article key={p.id}>
                   <h3>
@@ -152,7 +169,7 @@ export default function Account() {
                     Remboursement intégral : fin des droits. Remboursement partiel : gel pour examen.
                   </p>
                   <button
-                    disabled={busy || view.suspended || !view.commercial}
+                    disabled={busy || view.suspended || !view.checkoutAvailable}
                     onClick={() =>
                       act(async () => {
                         const requestKey = (keys.current[p.id] ??= crypto.randomUUID());
@@ -164,7 +181,7 @@ export default function Account() {
                       })
                     }
                   >
-                    Acheter en mode test
+                    {view.mode === 'live' ? 'Continuer vers le paiement Stripe' : 'Acheter en mode test'}
                   </button>
                 </article>
               ))}

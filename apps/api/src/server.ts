@@ -1,6 +1,7 @@
 import './env';
 import { assistantRoutes } from './routes/assistant';
 import Fastify from 'fastify';
+import type Stripe from 'stripe';
 import cookie from '@fastify/cookie';
 import { z } from 'zod';
 import { ApplicationError } from '@vululu/application';
@@ -32,7 +33,7 @@ import { executionRoutes } from './routes/execution';
 import { productionRoutes } from './routes/production';
 import { opsRoutes } from './routes/ops';
 
-export async function buildServer({ accountMail = configuredAccountMail() }: { accountMail?: AccountMailTransport | null } = {}) {
+export async function buildServer({ accountMail = configuredAccountMail(), billingStripe }: { accountMail?: AccountMailTransport | null; billingStripe?: Stripe } = {}) {
   const app = Fastify({
     logger: false,
     bodyLimit: 8 * 1024 * 1024,
@@ -126,7 +127,7 @@ export async function buildServer({ accountMail = configuredAccountMail() }: { a
     return respond(500, { error: 'internal_error', message: 'Erreur interne.' });
   });
 
-  await app.register(billingRoutes);
+  await app.register(billingRoutes, { stripe: billingStripe });
   await app.register(billingWebhook);
   await app.register(resultsRoutes);
   await app.register(authRoutes);

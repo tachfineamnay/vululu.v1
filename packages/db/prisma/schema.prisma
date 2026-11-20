@@ -927,9 +927,11 @@ model PostMeasure {
 model BillingControl {
  id String @id
  enabled Boolean @default(false)
+ mode String @default("test")
 }
 model BillingProduct {
  id String @id
+ mode String @default("test")
  name String
  currency String
  amount Int
@@ -945,6 +947,7 @@ model BillingProduct {
  listed Boolean @default(true)
  createdAt DateTime @default(now())
  orders BillingOrder[]
+ @@unique([id,mode], map: "billing_product_identity_mode")
 }
 model BillingAccount {
  userId String @id
@@ -953,9 +956,11 @@ model BillingAccount {
 }
 model BillingOrder {
  id String @id
+ mode String @default("test")
+ stripeAccount String?
  userId String
  productId String
- product BillingProduct @relation(fields:[productId],references:[id],onDelete:Restrict)
+ product BillingProduct @relation(fields:[productId,mode],references:[id,mode],onDelete:Restrict,onUpdate:NoAction,map:"billing_order_product_mode")
  requestKey String
  sessionId String? @unique
  intentId String? @unique

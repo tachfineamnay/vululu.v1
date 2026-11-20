@@ -5,6 +5,7 @@ import { prisma } from '@vululu/db';
 import type { Prisma, ExecutionOperation } from '@prisma/client';
 import { HttpError } from '../../errors';
 import { billingMessage } from './messages';
+import { activationPhrase, billingConfig, requestedBillingMode } from './config';
 export type Tx = Prisma.TransactionClient;
 export const fail = (status: number, code: string): never => {
   throw new HttpError(status, code, billingMessage(code));
@@ -49,6 +50,7 @@ export const audit = (
 export const lock = (tx: Tx, u: string) => tx.$executeRaw`SELECT billing_lock(${u})`;
 export const publicProduct = {
   id: true,
+  mode: true,
   name: true,
   amount: true,
   currency: true,
@@ -62,19 +64,22 @@ export const publicProduct = {
 } as const;
 export async function createProduct(actor: string, input: unknown) {
   const { ownerApproved, ...b } = productInput.parse(input);
+  const mode = requestedBillingMode();
+  if (!mode || (mode === 'live' && !billingConfig())) return fail(503, 'stripe_unavailable');
   return prisma.$transaction(async (tx) => {
-    const p = await tx.billingProduct.create({ data: { id: randomUUID(), approvedBy: actor, ...b } });
-    await audit(tx, actor, 'catalog.approved', p.id, { ownerApproved, evidence: p.evidence });
+    const p = await tx.billingProduct.create({ data: { id: randomUUID(), approvedBy: actor, mode, ...b } });
+    await audit(tx, actor, 'catalog.approved', p.id, { ownerApproved, mode, evidence: p.evidence });
     return p;
   });
 }
 export async function account(userId: string) {
+  const config = billingConfig(), mode = requestedBillingMode();
   const [control, flag, catalog, orders, totals] = await prisma.$transaction(
     [
       prisma.billingControl.findUniqueOrThrow({ where: { id: 'commercial' } }),
       prisma.billingAccount.findUnique({ where: { userId } }),
       prisma.billingProduct.findMany({
-        where: { listed: true },
+        where: { listed: true, mode: mode ?? 'disabled' },
         select: publicProduct,
         orderBy: { createdAt: 'desc' },
       }),
@@ -83,7 +88,11 @@ export async function account(userId: string) {
         orderBy: { createdAt: 'desc' },
         select: {
           id: true,
+          mode: true,
           state: true,
+          sessionId: true,
+          stripeAccount: true,
+          intentId: true,
           paidAt: true,
           expiresAt: true,
           refunded: true,
@@ -103,14 +112,16 @@ export async function account(userId: string) {
   return {
     commercial: control.enabled,
     suspended: !!flag?.suspended,
-    testMode: true,
+    mode,
+    testMode: mode !== 'live',
+    checkoutAvailable: !!config?.checkoutEnabled && control.enabled && control.mode === config.mode,
     catalog,
-    orders: orders.map((o) => {
+    orders: orders.map(({ sessionId, stripeAccount, intentId, ...o }) => {
       const status = o.refundReview
         ? 'REFUND_REVIEW'
         : o.state === 'PAID' && (!o.expiresAt || o.expiresAt <= new Date())
           ? 'EXPIRED'
-          : o.state;
+          : o.state === 'PAID' && o.mode !== control.mode ? 'INACTIVE_MODE' : o.state;
       const balance = (bucket: 'regular' | 'premium') => {
         const sum = (s: string) => counts.get(o.id + ':' + bucket + ':' + s) ?? 0,
           used = sum('USED'),
@@ -121,47 +132,70 @@ export async function account(userId: string) {
           available: status === 'PAID' && !flag?.suspended ? Math.max(0, o.product[bucket] - used - held) : 0,
         };
       };
-      return { ...o, status, regular: balance('regular'), premium: balance('premium') };
+      const connected = config?.mode === o.mode && config.stripeAccount === stripeAccount;
+      return { ...o, status, canCancel: !!sessionId && connected && ['PENDING', 'FAILED'].includes(o.state),
+        canReceipt: connected && !!intentId && !!o.paidAt, regular: balance('regular'), premium: balance('premium') };
     }),
   };
 }
-export function stripeClient() {
-  const key = process.env.STRIPE_TEST_SECRET_KEY;
-  if (!key?.startsWith('sk_test_')) return fail(503, 'stripe_test_unavailable');
-  return new Stripe(key, { maxNetworkRetries: 1, timeout: 10000 });
+function requiredConfig() {
+  return billingConfig() ?? fail(503, 'stripe_unavailable');
 }
-export async function checkout(
-  userId: string,
-  productId: string,
-  requestKey: string,
-  client = stripeClient(),
-) {
-  const origin = process.env.APP_ORIGIN?.split(',')[0];
-  if (!origin) return fail(503, 'billing_origin_missing');
+export function stripeClient(config = requiredConfig()) {
+  return new Stripe(config.secretKey, { maxNetworkRetries: 1, timeout: 10000 });
+}
+async function checkStripeAccount(config: ReturnType<typeof requiredConfig>, client: Stripe) {
+  if (!config.live) return;
+  try {
+    if ((await client.accounts.retrieve()).id === config.stripeAccount) return;
+  } catch { /* Do not leak provider error bodies or keys. */ }
+  return fail(503, 'stripe_account_mismatch');
+}
+export async function enableCommerce(actor: string, confirm: string, evidence?: string) {
+  const config = requiredConfig();
+  if (confirm !== activationPhrase(config.mode) || (config.live && !evidence)) return fail(400, 'activation_confirmation_required');
+  if (!config.checkoutEnabled) return fail(503, 'stripe_checkout_unavailable');
+  await checkStripeAccount(config, stripeClient(config));
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "BillingControl" WHERE id='commercial' FOR UPDATE`;
+    const control = await tx.billingControl.findUniqueOrThrow({ where: { id: 'commercial' } });
+    if (control.mode === 'live' && !config.live) return fail(409, 'billing_mode_mismatch');
+    if (!(await tx.billingProduct.count({ where: { listed: true, mode: config.mode } }))) return fail(409, 'catalog_empty');
+    await tx.billingControl.update({ where: { id: 'commercial' }, data: { enabled: true, mode: config.mode } });
+    await audit(tx, actor, 'enforcement.enabled', 'commercial', { mode: config.mode, evidence: evidence ?? null });
+    return { enabled: true, mode: config.mode };
+  });
+}
+export async function checkout(userId: string, productId: string, requestKey: string, mockedClient?: Stripe) {
+  const config = requiredConfig(), { origin, mode } = config;
+  if (!config.checkoutEnabled || !origin) return fail(503, 'stripe_checkout_unavailable');
+  const client = mockedClient ?? stripeClient(config);
+  await checkStripeAccount(config, client);
   const o = await prisma.$transaction(async (tx) => {
     await lock(tx, userId);
-    if (!(await tx.billingControl.findUniqueOrThrow({ where: { id: 'commercial' } })).enabled)
-      return fail(409, 'commercial_not_enabled');
+    const control = await tx.billingControl.findUniqueOrThrow({ where: { id: 'commercial' } });
+    if (!control.enabled) return fail(409, 'commercial_not_enabled');
+    if (control.mode !== mode) return fail(409, 'billing_mode_mismatch');
     if ((await tx.billingAccount.findUnique({ where: { userId } }))?.suspended)
       return fail(403, 'billing_suspended');
-    const p = await tx.billingProduct.findFirst({ where: { id: productId, listed: true } });
+    const p = await tx.billingProduct.findFirst({ where: { id: productId, listed: true, mode } });
     if (!p) return fail(404, 'product_not_available');
     const retry = await tx.billingOrder.findUnique({ where: { userId_requestKey: { userId, requestKey } } });
     const pending = retry
       ? null
       : await tx.billingOrder.findFirst({
-          where: { userId, productId, state: { in: ['PENDING', 'FAILED'] } },
+          where: { userId, productId, mode, state: { in: ['PENDING', 'FAILED'] } },
           orderBy: { createdAt: 'desc' },
         });
     const row = pending
       ? { ...pending, product: p }
       : await tx.billingOrder.upsert({
           where: { userId_requestKey: { userId, requestKey } },
-          create: { id: randomUUID(), userId, productId, requestKey },
+          create: { id: randomUUID(), userId, productId, requestKey, mode, stripeAccount: config.stripeAccount },
           update: {},
           include: { product: true },
         });
-    if (row.productId !== productId || !['PENDING', 'FAILED'].includes(row.state))
+    if (row.productId !== productId || row.mode !== mode || row.stripeAccount !== config.stripeAccount || !['PENDING', 'FAILED'].includes(row.state))
       return fail(409, 'checkout_conflict');
     return row;
   });
@@ -192,21 +226,63 @@ export async function checkout(
             success_url: origin + '/account?return=1',
             cancel_url: origin + '/account?return=1',
           },
-          { idempotencyKey: 'vululu-test:' + o.id },
+          { idempotencyKey: `vululu-${mode}:` + o.id },
         );
   } catch {
     return fail(503, 'checkout_not_confirmed');
   }
   if (
-    s.livemode ||
-    !s.id.startsWith('cs_test_') ||
+    s.livemode !== config.live || s.status !== 'open' || s.mode !== 'payment' ||
+    s.currency !== o.product.currency || s.amount_total !== o.product.amount ||
+    !s.id.startsWith(`cs_${mode}_`) ||
     s.client_reference_id !== o.id ||
     !s.url ||
-    new URL(s.url).origin !== 'https://checkout.stripe.com'
+    !stripeCheckoutUrl(s.url)
   )
     return fail(409, 'checkout_not_open');
-  await prisma.billingOrder.update({ where: { id: o.id }, data: { sessionId: s.id } });
+  const patched = await prisma.billingOrder.updateMany({ where: { id: o.id, state: { in: ['PENDING', 'FAILED'] },
+    OR: [{ sessionId: null }, { sessionId: s.id }] }, data: { sessionId: s.id } });
+  if (!patched.count) return fail(409, 'checkout_not_open');
   return { orderId: o.id, url: s.url };
+}
+function stripeCheckoutUrl(raw: string) {
+  try {
+    const url = new URL(raw);
+    return url.origin === 'https://checkout.stripe.com' && !url.username && !url.password;
+  } catch { return false; }
+}
+export async function cancelCheckout(userId: string, id: string, mockedClient?: Stripe) {
+  const o = await prisma.billingOrder.findFirst({ where: { id, userId } });
+  if (!o) return fail(404, 'order_not_found');
+  if (!['PENDING', 'FAILED'].includes(o.state) || !o.sessionId) return fail(409, 'not_open');
+  const config = requiredConfig();
+  if (o.mode !== config.mode || o.stripeAccount !== config.stripeAccount || !o.sessionId.startsWith(`cs_${config.mode}_`))
+    return fail(409, 'billing_mode_mismatch');
+  const stripe = mockedClient ?? stripeClient(config);
+  await prisma.$transaction((tx) => audit(tx, userId, 'checkout.expiration_requested', o.id, { mode: o.mode }));
+  try {
+    await stripe.checkout.sessions.expire(o.sessionId, {}, { idempotencyKey: `expire:${o.mode}:` + o.id });
+  } catch { return fail(409, 'expiration_not_confirmed'); }
+  return { awaitingWebhook: true };
+}
+export async function paymentReceipt(userId: string, id: string, mockedClient?: Stripe) {
+  const o = await prisma.billingOrder.findFirst({ where: { id, userId }, include: { product: true } });
+  if (!o) return fail(404, 'order_not_found');
+  const config = requiredConfig();
+  if (o.mode !== config.mode || o.stripeAccount !== config.stripeAccount) return fail(409, 'billing_mode_mismatch');
+  if (!o.paidAt || !o.intentId) return fail(409, 'payment_receipt_unavailable');
+  try {
+    const intent = await (mockedClient ?? stripeClient(config)).paymentIntents.retrieve(o.intentId, { expand: ['latest_charge'] });
+    const charge = intent.latest_charge;
+    if (intent.id !== o.intentId || intent.status !== 'succeeded' || intent.livemode !== config.live ||
+      intent.metadata.vululuOrder !== o.id || intent.currency !== o.product.currency || intent.amount_received !== o.product.amount ||
+      !charge || typeof charge === 'string' || charge.payment_intent !== intent.id || charge.livemode !== config.live || !charge.receipt_url)
+      return fail(409, 'payment_receipt_unavailable');
+    const url = new URL(charge.receipt_url);
+    if (url.origin !== 'https://pay.stripe.com' || url.username || url.password || !url.pathname.startsWith('/receipts/'))
+      return fail(409, 'payment_receipt_unavailable');
+    return { url: url.href };
+  } catch { return fail(409, 'payment_receipt_unavailable'); }
 }
 const object = z.object({
   id: z.string(),
@@ -218,9 +294,11 @@ const object = z.object({
   payment_intent: z.string().nullish(),
   status: z.string().nullish(),
   client_reference_id: z.string().nullish(),
+  livemode: z.boolean().optional(),
 });
-export function verify(raw: Buffer, signature: string, client = stripeClient()) {
-  const secret = process.env.STRIPE_TEST_WEBHOOK_SECRET;
+export function verify(raw: Buffer, signature: string, mockedClient?: Stripe) {
+  const config = requiredConfig(), secret = config.webhookSecret;
+  const client = mockedClient ?? stripeClient(config);
   if (!secret?.startsWith('whsec_')) return fail(503, 'webhook_not_configured');
   try {
     const e = client.webhooks.constructEvent(raw, signature, secret, 300);
@@ -228,18 +306,20 @@ export function verify(raw: Buffer, signature: string, client = stripeClient()) 
     if (
       !Number.isSafeInteger(timestamp) ||
       Math.abs(Date.now() / 1000 - timestamp) > 300 ||
-      e.livemode !== false ||
+      e.livemode !== config.live ||
+      !/^evt_[A-Za-z0-9_-]{1,160}$/.test(e.id) || !Number.isSafeInteger(e.created) || e.created <= 0 ||
       e.account
     )
       throw Error();
     return e;
   } catch {
-    return fail(400, 'invalid_test_webhook');
+    return fail(400, 'invalid_stripe_webhook');
   }
 }
 // Only the signature-verified route calls this reducer. Never trust browser redirects for allocation.
 export async function applyEvent(e: Stripe.Event, raw: Buffer) {
-  if (e.livemode !== false) return fail(400, 'live_event_refused');
+  const config = requiredConfig();
+  if (e.livemode !== config.live || e.account) return fail(400, 'invalid_stripe_webhook');
   if (
     ![
       'payment_intent.succeeded',
@@ -255,7 +335,7 @@ export async function applyEvent(e: Stripe.Event, raw: Buffer) {
     refundFailed = e.type === 'refund.failed',
     id =
       obj.metadata?.vululuOrder ??
-      (refundFailed && obj.payment_intent
+      (['charge.refunded', 'refund.failed'].includes(e.type) && obj.payment_intent
         ? (
             await prisma.billingOrder.findUnique({
               where: { intentId: obj.payment_intent },
@@ -273,6 +353,8 @@ export async function applyEvent(e: Stripe.Event, raw: Buffer) {
     if (!hint) return fail(409, 'unknown_order');
     await lock(tx, hint.userId);
     const o = await tx.billingOrder.findUniqueOrThrow({ where: { id }, include: { product: true } });
+    if (o.mode !== config.mode || o.product.mode !== config.mode || o.stripeAccount !== config.stripeAccount ||
+      (obj.livemode !== undefined && obj.livemode !== config.live)) return fail(409, 'billing_mode_mismatch');
     const prior = await tx.billingReceipt.findUnique({ where: { id: e.id } });
     if (prior) {
       if (prior.digest !== digest || prior.orderId !== id) return fail(409, 'receipt_conflict');
@@ -283,7 +365,7 @@ export async function applyEvent(e: Stripe.Event, raw: Buffer) {
     const intent = expired ? null : refund || refundFailed ? obj.payment_intent : obj.id;
     if (expired) {
       if (
-        !obj.id.startsWith('cs_test_') ||
+        !obj.id.startsWith(`cs_${config.mode}_`) ||
         (o.sessionId && obj.id !== o.sessionId) ||
         obj.client_reference_id !== id
       )
@@ -357,13 +439,14 @@ export async function checkClaim(tx: Tx, o: ExecutionOperation) {
   await lock(tx, o.accountId);
   if ((await tx.billingAccount.findUnique({ where: { userId: o.accountId } }))?.suspended)
     return fail(403, 'billing_suspended');
-  if (!(await tx.billingControl.findUniqueOrThrow({ where: { id: 'commercial' } })).enabled) return;
+  const control = await tx.billingControl.findUniqueOrThrow({ where: { id: 'commercial' } });
+  if (!control.enabled) return;
   if (
     !(await tx.billingUse.count({
       where: {
         key: 'exec:' + o.id,
         state: 'HELD',
-        order: { userId: o.accountId, state: 'PAID', refundReview: false, expiresAt: { gt: new Date() } },
+        order: { userId: o.accountId, mode: control.mode, state: 'PAID', refundReview: false, expiresAt: { gt: new Date() } },
       },
     }))
   )
@@ -382,19 +465,21 @@ export async function finishTool(tx: Tx, o: ExecutionOperation, outcome: 'cancel
 }
 // A failed refund can contradict a previous cumulative charge notification. Never regrant on
 // that notification alone. An admin can re-read the provider, but cannot enter a chosen balance.
-export async function reconcileRefund(actor: string, id: string, evidence: string, client = stripeClient()) {
+export async function reconcileRefund(actor: string, id: string, evidence: string, mockedClient?: Stripe) {
+  const config = requiredConfig(), client = mockedClient ?? stripeClient(config);
   const o = await prisma.billingOrder.findUnique({
     where: { id },
     include: { product: true, _count: { select: { receipts: true } } },
   });
   if (!o?.intentId || !o.paidAt || (!o.refundReview && o.state !== 'PARTIAL_REVIEW'))
     return fail(409, 'order_not_in_review');
+  if (o.mode !== config.mode || o.stripeAccount !== config.stripeAccount) return fail(409, 'billing_mode_mismatch');
   const started = Math.floor(Date.now() / 1000);
   let total = 0;
   try {
     const intent = await client.paymentIntents.retrieve(o.intentId);
     if (
-      intent.livemode ||
+      intent.id !== o.intentId || intent.livemode !== config.live ||
       intent.status !== 'succeeded' ||
       intent.metadata.vululuOrder !== id ||
       intent.currency !== o.product.currency ||

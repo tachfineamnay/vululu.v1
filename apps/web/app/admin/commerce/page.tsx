@@ -13,9 +13,14 @@ const features = [
 ];
 type View = {
   commercial: boolean;
-  products: { id: string; name: string; amount: number; currency: string; listed: boolean }[];
+  mode: 'test' | 'live' | null;
+  activeMode: string;
+  checkoutConfigured: boolean;
+  activationPhrase: string | null;
+  audit: { id: string; action: string; targetId: string | null; actorId: string | null; createdAt: string; metadata: { evidence?: string; mode?: string } | null }[];
+  products: { id: string; name: string; amount: number; currency: string; mode: string; listed: boolean }[];
   cases: Ticket[];
-  incidents: { id: string; userId: string; refunded: number }[];
+  incidents: { id: string; userId: string; refunded: number; mode: string }[];
   holds: { key: string; units: number; bucket: string }[];
 };
 export default function Commerce() {
@@ -47,7 +52,8 @@ export default function Commerce() {
   }
   return (
     <div className="stack">
-      <h1>Commerce · environnement de test</h1>
+      <h1>Commerce{v?.mode ? ` · Stripe ${v.mode}` : ''}</h1>
+      {v && <p>Mode des droits : {v.activeMode}. Paiement : {v.checkoutConfigured ? 'configuration valide' : 'indisponible'}.</p>}
       {err && <p role="alert">{err}</p>}
       {msg && <p role="status">{msg}</p>}
       <fieldset disabled={busy} className="stack">
@@ -59,7 +65,7 @@ export default function Commerce() {
           </p>
           {v?.products.map((p) => (
             <p key={p.id}>
-              {p.name} · {p.amount} unités mineures {p.currency}{' '}
+              {p.name} · {p.mode} · {p.amount} unités mineures {p.currency}{' '}
               <button
                 onClick={() => send(`/api/admin/commerce/products/${p.id}/list`, { listed: !p.listed })}
               >
@@ -131,24 +137,29 @@ export default function Commerce() {
               limites et règles : prépaiement, consommation au succès, annulation sans dépense, remboursement
               intégral retirant les droits restants, partiel gelant le pass. Sans renouvellement automatique.
             </label>
-            <button>Publier cette version test</button>
+            <button disabled={!v?.mode}>Publier cette offre {v?.mode === 'live' ? 'réelle' : 'de test'}</button>
           </form>
-          {!v?.commercial && (
+          {v?.activationPhrase && (!v.commercial || v.activeMode !== v.mode) && (
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                void send('/api/admin/commerce/enable', {
-                  confirm: new FormData(e.currentTarget).get('confirm'),
-                });
+                const f = new FormData(e.currentTarget);
+                void send('/api/admin/commerce/enable', { confirm: f.get('confirm'), evidence: f.get('evidence') || undefined });
               }}
             >
               <label>
-                Activer les contrôles pour TOUS les comptes : saisir ENABLE TEST ENTITLEMENTS
+                Activer les contrôles pour TOUS les comptes : saisir {v.activationPhrase}
                 <input name="confirm" required />
               </label>
-              <button>Activer définitivement sur cette base</button>
+              {v.mode === 'live' && <label>Référence d’accord de mise en service réelle <input name="evidence" required minLength={4} /></label>}
+              <button disabled={!v.checkoutConfigured}>Activer sur cette base</button>
             </form>
           )}
+        </section>
+        <section className="card stack">
+          <h2>Historique des décisions commerciales</h2>
+          {v?.audit.map((entry) => <p key={entry.id}>{new Date(entry.createdAt).toLocaleString('fr-FR')} · {entry.action} · {entry.targetId} · {entry.actorId}
+            {entry.metadata?.mode && ` · ${entry.metadata.mode}`}{entry.metadata?.evidence && ` · ${entry.metadata.evidence}`}</p>)}
         </section>
         <section className="card stack">
           <h2>Comptes et incidents</h2>
@@ -205,7 +216,7 @@ export default function Commerce() {
               Preuve de l’examen
               <input name="evidence" required />
             </label>
-            <button>Vérifier les remboursements auprès de Stripe test (lecture seule)</button>
+            <button>Vérifier les remboursements auprès de Stripe (lecture seule)</button>
           </form>
           <h3>Coûts fournisseurs inconnus</h3>
           {!unknown.length

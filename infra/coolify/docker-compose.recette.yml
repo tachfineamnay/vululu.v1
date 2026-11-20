@@ -150,6 +150,7 @@ services:
     restart: unless-stopped
     environment:
       <<: *api-env
+      BILLING_STRIPE_MODE: test
       STRIPE_TEST_SECRET_KEY: ${STRIPE_TEST_SECRET_KEY:-}
       STRIPE_TEST_WEBHOOK_SECRET: ${STRIPE_TEST_WEBHOOK_SECRET:-}
       POSTIZ_ANALYTICS_ENABLED: ${POSTIZ_ANALYTICS_ENABLED:-0}

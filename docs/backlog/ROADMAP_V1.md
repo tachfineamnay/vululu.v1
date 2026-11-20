@@ -26,6 +26,10 @@ Adaptateurs Replicate et Runway conservés, suivi et récupération dans ToolBro
 
 Connexion Postiz par le client, programmation approuvée et suivi des reçus dans le calendrier, kit manuel hors périmètre : [livraison et activation](../delivery/F04_MULTICHANNEL_PUBLISHING.md). Aucun réseau réel activé.
 
+### F05 — Facturation commerciale (2026-11-20)
+
+Séparation test/réel, Checkout et webhooks signés, droits et crédits sur le ledger existant : [parcours et procédure d’activation](../delivery/F05_COMMERCIAL_BILLING.md). Aucun débit ni déploiement.
+
 ## 2. Principes de séquencement
 
 ### Studio du 2026-11-06
