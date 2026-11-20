@@ -1,5 +1,7 @@
 # Règles UX — simple au départ, précis à l'usage
 
+> **Vision actuelle (20 novembre 2026) :** [Vululu, partenaire créatif guidé et brouillon permanent](../product/VULULU_EXPERIENCE_VISION_2026-11-20.md). Le parcours de référence commence par **intention → canal → format → brainstorming avec l'agent → assets → propositions de DA → validation**, sans imposer un écran par étape. Cette orientation de conception complète les parcours existants sans supprimer les capacités déjà codées.
+
 ## Modèle mental
 
 | Objet | Explication destinée à l'utilisateur |
