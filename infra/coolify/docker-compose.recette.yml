@@ -150,6 +150,7 @@ services:
     restart: unless-stopped
     environment:
       <<: *api-env
+      VULULU_BETA_MODE: ${VULULU_BETA_MODE:-1}
       BILLING_STRIPE_MODE: test
       STRIPE_TEST_SECRET_KEY: ${STRIPE_TEST_SECRET_KEY:-}
       STRIPE_TEST_WEBHOOK_SECRET: ${STRIPE_TEST_WEBHOOK_SECRET:-}
