@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import type Stripe from 'stripe';
 import { z } from 'zod';
 import { prisma } from '@vululu/db';
 import {
@@ -6,10 +7,12 @@ import {
   applyEvent,
   audit,
   checkout,
+  cancelCheckout,
+  enableCommerce,
+  paymentReceipt,
   createProduct,
   fail,
   lock,
-  stripeClient,
   verify,
   reconcileRefund,
 } from '../infrastructure/billing/service';
@@ -21,6 +24,7 @@ import {
   exportPage,
   erase,
 } from '../infrastructure/billing/support';
+import { activationPhrase, billingConfig, requestedBillingMode } from '../infrastructure/billing/config';
 import { rateLimitPreHandler } from '../infrastructure/security/rateLimiter';
 const key = z.string().min(1).max(160),
   message = z.string().trim().min(2).max(3000),
@@ -49,7 +53,7 @@ export async function billingWebhook(app: FastifyInstance) {
     },
   );
 }
-export async function billingRoutes(app: FastifyInstance) {
+export async function billingRoutes(app: FastifyInstance, { stripe }: { stripe?: Stripe } = {}) {
   app.addHook('onRequest', async (_r, reply) => {
     reply.header('Cache-Control', 'private, no-store');
   });
@@ -72,21 +76,10 @@ export async function billingRoutes(app: FastifyInstance) {
   app.get('/api/billing/account', auth, (r) => account(r.currentUser!.id));
   app.post('/api/billing/checkout', auth, (r) => {
     const b = z.strictObject({ productId: z.uuid(), requestKey: z.uuid() }).parse(r.body);
-    return checkout(r.currentUser!.id, b.productId, b.requestKey);
+    return checkout(r.currentUser!.id, b.productId, b.requestKey, stripe);
   });
-  app.post('/api/billing/orders/:id/cancel', auth, async (r) => {
-    const o = await prisma.billingOrder.findFirst({ where: { id: id(r.params), userId: r.currentUser!.id } });
-    if (!o) return fail(404, 'order_not_found');
-    if (!['PENDING', 'FAILED'].includes(o.state) || !o.sessionId) return fail(409, 'not_open');
-    const stripe = stripeClient();
-    await prisma.$transaction((tx) => audit(tx, r.currentUser!.id, 'checkout.expiration_requested', o.id));
-    try {
-      await stripe.checkout.sessions.expire(o.sessionId, {}, { idempotencyKey: 'expire:' + o.id });
-    } catch {
-      return fail(409, 'expiration_not_confirmed');
-    }
-    return { awaitingWebhook: true };
-  });
+  app.post('/api/billing/orders/:id/cancel', auth, (r) => cancelCheckout(r.currentUser!.id, id(r.params), stripe));
+  app.post('/api/billing/orders/:id/receipt', auth, (r) => paymentReceipt(r.currentUser!.id, id(r.params), stripe));
   app.get('/api/billing/tickets', auth, (r) => threads({ userId: r.currentUser!.id }));
   app.post('/api/billing/tickets', auth, (r) => {
     const b = z.strictObject({ subject: z.string().trim().min(2).max(120), message }).parse(r.body);
@@ -144,14 +137,25 @@ export async function billingRoutes(app: FastifyInstance) {
   });
   app.get('/api/admin/commerce', admin, async (r) => {
     await prisma.$transaction((tx) => audit(tx, r.currentUser!.id, 'admin.overview_read', 'commerce'));
+    const mode = requestedBillingMode();
+    const control = await prisma.billingControl.findUniqueOrThrow({ where: { id: 'commercial' } });
     return {
+      mode,
+      activeMode: control.mode,
+      activationPhrase: mode ? activationPhrase(mode) : null,
+      checkoutConfigured: !!billingConfig()?.checkoutEnabled,
+      audit: await prisma.auditEvent.findMany({ where: { targetType: 'commercial', action: { in: [
+        'commerce.enforcement.enabled', 'commerce.catalog.approved', 'commerce.catalog.visibility',
+        'commerce.refund.reconciled', 'commerce.account.suspension', 'commerce.credit.reconciled'
+      ] } }, orderBy: { createdAt: 'desc' }, take: 40,
+        select: { id: true, action: true, targetId: true, actorId: true, createdAt: true, metadata: true } }),
       products: await prisma.billingProduct.findMany({ orderBy: { createdAt: 'desc' }, take: 100 }),
-      commercial: (await prisma.billingControl.findUniqueOrThrow({ where: { id: 'commercial' } })).enabled,
+      commercial: control.enabled,
       cases: await threads({}),
       incidents: await prisma.billingOrder.findMany({
         where: { OR: [{ state: 'PARTIAL_REVIEW' }, { refundReview: true }] },
         take: 100,
-        select: { id: true, userId: true, refunded: true },
+        select: { id: true, userId: true, refunded: true, mode: true },
       }),
       holds: await prisma.billingUse.findMany({
         where: { state: 'HELD' },
@@ -171,13 +175,8 @@ export async function billingRoutes(app: FastifyInstance) {
     });
   });
   app.post('/api/admin/commerce/enable', admin, (r) => {
-    z.strictObject({ confirm: z.literal('ENABLE TEST ENTITLEMENTS') }).parse(r.body);
-    return prisma.$transaction(async (tx) => {
-      if (!(await tx.billingProduct.count({ where: { listed: true } }))) return fail(409, 'catalog_empty');
-      await tx.billingControl.update({ where: { id: 'commercial' }, data: { enabled: true } });
-      await audit(tx, r.currentUser!.id, 'enforcement.enabled', 'commercial');
-      return { enabled: true };
-    });
+    const b = z.strictObject({ confirm: z.string().max(40), evidence: evidence.optional() }).parse(r.body);
+    return enableCommerce(r.currentUser!.id, b.confirm, b.evidence);
   });
   app.post('/api/admin/commerce/accounts/:id', admin, (r) => {
     const b = z.strictObject({ suspended: z.boolean(), evidence }).parse(r.body),

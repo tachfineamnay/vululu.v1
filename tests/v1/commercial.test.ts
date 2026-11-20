@@ -11,6 +11,7 @@ const enabled = vi.hoisted(() => {
   Object.assign(process.env, {
     DATABASE_URL: u.href,
     APP_ENV: 'test',
+    BILLING_STRIPE_MODE: 'test',
     SESSION_SECRET: crypto.randomUUID(),
     APP_ORIGIN: 'http://localhost:3100',
     STRIPE_TEST_SECRET_KEY: 'sk_test_fixture_no_network',
@@ -23,6 +24,8 @@ import { buildServer } from '../../apps/api/src/server';
 import {
   account,
   checkout,
+  cancelCheckout,
+  paymentReceipt,
   stripeClient,
   reconcileRefund,
 } from '../../apps/api/src/infrastructure/billing/service';
@@ -66,7 +69,7 @@ async function order(user: string) {
     const order = (input as { client_reference_id: string }).client_reference_id;
     return {
       id: 'cs_test_' + order,
-      livemode: false,
+      livemode: false, status: 'open', mode: 'payment', currency: 'usd', amount_total: fixturePrice,
       client_reference_id: order,
       url: 'https://checkout.stripe.com/c/pay/cs_test_' + order,
     } as never;
@@ -83,7 +86,7 @@ async function order(user: string) {
   );
   vi.spyOn(client.checkout.sessions, 'retrieve').mockResolvedValue({
     id: 'cs_test_' + r.orderId,
-    livemode: false,
+    livemode: false, status: 'open', mode: 'payment', currency: 'usd', amount_total: fixturePrice,
     client_reference_id: r.orderId,
     url: r.url,
   } as never);
@@ -451,4 +454,46 @@ describe.skipIf(!enabled)('C12 — controlled test-mode financial fixtures only'
     expect(result.json(), result.body).toEqual({ deleted: true });
     expect((await app.inject({ url: '/api/billing/account', headers: u.headers })).statusCode).toBe(401);
   });
+  it('separates catalog, checkout, signed events and spendable balances by mode without enabling live', async () => {
+    const u = await login(), id = randomUUID(), liveProduct = randomUUID();
+    const p = await prisma.billingProduct.findUniqueOrThrow({ where: { id: product } });
+    await prisma.billingProduct.create({ data: { ...p, id: liveProduct, mode: 'live' } });
+    try {
+      await expect(checkout(u.id, liveProduct, randomUUID())).rejects.toMatchObject({ code: 'product_not_available' });
+      const row = await prisma.billingOrder.create({ data: { id, userId: u.id, productId: liveProduct, mode: 'live',
+        stripeAccount: 'acct_fixture', requestKey: randomUUID(), state: 'PAID', paidAt: new Date(), expiresAt: new Date(Date.now() + 300000) } });
+      const a = await account(u.id);
+      expect(a.catalog.some((o) => o.id === liveProduct)).toBe(false);
+      expect(a.orders.find((o) => o.id === id)).toMatchObject({ status: 'INACTIVE_MODE', premium: { available: 0 } });
+      await expect(prisma.$executeRaw`SELECT billing_hold(${u.id},${randomUUID()},'media.image@1','premium')`).rejects.toThrow(/billing_plan_required/);
+      expect((await webhook(event(id))).statusCode).toBe(409);
+      expect((await prisma.billingOrder.findUniqueOrThrow({ where: { id } })).intentId).toBe(row.intentId);
+      expect(await prisma.billingReceipt.count({ where: { orderId: id } })).toBe(0);
+      expect((await post('/api/admin/commerce/enable', { confirm: 'ENABLE LIVE ENTITLEMENTS', evidence: 'fixture only' }, admin.headers)).statusCode).toBe(400);
+    } finally {
+      await prisma.billingOrder.deleteMany({ where: { id } });
+      await prisma.billingProduct.delete({ where: { id: liveProduct } });
+    }
+  });
+  it('keeps cancellation webhook-authoritative and returns only an owner-scoped Stripe receipt', async () => {
+    const u = await login(), id = await order(u.id), client = stripeClient();
+    const expire = vi.spyOn(client.checkout.sessions, 'expire').mockResolvedValue({} as never);
+    await expect(cancelCheckout(admin.id, id, client)).rejects.toMatchObject({ statusCode: 404 });
+    expect(await cancelCheckout(u.id, id, client)).toEqual({ awaitingWebhook: true });
+    expect(expire).toHaveBeenCalledWith('cs_test_' + id, {}, { idempotencyKey: 'expire:test:' + id });
+    expect((await account(u.id)).orders[0].status).toBe('PENDING');
+    await webhook(event(id, 'checkout.session.expired', { id: 'cs_test_' + id, client_reference_id: id }));
+    expect((await account(u.id)).orders[0].status).toBe('CANCELLED');
+    const paid = await order(u.id);
+    await webhook(event(paid));
+    const retrieve = vi.spyOn(client.paymentIntents, 'retrieve').mockResolvedValue({
+      id: 'pi_' + paid, status: 'succeeded', livemode: false, metadata: { vululuOrder: paid }, currency: 'usd', amount_received: fixturePrice,
+      latest_charge: { payment_intent: 'pi_' + paid, livemode: false, receipt_url: 'https://pay.stripe.com/receipts/payment/fixture' }
+    } as never);
+    await expect(paymentReceipt(admin.id, paid, client)).rejects.toMatchObject({ statusCode: 404 });
+    expect(retrieve).not.toHaveBeenCalled();
+    expect(await paymentReceipt(u.id, paid, client)).toEqual({ url: 'https://pay.stripe.com/receipts/payment/fixture' });
+    expect(retrieve).toHaveBeenCalledWith('pi_' + paid, { expand: ['latest_charge'] });
+  });
+
 });
