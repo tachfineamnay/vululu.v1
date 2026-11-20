@@ -2,6 +2,11 @@
 
 Ce dossier contient le corpus fondateur V1.2 et les documents d'inauguration. Il fait autorité pour le périmètre, l'architecture et les règles de développement.
 
+## Vision d'expérience actuelle (20 novembre 2026)
+
+- [Vululu — partenaire créatif, brouillon permanent et IA qui simplifie les écrans](product/VULULU_EXPERIENCE_VISION_2026-11-20.md) : vision produit récente, modèle intention → canal → format → brainstorming → assets → directions artistiques → validation, progression image puis vidéo puis TTS.
+- Ce cadrage de conception complète les décisions UX et le corpus fondateur **sans modifier les documents importés verbatim**. Il ne déclenche aucune modification de code ni aucun paiement.
+
 ## 1. Corpus fondateur
 
 | Fichier | Nature | Version | Statut |

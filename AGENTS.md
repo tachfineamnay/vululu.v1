@@ -2,6 +2,8 @@
 
 Ce fichier s'applique à tout agent (DeepSeek Harness, Codex, Claude, Cursor, MCP client) qui travaille dans ce dépôt. Il prime sur les habitudes génériques de l'agent.
 
+> **Orientation produit actuelle (2026-11-20) :** pour toute mission touchant aux parcours client, au Studio ou à l'IA créative, lire [la vision d'expérience Vululu](docs/product/VULULU_EXPERIENCE_VISION_2026-11-20.md). L'IA doit simplifier les écrans ; la campagne démarre par intention, canal et format, puis brainstorming, assets, DA et validation. Le travail reste éditable en brouillon. Ce texte est un cadrage de conception et ne modifie pas les exigences de sécurité, d'autorisation, de capacités réelles ou de coût.
+
 ## 1. Autorité documentaire
 
 Ordre de lecture obligatoire :
