@@ -27,7 +27,7 @@ export function SocialConnections({ onChange }: { onChange: () => void }) {
     else { credential(''); discover([]); select(''); link(''); }
   }}>
     <summary>Comptes de publication</summary>
-    <p>Associez les comptes de votre espace Postiz avec une clé API de cet espace. La clé n’est pas affichée après l’association.</p>
+    {info?.enabled ? <p>Associez les comptes de votre espace Postiz avec sa clé API. La clé n’est pas affichée après l’association.</p> : info && <p>La connexion Postiz n’est pas activée ici. Vous pouvez toujours télécharger le kit de publication manuelle.</p>}
     {error && <p role="alert">{error}</p>}
     {info && <ul>{socialChannels.map((name) => {
       const rows = info.connections.filter((c) => c.platform === name);

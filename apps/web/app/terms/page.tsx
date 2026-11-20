@@ -6,11 +6,11 @@ export default function Terms() {
   return (
     <main className="page stack">
       <LanguageControl />
-      <h1>{t('Conditions du programme de test', 'Test programme terms')}</h1>
+      <h1>{t('Informations et conditions', 'Information and terms')}</h1>
       <p>
         {t(
-          'Projet de texte soumis à validation juridique. Ce programme sur invitation ne constitue pas une offre commerciale finale. Les pass utilisent Stripe test, sans paiement réel ni renouvellement automatique.',
-          'Draft for legal review. This invitation-only programme is not a final commercial offer. Passes use Stripe test with no real payment or automatic renewal.',
+          'Informations produit, soumises à validation juridique avant ouverture des ventes. Mon compte indique si les achats sont indisponibles, en test sans débit, ou en mode réel. Les pass ne sont pas renouvelés automatiquement.',
+          'Product information, subject to legal review before sales open. My account shows whether purchases are unavailable, in test mode without a charge, or live. Passes do not renew automatically.',
         )}
       </p>
       <h2>{t('Contenus et diffusion', 'Content and publication')}</h2>

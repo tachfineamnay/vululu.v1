@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import type { MediaCapability, MediaRequest } from '@vululu/contracts';
 import { api, postJson } from '../lib/api';
+type CustomerCapability = MediaCapability & { accountAuthorized: boolean };
 type Row = {
   id: string;
   revision: number;
@@ -56,7 +57,7 @@ export function MediaGenerationPanel({
   reload: () => Promise<void>;
 }) {
   const base = '/api/projects/' + project + '/media-generation';
-  const [caps, config] = useState<MediaCapability[]>([]),
+  const [caps, config] = useState<CustomerCapability[]>([]),
     [rows, list] = useState<Row[]>([]),
     [kind, choose] = useState<MediaRequest['kind']>('image'),
     [prompt, write] = useState(''),
@@ -82,7 +83,7 @@ export function MediaGenerationPanel({
   }, [base, open, pending]);
   const cap = caps.find((c) => c.kind === kind);
   async function refresh() {
-    const [c, h] = await Promise.all([api<MediaCapability[]>('/api/media/capabilities'), api<Row[]>(base)]);
+    const [c, h] = await Promise.all([api<CustomerCapability[]>('/api/media/capabilities'), api<Row[]>(base)]);
     config(c);
     list(h);
     setRefreshError(false);
@@ -121,6 +122,7 @@ export function MediaGenerationPanel({
                 : 'Configuré (disponibilité non testée)'}{' '}
             · plafond : {cap.maxCents} centime(s) USD
           </p>
+          {cap.availability === 'configured' && !cap.accountAuthorized && <p>La génération n’est pas autorisée pour ce compte. <a href="/account">Vérifier mes droits ou contacter l’assistance</a>.</p>}
           <label>
             Description
             <textarea
@@ -164,6 +166,7 @@ export function MediaGenerationPanel({
               !rights ||
               prompt.trim().length < 3 ||
               cap.availability !== 'configured' ||
+              !cap.accountAuthorized ||
               (kind === 'video' && !ref)
             }
             onClick={() =>

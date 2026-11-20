@@ -1,5 +1,6 @@
 'use client';
 import { useEffect,useRef,useState } from 'react';
+import Link from 'next/link';
 import type { MarketingContext, MarketingOutput } from '@vululu/contracts';
 import { api, postJson } from '../lib/api';
 type Revision = {
@@ -26,14 +27,12 @@ export function MarketingAssistant({ project, context }: { project: string; cont
     [r, show] = useState<Revision>(),
     [versions, list] = useState<{ version: number; origin: string }[]>([]),
     [busy, work] = useState(false),
-    [error, fail] = useState(''),
-    [op, operation] = useState<{ id: string; digest: string; maxCents: number; state: string }>();
+    [error, fail] = useState('');
   const details=useRef<HTMLDetailsElement>(null);
   useEffect(()=>{const q=new URLSearchParams(location.search);if(q.get('plan')==='next'){setWeek(monday(true));setOffer(q.get('offer')??'');if(details.current)details.current.open=true;}},[project]);
   function display(v: Revision) {
     show(v);
     attest(false);
-    operation(undefined);
   }
   async function act(fn: () => Promise<void>) {
     if (busy) return;
@@ -146,7 +145,7 @@ export function MarketingAssistant({ project, context }: { project: string; cont
             </ul>
             <p>Informations non utilisées comme faits : {r.result.unknowns.join(' ; ')}.</p>
             <h4>Suggestions éditoriales</h4>
-            {r.result.suggestions.map((d) => (
+            {r.result.suggestions.map((d, index) => (
               <article key={d.angle}>
                 <strong>
                   {d.day ?? 'Date à choisir'} · {d.platform}
@@ -155,6 +154,9 @@ export function MarketingAssistant({ project, context }: { project: string; cont
                 <p>{d.idea}</p>
                 <p>{d.caption}</p>
                 <p>{d.cta}</p>
+                {r.approvedAt && <Link href={`/calendar?${new URLSearchParams({ offer: r.context.offerId, planProject: project, planVersion: String(r.version), idea: String(index) })}`}>
+                  Reprendre cette idée dans le calendrier
+                </Link>}
                 <details>
                   <summary>Variantes et storyboard</summary>
                   {d.variants.map((v) => (
@@ -194,32 +196,7 @@ export function MarketingAssistant({ project, context }: { project: string; cont
             >
               Approuver ce plan uniquement
             </button>
-            <button
-              onClick={() =>
-                void act(async () => operation(await postJson(`${base}/${r.version}/refine`, {})))
-              }
-            >
-              Estimer une variante via le worker
-            </button>
-            {op && (
-              <>
-                <p>
-                  État : {op.state}. Réservation maximale : {op.maxCents} centimes. Sans fournisseur qualifié,
-                  le worker produit une variante locale.
-                </p>
-                {op.state === 'PROPOSED' && (
-                  <button
-                    onClick={() =>
-                      void act(async () =>
-                        operation(await postJson(`/api/execution/${op.id}/approve`, { digest: op.digest }))
-                      )
-                    }
-                  >
-                    Autoriser la génération plafonnée
-                  </button>
-                )}
-              </>
-            )}
+            <p className="hint">Pour une demande personnalisée, ouvrez l’assistant de campagne et composition. Il indique les modes disponibles pour votre compte.</p>
           </>
         )}
         {error && <p role="alert">{error}</p>}

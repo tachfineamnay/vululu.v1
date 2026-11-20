@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import { socialChannels } from './SocialConnections';
 import { api, postJson } from '../../lib/api';
 type Panel = {
+  directEnabled: boolean;
+  scheduleAuthorized: boolean;
   revisions: { revision: number; platform: string }[];
   connections: { id: string; channel: string; displayName: string | null; platform: string; expiresAt: string }[];
   requests: {
@@ -92,7 +94,7 @@ export function PublishingPanel({ id, connectionsVersion = 0 }: { id: string; co
     return () => {
       active = false;
     };
-  }, [base, rev, query, connectionsVersion]);
+  }, [base, rev, query, refresh, connectionsVersion]);
   async function action(fn: () => Promise<void>) {
     if (busy) return;
     fail('');
@@ -111,14 +113,15 @@ export function PublishingPanel({ id, connectionsVersion = 0 }: { id: string; co
     <section className="card stack">
       <h2>Publication et reçus</h2>
       <p>Le statut éditorial ne confirme pas une publication distante.</p>
+      {info && !info.directEnabled && <p>Programmation directe indisponible ici. Utilisez le kit manuel après les deux approbations.</p>}
+      {info?.directEnabled && !info.scheduleAuthorized && <p>La programmation directe n’est pas autorisée pour ce compte. Le kit manuel reste disponible.</p>}
       {error && <p role="alert">{error}</p>}
       <button type="button" onClick={() => reload((n) => n + 1)}>
         Actualiser les reçus
       </button>
       {info && !info.revisions.length && (
         <p>
-          Aucune création approuvée pour cette version du contenu. Liez et approuvez une déclinaison dans le
-          Studio.
+          Aucune création approuvée pour ce contenu. Dans le Studio, liez la composition au contenu actuel, rendez-la et approuvez-la.
         </p>
       )}
       {info?.requests.map((r) => (
@@ -230,7 +233,7 @@ export function PublishingPanel({ id, connectionsVersion = 0 }: { id: string; co
               Télécharger le kit manuel (médias + légende)
             </a>
           )}
-          {p.direct && !p.issues.length && (
+          {p.direct && info?.scheduleAuthorized && !p.issues.length && (
             <>
               <label>
                 Compte destinataire
@@ -260,7 +263,7 @@ export function PublishingPanel({ id, connectionsVersion = 0 }: { id: string; co
               </button>
             </>
           )}
-          {!p.direct ? <p>Réseau ou format en publication manuelle.</p> : !eligible.length ? <p>Aucun compte actif pour ce réseau. Associez un compte ou utilisez le kit manuel.</p> : Date.parse(p.when) <= Date.now() ? <p>Choisissez une date future dans le calendrier ou utilisez le kit manuel.</p> : null}
+          {!p.direct ? (info?.directEnabled && <p>Ce réseau ou format est à publier manuellement.</p>) : !info?.scheduleAuthorized ? null : !eligible.length ? <p>Aucun compte actif pour ce réseau. Associez un compte ou utilisez le kit manuel.</p> : Date.parse(p.when) <= Date.now() ? <p>Choisissez une date future dans le calendrier ou utilisez le kit manuel.</p> : null}
         </>
       )}
       {cmd && (

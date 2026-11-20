@@ -9,11 +9,11 @@ const PRIMARY = [
   { key: 'home', href: '/', label: 'Mes projets' },
   { key: 'calendar', href: '/calendar', label: 'Calendrier' },
   { key: 'contexts', href: '/contexts', label: 'Marques et références' },
-  { key: 'creations', href: '/creations', label: 'Mes créations' }
+  { key: 'creations', href: '/creations', label: 'Mes créations' },
+  { key: 'results', href: '/results', label: 'Résultats' }
 ];
 const SECONDARY = [
   { key:'account',href:'/account',label:'Mon compte' },
-  { key: 'results', href: '/results', label: 'Résultats' },
   { key: 'campaigns', href: '/campaigns', label: 'Campagnes' },
   { key: 'assets', href: '/assets', label: 'Ressources' },
   { key: 'catalog', href: '/catalog', label: 'Catalogue' }

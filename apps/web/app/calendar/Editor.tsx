@@ -1,7 +1,8 @@
 'use client';
 import { useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
-import { nextStages, variant, type CalendarItem, type Content, type Stage } from '@vululu/contracts';
+import { useRouter } from 'next/navigation';
+import { availableFormats, nextStages, productionCapability, variant, type CalendarItem, type Content, type Stage } from '@vululu/contracts';
 import { api, postJson, type CampaignSummary, type ProjectSummary } from '../../lib/api';
 import type { Offer } from './suggestions';
 import { useUnsavedChanges } from '../../lib/useUnsavedChanges';
@@ -29,9 +30,11 @@ export function Editor({
   projects: ProjectSummary[];
   campaigns: CampaignSummary[];
   close: () => void;
-  saved: (date: Date, archived: boolean) => void;
+  saved: (row: CalendarItem) => void;
 }) {
+  const router = useRouter();
   const [draft, set] = useState(initial);
+  const [platform, selectPlatform] = useState(initial.variants[0].platform);
   const [local, setLocal] = useState(localInput(new Date(initial.plannedAt)));
   const [late, setLate] = useState(instants(local)[1]?.toISOString() === initial.plannedAt);
   const [busy, working] = useState(false),
@@ -58,6 +61,16 @@ export function Editor({
   const available = instants(local),
     context = offers.find((o) => o.id === draft.offerId)?.contextId;
   const locked = !['IDEA', 'DRAFT'].includes(initial.status) && draft.status !== 'DRAFT';
+  const projectHref = (projectId: string) => `/projects/${encodeURIComponent(projectId)}?${new URLSearchParams({ item: initial.id, offer: initial.offerId })}`;
+  async function start() {
+    if (busy || dirty) return;
+    working(true); fail('');
+    try {
+      const project = await postJson<{ projectId: string }>(`/api/calendar/${initial.id}/project`, { expectedVersion: initial.version, platform });
+      router.push(projectHref(project.projectId));
+    } catch (error) { fail(error instanceof Error ? error.message : 'Le projet n’a pas pu être créé.'); }
+    finally { working(false); }
+  }
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (busy) return;
@@ -80,8 +93,7 @@ export function Editor({
       };
       const body = JSON.stringify(data);
       if (retry.current.body !== body) retry.current = { body, key: crypto.randomUUID() };
-      await postJson('/api/calendar', { id, expectedVersion: version, requestId: retry.current.key, data });
-      saved(instant, draft.archived);
+      saved(await postJson<CalendarItem>('/api/calendar', { id, expectedVersion: version, requestId: retry.current.key, data }));
     } catch (err) {
       fail(err instanceof Error ? err.message : 'Enregistrement impossible.');
     } finally {
@@ -174,7 +186,14 @@ export function Editor({
             </select>
           </label>
         </fieldset>
-        {draft.projectId && <Link href={'/projects/' + draft.projectId}>Ouvrir le projet dans le Studio</Link>}
+        {initial.projectId && <Link href={projectHref(initial.projectId)}>Ouvrir le projet dans le Studio</Link>}
+        {!!initial.version && !initial.projectId && !initial.archived && ['IDEA', 'DRAFT'].includes(initial.status) && <div className="stack">
+          {initial.variants.length > 1 && <label>Plateforme à créer <select className="input" value={platform} onChange={(event) => selectPlatform(variant.shape.platform.parse(event.target.value))}>
+            {initial.variants.map((v) => <option key={v.platform}>{v.platform}</option>)}
+          </select></label>}
+          <button type="button" className="btn btn-secondary" disabled={dirty || busy} onClick={() => void start()}>Créer le projet dans le Studio</button>
+          {dirty && <p className="hint">Enregistrez vos modifications avant d’ouvrir le Studio.</p>}
+        </div>}
         <fieldset disabled={locked} className="stack">
           <legend>Déclinaisons par plateforme</legend>
           {draft.variants.map((v, i) => {
@@ -191,7 +210,11 @@ export function Editor({
                   <select
                     className="input"
                     value={v.platform}
-                    onChange={(e) => update({ platform: e.target.value as typeof v.platform })}
+                    onChange={(e) => {
+                      const platform = variant.shape.platform.parse(e.target.value);
+                      const formats = availableFormats[platform];
+                      update({ platform, format: (formats as readonly string[]).includes(v.format) ? v.format : formats[0] });
+                    }}
                   >
                     {variant.shape.platform.options.map((p) => (
                       <option disabled={draft.variants.some((x, j) => j !== i && x.platform === p)} key={p}>
@@ -207,9 +230,8 @@ export function Editor({
                     value={v.format}
                     onChange={(e) => update({ format: e.target.value as typeof v.format })}
                   >
-                    {variant.shape.format.options.map((f) => (
-                      <option key={f}>{f}</option>
-                    ))}
+                    {!(availableFormats[v.platform] as readonly string[]).includes(v.format) && <option value={v.format}>{v.format} (ancien choix)</option>}
+                    {availableFormats[v.platform].map((f) => <option key={f} value={f}>{productionCapability(f)?.label}</option>)}
                   </select>
                 </label>
                 <label>
@@ -258,9 +280,8 @@ export function Editor({
                   ...draft.variants,
                   {
                     ...draft.variants[0],
-                    platform: variant.shape.platform.options.find(
-                      (p) => !draft.variants.some((v) => v.platform === p)
-                    )!
+                    ...(() => { const platform = variant.shape.platform.options.find((p) => !draft.variants.some((v) => v.platform === p))!;
+                      return { platform, format: availableFormats[platform][0] }; })()
                   }
                 ])
               }
@@ -303,7 +324,7 @@ export function Editor({
             ))}
           </select>
         </label>
-        <p className="hint">Suivi manuel : aucun contenu ne sera publié automatiquement.</p>
+        <p className="hint">Passez de l’idée au brouillon, puis à la relecture et à l’approbation. L’état éditorial n’envoie rien au réseau.</p>
         {!!draft.version && (
           <label>
             <input

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { buffer } from 'node:stream/consumers';
 import { prisma } from '@vululu/db';
-import { content, creativeSpec } from '@vululu/contracts';
+import { content, creativeSpec, type Content } from '@vululu/contracts';
 import { zipSync, strToU8 } from 'fflate';
 import type { CreativeStudio } from '../../application/creative';
 import { HttpError } from '../../errors';
@@ -10,22 +10,47 @@ import { capabilities, type Attachment, type PublishingPlatform } from './provid
 export const problem = (status: number, code: string): never => {
   throw new HttpError(status, code, code);
 };
+// The creative approval binds editorial content. Moving the unchanged item through review
+// does not invalidate the artwork, but any intervening change (including time or archive)
+// requires an explicit new linked revision. Commands still pin the exact current version.
+export async function compatibleCalendarVersions(item: { id: string; version: number; plannedAt: Date }) {
+  const snapshot = (value: Content) => {
+    const { status, ...payload } = value;
+    void status;
+    return JSON.stringify({ ...payload, plannedAt: new Date(payload.plannedAt).toISOString() });
+  };
+  const parsed = content.safeParse({ ...item, plannedAt: item.plannedAt.toISOString() });
+  if (!parsed.success) return [item.version]; // Historical rows can still use an exact link.
+  const current = snapshot(parsed.data);
+  const rows = await prisma.contentRevision.findMany({ where: { itemId: item.id, version: { lte: item.version } },
+    select: { version: true, snapshot: true }, orderBy: { version: 'desc' }, take: 40 });
+  const versions = [item.version];
+  let expected = item.version;
+  for (const row of rows) {
+    const data = content.safeParse(row.snapshot);
+    if (row.version !== expected || !data.success || snapshot(data.data) !== current) break;
+    if (expected < item.version) versions.push(expected);
+    expected--;
+  }
+  return versions;
+}
 export async function preview(owner: string, itemId: string, revision: number, target?: PublishingPlatform) {
   const item = await prisma.contentItem.findFirst({ where: { id: itemId, userId: owner } });
   if (!item?.projectId) return problem(404, 'item_not_found');
+  const compatible = await compatibleCalendarVersions(item);
   const rev = await prisma.creativeRevision.findFirst({
     where: {
       projectId: item.projectId,
       project: { userId: owner },
       version: revision,
       contentItemId: item.id,
-      contentVersion: item.version
+      contentVersion: { in: compatible }
     }
   });
   if (!rev?.manifest || !rev.approvedAt) return problem(409, 'approved_revision_required');
   const spec = creativeSpec.parse(rev.spec),
     d = spec.delivery;
-  if (!d || d.calendar?.itemId !== itemId || d.calendar.version !== item.version)
+  if (!d || d.calendar?.itemId !== itemId || !compatible.includes(d.calendar.version))
     return problem(409, 'calendar_changed');
   const v = content.shape.variants.parse(item.variants).find((x) => x.platform === d.platform);
   if (!v) return problem(409, 'variant_missing');

@@ -35,7 +35,7 @@ export default function NewOffer() {
     setBusy(true); setError('');
     try {
       const offer = await postJson<{ id: string }>('/api/calendar/offers', { contextId: context.id, name: name.trim(), confirmed: true });
-      router.push(onboarding ? `${projectHref}&offer=${encodeURIComponent(offer.id)}` : `/calendar?offer=${encodeURIComponent(offer.id)}`);
+      router.push(`/calendar?offer=${encodeURIComponent(offer.id)}${onboarding ? '&onboarding=1' : ''}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : t('Création impossible.', 'Could not create the offer.'));
     } finally { setBusy(false); }
@@ -55,7 +55,7 @@ export default function NewOffer() {
       {context && <form className="card stack" onSubmit={save} aria-busy={busy}>
         <p className="muted">{t('Nommez un produit ou service de votre activité :', 'Name a product or service from your business:')} <strong>{context.name}</strong></p>
         <label className="label">{t('Nom de l’offre', 'Offer name')}<input className="input" maxLength={160} value={name} onChange={(e) => setName(e.target.value)} required /></label>
-        <button className="btn btn-primary" disabled={busy || !name.trim()}>{busy ? t('Enregistrement…', 'Saving…') : onboarding ? t('Confirmer et créer un projet', 'Confirm and start a project') : t('Confirmer l’offre', 'Confirm offer')}</button>
+        <button className="btn btn-primary" disabled={busy || !name.trim()}>{busy ? t('Enregistrement…', 'Saving…') : onboarding ? t('Confirmer et planifier ma semaine', 'Confirm and plan my week') : t('Confirmer l’offre', 'Confirm offer')}</button>
         {onboarding && <Link href={projectHref} className="text-link">{t('Continuer sans offre', 'Continue without an offer')}</Link>}
       </form>}
     </main>
