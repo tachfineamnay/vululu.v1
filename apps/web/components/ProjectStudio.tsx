@@ -16,6 +16,7 @@ import { CreativeEditor } from "./CreativeEditor";
 import ConversationProposalCard from './ConversationProposalCard';
 import { useUnsavedChanges } from '../lib/useUnsavedChanges';
 import ProjectJourney from './ProjectJourney';
+import CampaignJourney from './CampaignJourney';
 import { projectJourney } from '../lib/projectJourney';
 import CreationDelivery from './CreationDelivery';
 import { matchesStudioRevision, readStudioDraft, type CorrectionDraft, type StudioDraft } from '../lib/studioDraft';
@@ -434,6 +435,19 @@ export default function ProjectStudio({ id }: { id: string }) {
           </div>
           {demo&&<div className="studio-head-actions"><span className={'badge status-' + bundle.project.status} data-testid="status-badge">{statusLabel(bundle.project.status)}</span><div className="stack"><button id="produce" className="btn btn-primary" data-testid="produce" aria-describedby={!canProduce ? 'produce-reason' : undefined} onClick={produce} disabled={!canProduce || busy === 'produce'}>Produire la création</button>{!canProduce ? <p id="produce-reason" className="hint">{productionReason}</p> : null}</div></div>}
         </section>
+
+        <CampaignJourney
+          variant="project"
+          objectiveDone={bundle.project.objective.trim().length >= 2}
+          channelDone={!!bundle.project.platform}
+          formatDone={!!bundle.project.format}
+          assetsActive={true}
+          assetsHref={'/assets?context=' + encodeURIComponent(bundle.context.id) + '&project=' + encodeURIComponent(bundle.project.id)}
+          assetsHint={t('Choisissez les photos, le logo et les références de ce projet. La sélection reste modifiable ensuite.', 'Choose this project’s photos, logo and references. The selection stays editable afterwards.')}
+          identityName={bundle.context.name}
+          campaignId={bundle.project.campaignId ?? null}
+          projectId={bundle.project.id}
+        />
 
         <StudioDesk bundle={bundle} state={live.state} connection={live.connection} go={focusStudioSection}/>
         <CreativeEditor bundle={bundle} serverHead={live.state?.revisions[0]?.version} serverRenders={live.state?.renders} calendarSource={calendarSource}/>

@@ -274,3 +274,17 @@ main :where(input,select,textarea){max-inline-size:100%;box-sizing:border-box}
 .project-assistant > .stack { margin-block-start: var(--v-space-16); }
 .project-assistant :is(fieldset, select, textarea) { min-inline-size: 0; max-inline-size: 100%; }
 .assistant-preview { inline-size: min(100%, 28rem); block-size: auto; }
+
+/* P01 — parcours campagne : objectif, canal, format, ressources et étapes à venir. */
+[data-vululu-theme="blue"] .campaign-journey { display: grid; gap: var(--v-space-16); padding: var(--v-space-24); background: var(--v-color-surface); border-radius: var(--v-radius-control); }
+[data-vululu-theme="blue"] .campaign-journey-steps { list-style: none; display: flex; flex-wrap: wrap; gap: var(--v-space-8); padding: 0; margin: 0; }
+[data-vululu-theme="blue"] .campaign-journey-steps > li { display: inline-flex; align-items: center; gap: var(--v-space-8); padding: var(--v-space-8) var(--v-space-12); min-height: var(--v-layout-target); border: 1px solid var(--v-color-border); border-radius: var(--v-radius-small); background: var(--v-color-background); color: var(--v-color-text-muted); font-size: var(--v-font-size-label); line-height: var(--v-font-line-body); }
+[data-vululu-theme="blue"] .campaign-journey-steps > li[data-state="done"] { color: var(--v-color-success); background: var(--v-color-success-bg); border-color: var(--v-color-success); }
+[data-vululu-theme="blue"] .campaign-journey-steps > li[data-state="current"] { color: var(--v-color-action); background: var(--v-color-selected); border-color: var(--v-color-action); font-weight: var(--v-font-weight-semibold); }
+[data-vululu-theme="blue"] .campaign-journey-number { font-weight: var(--v-font-weight-bold); font-variant-numeric: tabular-nums; }
+[data-vululu-theme="blue"] .choice-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: var(--v-space-12); }
+[data-vululu-theme="blue"] .choice-card { display: flex; flex-direction: column; align-items: flex-start; gap: var(--v-space-8); text-align: left; padding: var(--v-space-16); min-height: var(--v-layout-control); color: var(--v-color-text); background: var(--v-color-surface); border: 1px solid var(--v-color-border); border-radius: var(--v-radius-control); cursor: pointer; }
+[data-vululu-theme="blue"] .choice-card:hover { border-color: var(--v-color-action); }
+[data-vululu-theme="blue"] .choice-card[aria-pressed="true"] { border-color: var(--v-color-action); background: var(--v-color-selected); box-shadow: inset 0 0 0 1px var(--v-color-action); }
+[data-vululu-theme="blue"] .choice-card:disabled { cursor: progress; opacity: .7; }
+@media (max-width: 639px) { [data-vululu-theme="blue"] .choice-grid { grid-template-columns: minmax(0, 1fr); } }

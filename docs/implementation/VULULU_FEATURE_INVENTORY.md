@@ -28,9 +28,9 @@
 | # | Étape | Statut | Où c'est implémenté | Écart concret |
 |---|---|---|---|---|
 | 1 | OBJECTIVE | IMPLEMENTED | `apps/web/app/projects/new/page.tsx:87-91` (titre + objectif), `apps/api/src/routes/projects.ts:27` | Porté par `Project` ; `Campaign` n'a que nom/description (`packages/domain/src/campaign.ts:6-27`) |
-| 2 | CHANNEL | PARTIAL | `packages/contracts/src/channels.ts:3`, étape 2 de `projects/new/page.tsx:97-100` | 3 canaux projet (TikTok/Instagram/LinkedIn) ; publication en gère 5 (`provider.ts:3`) — Facebook/Google absents du projet |
-| 3 | FORMAT | PARTIAL | `packages/contracts/src/productionFormats.ts:5-17`, `CreativeSpec` `packages/contracts/src/creative.ts:3-11` | `Video` = `studio:null` (aucune composition éditable) ; `Motion` déclaré (`channels.ts:4`) sans `productionFormat` ni rendu |
-| 4 | USER ASSETS | PARTIAL | `apps/web/app/assets/page.tsx`, `apps/api/src/routes/assets.ts:18-49`, `packages/application/src/use-cases/assets.ts` | Capacité réelle mais **non positionnée avant le brainstorming** : étape « références » = contexte, aucun fichier requis (`projects/new/page.tsx:94`) |
+| 2 | CHANNEL | PARTIAL | `packages/contracts/src/channels.ts:3`, `apps/web/app/projects/new/page.tsx` (P01 : cartes canal, formats filtrés), `apps/web/components/CampaignJourney.tsx` | 3 canaux projet (TikTok/Instagram/LinkedIn) ; publication en gère 5 (`provider.ts:3`) — Facebook/Google absents du projet |
+| 3 | FORMAT | PARTIAL | `packages/contracts/src/productionFormats.ts:5-17`, choix canal→format de `apps/web/app/projects/new/page.tsx` (P01) | `Video` = `studio:null` (aucune composition éditable) ; `Motion` déclaré (`channels.ts:4`) sans `productionFormat` ni rendu |
+| 4 | USER ASSETS | PARTIAL | `apps/web/app/assets/page.tsx`, `apps/api/src/routes/assets.ts:18-49`, `packages/application/src/use-cases/assets.ts` ; positionnée après le format dans `CampaignJourney` (P01) | Capacité réelle et navigable avant le brainstorming, mais **aucun prérequis serveur** : la confirmation/gate reste à faire (P02) |
 | 5 | AI BRAINSTORMING | PARTIAL | `apps/api/src/infrastructure/assistant/service.ts:49-65,125-151` (turns versionnés), `marketing/service.ts:45-92` | Moteur IA Vertex seulement si `ASSISTANT_VERTEX_ENABLED=1` ; repli hors-ligne déterministe ; **aucun asset utilisateur** dans le snapshot |
 | 6 | ART DIRECTIONS | MISSING (entité) | Substituts : `ProjectStudio.tsx:496-499` « Direction artistique simulée » (champ libre déterministe), stratégie de `MarketingRevision` | Aucun modèle Prisma de propositions de DA, aucune comparaison/versionnement de DA alternatives |
 | 7 | HUMAN SELECTION | PARTIAL | Approbation/refine : `routes/creative.ts:104`, `routes/marketing.ts:34`, `routes/assistant.ts:18-22` ; comparaison `RevisionCompare.tsx` | Pas de « rejeter/écarter » explicite d'une proposition ni de sélection multi-DA côte à côte |
@@ -157,4 +157,18 @@
 - **Leads/ventes/attribution : MISSING.** `results/page.tsx:35-41` les expose en `NOT_AVAILABLE` (« Aucun CRM connecté », « Aucune source de vente connectée »).
 - **Deux pipelines créatifs coexistent** : Studio natif versionné (`CreativeEditor.tsx`, `CreativeRevision`) et production historique déterministe (`ProjectStudio.tsx` + `worker/pipeline.ts` + `ProductionRun`). La coexistence est un risque de duplication et de parcours incohérent, pas une fonctionnalité.
 
-> **Rappel final** : inventaire établi par lecture seule au HEAD `f5d515b`. Aucune commande de test, de build ou de fournisseur n'a été exécutée ; tout statut est une lecture de code, jamais une certification.
+## 7. Mise à jour P01 — entrée de campagne (2026-11-20)
+
+Implémenté depuis cet inventaire (commit P01, `BUILD_UNVERIFIED`, aucun test exécuté) :
+
+- `apps/web/app/projects/new/page.tsx` : parcours **objectif → canal → format → identité → vérification**, objectif en langage naturel d'abord, canaux et formats filtrés par les contrats (`availableFormats`), aucune configuration fournisseur exposée.
+- `apps/web/lib/projectPresentation.ts` : `ProjectDraft` étendu (`campaignId`), reprise de brouillon tolérante, dérivation d'états `campaignJourneyStates`.
+- `apps/web/components/CampaignJourney.tsx` : carte des 12 étapes de la vision, états dérivés (fait / en cours / à venir), lien réel vers la bibliothèque de ressources, campagne réutilisée ; aucune étape future présentée comme faite.
+- `apps/web/components/ProjectStudio.tsx` : la carte est montée avant l'éditeur ; elle lit la campagne et la sélection de ressources du projet (états de chargement/erreur inclus).
+- `apps/web/app/campaigns/page.tsx` : entrée « Nouvelle création dans cette campagne » (`/projects/new?campaign=<id>`).
+- La campagne choisie est rattachée après création via le contrat existant `PUT /api/projects/:id/campaign`, avec reprise explicite si le rattachement échoue.
+- `apps/web/app/atelier-blue.css` : styles de la carte et des cartes de choix (tokens du design system uniquement).
+
+Limites P01 : le rattachement des ressources au projet n'est pas encore bloquant (P02) ; les specs E2E `projects-start`/`project-journey` ne sont pas réalignées (P12) ; aucun test, build, lint ni typecheck exécuté (campagne P00–P11).
+
+> **Rappel final** : inventaire établi par lecture seule au HEAD `f5d515b`, mis à jour par P01. Aucune commande de test, de build ou de fournisseur n'a été exécutée pour P01 ; tout statut est une lecture de code, jamais une certification.

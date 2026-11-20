@@ -188,4 +188,10 @@ Chaque lot laisse l'application fonctionnelle et se termine par un commit unique
 - Aucune fonctionnalité V2 (mémoire sémantique, préférences apprises, embeddings, marketplace, crédits).
 - Aucune planification de P12–P13, aucune certification ; P12–P13 restent hors de ce document.
 
-*Disclaimer : aucun test n'a été exécuté en P00 ; les statuts décrivent la présence de code à HEAD `f5d515b`, jamais une certification.*
+## État des lots
+
+| Lot | État | Commit / date | Preuves |
+|---|---|---|---|
+| P01 | **BUILD_UNVERIFIED** | `feat(p01)` du 2026-11-20 | Aucun test exécuté. Vérification manuelle : lecture du diff, parse syntaxique des fichiers modifiés, parcours de code (objectif → canal → format → identité → vérification, campagne optionnelle, carte 12 étapes, ressources liées). Limites : E2E non réaligné (P12) ; gate assets en P02. |
+
+*Disclaimer : aucun test n'a été exécuté en P00–P01 ; les statuts décrivent la présence de code à HEAD `f5d515b`, jamais une certification.*

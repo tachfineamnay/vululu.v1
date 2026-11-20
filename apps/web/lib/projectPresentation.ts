@@ -21,18 +21,56 @@ export const projectFormatLabels: Record<string, string> = {
   Motion: 'Motion design'
 };
 
+export const projectPlatforms = ['Instagram', 'TikTok', 'LinkedIn'] as const;
+export type ProjectPlatform = (typeof projectPlatforms)[number];
+
 export type ProjectDraft = {
-  title: string; objective: string; contextId: string; platform: 'TikTok' | 'Instagram' | 'LinkedIn';
+  title: string; objective: string; contextId: string; campaignId: string; platform: ProjectPlatform;
   format: ProductionFormat; sceneDurationSeconds: number; step: number;
 };
-export const emptyProjectDraft: ProjectDraft = { title: '', objective: '', contextId: '', platform: 'Instagram', format: 'Video', sceneDurationSeconds: 2, step: 0 };
+export const emptyProjectDraft: ProjectDraft = { title: '', objective: '', contextId: '', campaignId: '', platform: 'Instagram', format: 'Video', sceneDurationSeconds: 2, step: 0 };
 
 /** Le stockage de l'onglet n'est pas une source de confiance ni une sauvegarde serveur. */
 export function restoreProjectDraft(raw: string | null): ProjectDraft | null {
   if (!raw) return null;
   try {
     const value = JSON.parse(raw) as Partial<ProjectDraft>;
-    if (!value || typeof value !== 'object' || typeof value.title !== 'string' || value.title.length > 160 || typeof value.objective !== 'string' || value.objective.length > 8000 || typeof value.contextId !== 'string' || value.contextId.length > 128 || !['TikTok', 'Instagram', 'LinkedIn'].includes(value.platform ?? '') || !['Video','Story','Affiche','Carrousel','Reel'].includes(value.format??'') || !Number.isInteger(value.sceneDurationSeconds) || value.sceneDurationSeconds! < 1 || value.sceneDurationSeconds! > 15 || !Number.isInteger(value.step) || value.step! < 0 || value.step! > 3) return null;
-    return { title: value.title, objective: value.objective, contextId: value.contextId, platform: value.platform!, format: (availableFormats[value.platform!] as readonly string[]).includes(value.format!) ? value.format! : 'Video', sceneDurationSeconds: value.sceneDurationSeconds!, step: value.step! };
+    if (!value || typeof value !== 'object' || typeof value.title !== 'string' || value.title.length > 160 || typeof value.objective !== 'string' || value.objective.length > 8000 || typeof value.contextId !== 'string' || value.contextId.length > 128 || !(projectPlatforms as readonly string[]).includes(value.platform ?? '') || !['Video','Story','Affiche','Carrousel','Reel'].includes(value.format??'') || !Number.isInteger(value.sceneDurationSeconds) || value.sceneDurationSeconds! < 1 || value.sceneDurationSeconds! > 15 || !Number.isInteger(value.step) || value.step! < 0 || value.step! > 3) return null;
+    const campaignId = typeof value.campaignId === 'string' && value.campaignId.length <= 128 ? value.campaignId : '';
+    return { title: value.title, objective: value.objective, contextId: value.contextId, campaignId, platform: value.platform as ProjectPlatform, format: (availableFormats[value.platform as ProjectPlatform] as readonly string[]).includes(value.format!) ? value.format! : availableFormats[value.platform as ProjectPlatform][0], sceneDurationSeconds: value.sceneDurationSeconds!, step: value.step! };
   } catch { return null; }
+}
+
+/** Première étape du parcours de création non renseignée, sans état de workflow côté client. */
+export function entryStepComplete(draft: Pick<ProjectDraft, 'title' | 'objective'>): boolean {
+  return draft.title.trim().length >= 2 && draft.objective.trim().length >= 2;
+}
+
+export type CampaignJourneyKey =
+  | 'objective' | 'channel' | 'format' | 'assets' | 'brainstorm' | 'directions'
+  | 'selection' | 'creation' | 'review' | 'approval' | 'delivery' | 'results';
+export type CampaignJourneyState = 'done' | 'current' | 'upcoming';
+export const campaignJourneyKeys: CampaignJourneyKey[] = [
+  'objective', 'channel', 'format', 'assets', 'brainstorm', 'directions',
+  'selection', 'creation', 'review', 'approval', 'delivery', 'results'
+];
+
+/** États dérivés du brouillon ou du projet : aucune étape future n'est présentée comme faite. */
+export function campaignJourneyStates(input: {
+  objectiveDone: boolean; channelDone: boolean; formatDone: boolean;
+  assetsState: CampaignJourneyState;
+}): Record<CampaignJourneyKey, CampaignJourneyState> {
+  const states: Record<CampaignJourneyKey, CampaignJourneyState> = {
+    objective: 'upcoming', channel: 'upcoming', format: 'upcoming', assets: 'upcoming',
+    brainstorm: 'upcoming', directions: 'upcoming', selection: 'upcoming', creation: 'upcoming',
+    review: 'upcoming', approval: 'upcoming', delivery: 'upcoming', results: 'upcoming'
+  };
+  if (!input.objectiveDone) { states.objective = 'current'; return states; }
+  states.objective = 'done';
+  if (!input.channelDone) { states.channel = 'current'; return states; }
+  states.channel = 'done';
+  if (!input.formatDone) { states.format = 'current'; return states; }
+  states.format = 'done';
+  states.assets = input.assetsState;
+  return states;
 }
