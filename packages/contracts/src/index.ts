@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 import { platformSchema, formatSchema } from './channels';
 export { platformSchema, formatSchema };
+import { availableFormats } from './productionFormats';
+export * from './productionFormats';
 
 export const campaignInputSchema = z.object({
   name: z.string().trim().min(2).max(160),
@@ -47,6 +49,8 @@ export const projectInputSchema = z.object({
   format: formatSchema,
   objective: z.string().min(2),
   sceneDurationSeconds: sceneDurationSchema.default(2)
+}).refine(({ platform, format }) => (availableFormats[platform] as readonly string[]).includes(format), {
+  path: ['format'], message: 'Ce format n’est pas disponible pour cette destination.'
 });
 
 export const productionSettingsInputSchema = z.object({

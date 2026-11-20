@@ -29,7 +29,7 @@ export type ProjectInput = {
   contextId: string;
   title: string;
   platform: 'TikTok' | 'Instagram' | 'LinkedIn';
-  format: 'Affiche' | 'Carrousel' | 'Video' | 'Reel' | 'Motion';
+  format: 'Affiche' | 'Story' | 'Carrousel' | 'Video' | 'Reel' | 'Motion';
   objective: string;
   sceneDurationSeconds?: number;
 };

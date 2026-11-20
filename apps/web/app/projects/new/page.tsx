@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { availableFormats, productionFormats } from '@vululu/contracts';
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, type BrandContext, type ProjectSummary, type SessionUser, postJson } from '../../../lib/api';
@@ -10,11 +11,8 @@ import {useWorkspace} from '../../../components/WorkspacePreferences';
 import StudioNav from '../../../components/StudioNav';
 
 const frSteps = ['Votre idée', 'Vos références', 'Votre destination', 'Votre création'];
-const formats: Record<string, string> = { Video: 'Vidéo multiscène', Reel: 'Vidéo verticale (Reel)', Affiche: 'Image unique', Carrousel: 'Carrousel', Motion: 'Motion design' };
-const availableFormats: Record<ProjectDraft['platform'], string[]> = { Instagram: ['Video', 'Reel', 'Affiche', 'Carrousel'], TikTok: ['Video', 'Reel', 'Motion'], LinkedIn: ['Video', 'Affiche', 'Carrousel'] };
-
 export default function NewProjectPage() {
-  const {demo,t,locale}=useWorkspace();const steps=locale==='fr'?frSteps:['Your idea','Your references','Your destination','Your creation'];
+  const {t,locale}=useWorkspace();const steps=locale==='fr'?frSteps:['Your idea','Your references','Your destination','Your creation'];
   const router = useRouter();
   const [contexts, setContexts] = useState<BrandContext[]>([]);
   const [draft, setDraft] = useState<ProjectDraft>(emptyProjectDraft);
@@ -59,7 +57,6 @@ export default function NewProjectPage() {
     catch { setPersisted(false); }
   }, [draft, storageKey, loading, saved]);
   const context = contexts.find((item) => item.id === draft.contextId);
-  const vertical = draft.platform !== 'LinkedIn';
   function edit<K extends keyof ProjectDraft>(field: K, value: ProjectDraft[K]) { setDraft((current) => ({ ...current, [field]: value })); setError(''); }
   function move(step: number) { setDraft((current) => ({ ...current, step })); setError(''); requestAnimationFrame(() => heading.current?.focus()); }
   async function submit(event: FormEvent) {
@@ -98,15 +95,14 @@ export default function NewProjectPage() {
             <Link className="text-link" href="/contexts/new?returnTo=project">{t("Créer un contexte et revenir ici","Create a profile and return here")}</Link>
             <p className="hint">Les ressources, les droits et l’usage sponsorisé peuvent être précisés dans le projet après sa création. L’usage initial est organique.</p>
           </> : draft.step === 2 ? <>
-            <p className="muted">{t("Où utiliserez-vous la création ? La plateforme et le format sont nécessaires à l’enregistrement. Le cadrage détaillé reste modifiable dans le brief.","Where will you use this creation? Select a platform and format before saving.")}</p>
+            <p className="muted">{t("Où utiliserez-vous la création ? La plateforme et le format sont nécessaires à l’enregistrement. Les variantes restent modifiables dans la composition.","Where will you use this creation? Select a platform and format before saving.")}</p>
             <div className="two-col"><label className="label">{t("Plateforme","Platform")}<select className="input" data-testid="project-platform" value={draft.platform} disabled={busy} onChange={(e) => setDraft({...draft,platform:e.target.value as ProjectDraft['platform'],format:'Video'})}><option>Instagram</option><option>TikTok</option><option>LinkedIn</option></select></label>
-            <label className="label">Format<select className="input" data-testid="project-format" value={draft.format} disabled={busy} onChange={(e) => edit('format', e.target.value as 'Video')}>{availableFormats[draft.platform].filter(f=>demo||f!=='Motion').map((format) => <option key={format} value={format} disabled={demo && format !== 'Video'}>{formats[format]}{demo && format !== 'Video' ? ' — production indisponible' : ''}</option>)}</select></label></div>
-            {demo&&<><figure className="format-preview"><div className={'format-frame ' + (vertical ? 'format-frame--vertical' : 'format-frame--square')}><span>{vertical ? 'Vidéo verticale' : 'Vidéo carrée'}</span></div><figcaption><strong>{vertical ? 'Portrait plein écran' : 'Cadre carré'}</strong><p className="hint">Aperçu du cadre initial, aucun média généré. {vertical ? '1080 × 1920 px · 9:16' : '1080 × 1080 px · 1:1'}. Les autres cadrages autorisés se règlent dans le brief.</p></figcaption></figure>
-            <p className="hint">La vidéo multiscène est le seul format de production qualifié ici. « Vidéo verticale (Reel) » désigne un autre format, encore indisponible au lancement.</p></>}
-            <details><summary>{t("Durée et réglages différables","Duration and optional settings")}</summary><label className="label">Durée initiale par scène<select className="input" data-testid="project-scene-duration" value={draft.sceneDurationSeconds} disabled={busy} onChange={(e) => edit('sceneDurationSeconds', Number(e.target.value))}>{[1,2,3,5,10,15].map((seconds) => <option key={seconds} value={seconds}>{seconds} secondes</option>)}</select></label><p className="hint">Valeur initiale : 2 secondes. Durée, direction artistique, public, ton et appel à l’action pourront être revus dans le brief.</p></details>
+            <label className="label">Format<select className="input" data-testid="project-format" value={draft.format} disabled={busy} onChange={(e) => edit('format', e.target.value as ProjectDraft['format'])}>{availableFormats[draft.platform].map((format) => <option key={format} value={format}>{productionFormats[format].label}</option>)}</select></label></div>
+            <p className="hint">Export : {productionFormats[draft.format].file.toUpperCase()}. La composition Studio ne nécessite pas de fournisseur de génération.</p>
+            {productionFormats[draft.format].file === 'mp4' && <details><summary>{t("Durée et réglages différables","Duration and optional settings")}</summary><label className="label">Durée initiale par scène<select className="input" data-testid="project-scene-duration" value={draft.sceneDurationSeconds} disabled={busy} onChange={(e) => edit('sceneDurationSeconds', Number(e.target.value))}>{[1,2,3,5,10,15].map((seconds) => <option key={seconds} value={seconds}>{seconds} secondes</option>)}</select></label><p className="hint">Valeur initiale : 2 secondes. Durée, direction artistique, public, ton et appel à l’action pourront être revus dans la composition.</p></details>}
           </> : <>
             <p className="muted">{t("Enregistrez le projet pour préparer son brief. Cette action ne lance aucune génération.","Save the project to prepare its brief. Saving does not generate media.")}</p>
-            <dl className="detail-list"><div><dt>Nom</dt><dd>{draft.title}</dd></div><div><dt>{t("Résultat recherché","Desired outcome")}</dt><dd className="context-copy">{draft.objective}</dd></div><div><dt>Références</dt><dd>{context?.name || 'Contexte à choisir'}</dd></div><div><dt>Destination initiale</dt><dd>{draft.platform} · {formats[draft.format]} · usage organique</dd></div></dl>
+            <dl className="detail-list"><div><dt>Nom</dt><dd>{draft.title}</dd></div><div><dt>{t("Résultat recherché","Desired outcome")}</dt><dd className="context-copy">{draft.objective}</dd></div><div><dt>Références</dt><dd>{context?.name || 'Contexte à choisir'}</dd></div><div><dt>Destination initiale</dt><dd>{draft.platform} · {productionFormats[draft.format].label} · usage organique</dd></div></dl>
             <p className="context-completeness">{t('La création du projet ne lance ni rendu ni publication.','Creating a project starts neither rendering nor publication.')}</p>
           </>}
           {error ? <div className="error" data-testid="project-error" role="alert"><p>{error}</p><p>Enregistrement non confirmé. Votre saisie est conservée ; vous pouvez corriger ou réessayer.</p></div> : null}

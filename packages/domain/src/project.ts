@@ -4,7 +4,7 @@ import { deepFreeze } from './immutability';
 import { assertIsoTimestamp, IsoTimestamp } from './timestamp';
 
 export type Platform = 'TikTok' | 'Instagram' | 'LinkedIn';
-export type ProjectFormat = 'Affiche' | 'Carrousel' | 'Video' | 'Reel' | 'Motion';
+export type ProjectFormat = 'Affiche' | 'Story' | 'Carrousel' | 'Video' | 'Reel' | 'Motion';
 
 export type ProjectStatus =
   | 'draft'
@@ -51,6 +51,7 @@ export function assertPlatform(value: string): Platform {
 export function assertProjectFormat(value: string): ProjectFormat {
   if (
     value !== 'Affiche' &&
+    value !== 'Story' &&
     value !== 'Carrousel' &&
     value !== 'Video' &&
     value !== 'Reel' &&

@@ -38,7 +38,7 @@ export function CreativeLibrary({ id }: { id: string }) {
             <li key={r.version}>
               v{r.version} ·{' '}
               {r.approvedAt ? (
-                <a download href={`/api/projects/${id}/creative/${r.version}/master?export=1`}>
+                <a download href={`/api/projects/${id}/creative/${r.version}/export`}>
                   {t('Exporter la version approuvée', 'Download approved version')}
                 </a>
               ) : (

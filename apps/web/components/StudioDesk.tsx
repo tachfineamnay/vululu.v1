@@ -136,6 +136,7 @@ export function StudioDesk({
               </p>
             ))}
             <h3>Production et rendus</h3>
+            {state.production && <p>{state.production.label} · export {state.production.file.toUpperCase()}</p>}
             {!b.job && !state.renders.length && <p>Aucun traitement lancé.</p>}
             {b.job && (
               <p>

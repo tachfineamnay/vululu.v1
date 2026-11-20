@@ -126,7 +126,7 @@ function Publication({ p }: { p: Pub }) {
           {typeof data.metrics.clicks === 'number' && data.metrics.clicks > 0 && (
             <p>
               Cette version a obtenu des clics. Si son message reste pertinent,{' '}
-              <a href={`/api/projects/${p.projectId}/creative/${p.revision}/master?export=1`} download>
+              <a href={`/api/projects/${p.projectId}/creative/${p.revision}/export`} download>
                 reprendre le master v{p.revision}
               </a>{' '}
               et adapter le prochain contenu. Rien ne sera republié.

@@ -30,6 +30,10 @@ Connexion Postiz par le client, programmation approuvée et suivi des reçus dan
 
 Séparation test/réel, Checkout et webhooks signés, droits et crédits sur le ledger existant : [parcours et procédure d’activation](../delivery/F05_COMMERCIAL_BILLING.md). Aucun débit ni déploiement.
 
+### F06 — Production créative unifiée (2026-11-20)
+
+Post, Story, Carrousel, Reel et vidéo multiscène du projet à l’export, avec rendu Studio durable et révisions scellées : [livraison et recette](../delivery/F06_UNIFIED_PRODUCTION.md).
+
 ## 2. Principes de séquencement
 
 ### Studio du 2026-11-06

@@ -1,3 +1,4 @@
+import { availableFormats, productionFormats } from '@vululu/contracts';
 /**
  * Contrats d'affichage du Studio V1.
  * Aucun de ces contrats n'est connecte a un backend quand status vaut
@@ -16,9 +17,9 @@ export type NetworkProfile = {
 };
 
 export const NETWORK_PROFILES: NetworkProfile[] = [
-  { key: 'tiktok', label: 'TikTok', aspectRatios: ['9:16'], formats: ['Video', 'Reel', 'Motion'], publishing: 'POSTIZ_MOCK', note: 'Profil déclaré ; publication simulée via Postiz MOCK.' },
-  { key: 'instagram', label: 'Instagram', aspectRatios: ['9:16', '4:5', '1:1'], formats: ['Affiche', 'Carrousel', 'Video', 'Reel'], publishing: 'POSTIZ_MOCK', note: 'Profil interne versionné ; compatibilité réseau/format/ratio contrôlée dans le brief.' },
-  { key: 'linkedin', label: 'LinkedIn', aspectRatios: ['1:1', '16:9'], formats: ['Affiche', 'Carrousel', 'Video'], publishing: 'POSTIZ_MOCK', note: 'Profil déclaré ; publication simulée uniquement.' }
+  { key: 'tiktok', label: 'TikTok', aspectRatios: ['9:16'], formats: [...availableFormats.TikTok], publishing: 'POSTIZ_MOCK', note: 'Profil déclaré ; publication simulée via Postiz MOCK.' },
+  { key: 'instagram', label: 'Instagram', aspectRatios: ['9:16', '4:5', '1:1'], formats: [...availableFormats.Instagram], publishing: 'POSTIZ_MOCK', note: 'Profil interne versionné ; compatibilité réseau/format/ratio contrôlée dans le brief.' },
+  { key: 'linkedin', label: 'LinkedIn', aspectRatios: ['1:1', '16:9'], formats: [...availableFormats.LinkedIn], publishing: 'POSTIZ_MOCK', note: 'Profil déclaré ; publication simulée uniquement.' }
 ];
 
 export type FormatCatalogEntry = {
@@ -28,13 +29,12 @@ export type FormatCatalogEntry = {
   detail: string;
 };
 
-export const FORMAT_CATALOG: FormatCatalogEntry[] = [
-  { key: 'Video', label: 'Vidéo multiscène', availability: 'AVAILABLE', detail: '5 scènes PNG + master MP4 déterministe (Sharp/FFmpeg), ratio du brief et QA technique.' },
-  { key: 'Reel', label: 'Reel vertical', availability: 'DECLARED_NOT_IMPLEMENTED', detail: 'Format déclaré ; lancement refusé jusqu’à sa qualification média.' },
-  { key: 'Affiche', label: 'Affiche / image', availability: 'DECLARED_NOT_IMPLEMENTED', detail: 'Format déclaré ; le rendu d’une image unique n’est pas implémenté.' },
-  { key: 'Carrousel', label: 'Carrousel', availability: 'DECLARED_NOT_IMPLEMENTED', detail: 'Format déclaré ; aucun rendu multi-images n’est implémenté.' },
-  { key: 'Motion', label: 'Motion design', availability: 'DECLARED_NOT_IMPLEMENTED', detail: 'Format déclaré ; aucun moteur motion n’est implémenté.' }
-];
+export const FORMAT_CATALOG: FormatCatalogEntry[] = Object.entries(productionFormats).map(([key, format]) => ({
+  key,
+  label: format.label,
+  availability: 'AVAILABLE',
+  detail: `${format.studio ? 'Composition Studio' : 'Vidéo multiscène'} · ${format.file.toUpperCase()}`
+}));
 
 export const CAPABILITY_STATUS: Array<{ key: string; label: string; status: StudioAvailability; detail: string }> = [
   { key: 'render.deterministic', label: 'Rendu image/vidéo déterministe', status: 'AVAILABLE', detail: 'Sharp PNG + FFmpeg MP4, sans IA générative.' },
