@@ -6,7 +6,7 @@ import { prisma } from '@vululu/db';
 import { creativeStudio } from '../application/container';
 import { capabilities, PostizProvider, ProviderFailure, publishingPlatform } from '../infrastructure/publishing/provider';
 import { creativeSpec } from '@vululu/contracts';
-import { attachments, manualPackage, preview, problem } from '../infrastructure/publishing/delivery';
+import { attachments, compatibleCalendarVersions, manualPackage, preview, problem } from '../infrastructure/publishing/delivery';
 import {
   cipher,
   command,
@@ -140,7 +140,8 @@ export async function publishingRoutes(app: FastifyInstance) {
     const revisions = await prisma.creativeRevision.findMany({
       where: {
         contentItemId: item.id,
-        contentVersion: item.version,
+        contentVersion: { in: await compatibleCalendarVersions(item) },
+        projectId: item.projectId ?? '',
         project: { userId: owner },
         approvedAt: { not: null }
       },
@@ -167,7 +168,10 @@ export async function publishingRoutes(app: FastifyInstance) {
       where: { accountId: owner, key: { in: requests.flatMap((x) => [x.submitKey, x.cancelKey]) } },
       select: { id: true, key: true, state: true }
     });
+    const policy = await prisma.executionAccount.findUnique({ where: { userId: owner }, select: { enabled: true, tools: true } });
     return {
+      directEnabled: enabled(),
+      scheduleAuthorized: Boolean(policy?.enabled && policy.tools.includes('postiz.schedule@1')),
       revisions: revisions.map((x) => ({
         revision: x.version,
         platform: creativeSpec.parse(x.spec).delivery?.platform

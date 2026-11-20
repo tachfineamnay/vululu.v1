@@ -134,7 +134,7 @@ export async function creativeRoutes(app: FastifyInstance) {
   app.get(base + '/destinations', auth, async (r) =>
     prisma.contentItem.findMany({
       where: { projectId: id.parse(r.params).id, userId: r.currentUser!.id, archived: false },
-      select: { id: true, version: true, title: true, variants: true, offer: { select: { name: true } } },
+      select: { id: true, version: true, title: true, objective: true, audience: true, offerId: true, variants: true, offer: { select: { name: true } } },
       orderBy: { plannedAt: 'asc' },
     }),
   );

@@ -219,6 +219,7 @@ export default function Results() {
         <header>
           <p className="eyebrow">BILAN MARKETING</p>
           <h1>{t("Résultats et prochaine semaine","Results and next week")}</h1>
+          <div className="actions"><Link href="/calendar?week=next">{t('Planifier la prochaine semaine', 'Plan next week')}</Link><Link href="/creations">{t('Retrouver mes créations', 'Find my creations')}</Link><Link href="/account">{t('Facturation et assistance', 'Billing and support')}</Link></div>
           <p>Ce que vous avez produit, ce qui a été diffusé et ce que vous pouvez réellement mesurer.</p>
         </header>
         {error && <p role="alert">{error}</p>}
@@ -336,7 +337,7 @@ export default function Results() {
             </section>
             <section className="card stack">
               <h2>{t("Historique · 180 derniers jours","History \u00b7 last 180 days")}</h2>
-              <p>Les exports sont observés à partir de C11. Un fichier servi n’est pas une publication.</p>
+              <p>Un téléchargement enregistré ne prouve pas que le contenu a été publié.</p>
               {!h?.rows.length && <p>Aucun événement dans cette période.</p>}
               <ol>
                 {h?.rows.map((x) => (

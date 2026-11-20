@@ -11,6 +11,7 @@ import {StudioDesk} from './StudioDesk';
 import {useStudioFeed} from '../lib/useStudioFeed';
 import { ProjectAssistant } from './ProjectAssistant';
 import { projectFormatLabels } from "../lib/projectPresentation";
+import type { Destination } from './FormatGuide';
 import { CreativeEditor } from "./CreativeEditor";
 import ConversationProposalCard from './ConversationProposalCard';
 import { useUnsavedChanges } from '../lib/useUnsavedChanges';
@@ -73,6 +74,7 @@ export default function ProjectStudio({ id }: { id: string }) {
   const router = useRouter();
   const [bundle, setBundle] = useState<ProjectBundle | null>(null);
   const demo = demoMode && bundle?.project.format === 'Video';
+  const [calendarSource, setCalendarSource] = useState<Destination>();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
@@ -166,10 +168,17 @@ export default function ProjectStudio({ id }: { id: string }) {
     const sequence=++requestSequence.current;
     try {
       ownerRef.current ??= api<{ user: { id: string } }>('/api/auth/me');
-      const [data, me] = await Promise.all([api<ProjectBundle>('/api/projects/' + id), ownerRef.current]);
+      const [data, me, destinations] = await Promise.all([
+        api<ProjectBundle>('/api/projects/' + id), ownerRef.current,
+        api<Destination[]>(`/api/projects/${encodeURIComponent(id)}/creative/destinations`).catch(() => [])
+      ]);
+      const requested = new URLSearchParams(location.search).get('item');
+      const source = requested ? destinations.find((item) => item.id === requested) : destinations.length === 1 ? destinations[0] : undefined;
+      const variant = source?.variants.find((entry) => entry.platform === data.project.platform);
       if(accessLost.current||sequence!==requestSequence.current)return;
       bundleRef.current = data;
       setBundle(data);
+      setCalendarSource(source);
       if (!settingsLoaded.current) {
         setProductionSettings(data.brief?.settings ?? { schemaVersion: 1, profileVersion: 'v1-demo-2026-11-04', ratio: data.project.platform === 'LinkedIn' ? '1:1' : '9:16', defaultSceneDurationSeconds: data.project.sceneDurationSeconds, visualStyle: 'editorial', direction: '', maxMockCents: 1000, audio: { voiceVersionId: null, musicVersionId: null, spokenText: '', voiceGainDb: -3, musicGainDb: -18, ducking: true } });
         settingsLoaded.current = true;
@@ -177,10 +186,10 @@ export default function ProjectStudio({ id }: { id: string }) {
       setRefreshError('');
       if(briefLoaded.current&&data.brief&&data.brief.version!==draftBase.current.version&&!editingBrief.current){const b=data.brief;setBriefObjective(b.objective);setBriefAudience(b.audience);setBriefTone(b.tone);setBriefCta(b.cta);if(b.settings)setProductionSettings(b.settings);draftBase.current={version:b.version,checksum:b.revisions.find(x=>x.version===b.version)?.checksum??null};}
       if (!briefLoaded.current) {
-        setBriefObjective(data.brief?.objective ?? data.project.objective);
-        setBriefAudience(data.brief?.audience ?? data.context.audience ?? '');
-        setBriefTone(data.brief?.tone ?? data.context.tone ?? '');
-        setBriefCta(data.brief?.cta ?? '');
+        setBriefObjective(data.brief?.objective ?? source?.objective ?? data.project.objective);
+        setBriefAudience(data.brief?.audience ?? source?.audience ?? data.context.audience ?? '');
+        setBriefTone(data.brief?.tone ?? (data.context.tone || (source ? 'Clair et chaleureux' : '')));
+        setBriefCta(data.brief?.cta ?? variant?.cta ?? '');
         const base = { version: data.brief?.version ?? null, checksum: data.brief?.revisions.find((revision) => revision.version === data.brief?.version)?.checksum ?? null };
         draftBase.current = base;
         const key = 'vululu:studio-draft:v1:' + me.user.id + ':' + id;
@@ -418,7 +427,7 @@ export default function ProjectStudio({ id }: { id: string }) {
             <h1 data-testid="project-title-heading">{bundle.project.title}</h1>
             <p className="muted">{bundle.project.objective}</p>
             <div className="studio-head-links">
-              <Link className="text-link" href={'/calendar?project=' + encodeURIComponent(bundle.project.id)}>Planifier ce projet</Link>
+              <Link className="text-link" href={calendarSource ? `/calendar?item=${encodeURIComponent(calendarSource.id)}&offer=${encodeURIComponent(calendarSource.offerId)}` : '/calendar?project=' + encodeURIComponent(bundle.project.id)}>{calendarSource ? 'Retour au contenu du calendrier' : 'Planifier ce projet'}</Link>
               <Link className="text-link" href={'/contexts?context=' + encodeURIComponent(bundle.context.id)}>Contexte : {bundle.context.name}</Link>
               {!demo?<button className="text-link" onClick={()=>focusStudioSection('composition-heading')}>{t('Ouvrir la composition','Open composition')}</button>:bundle.master ? <a className="text-link" href="#preview-heading">Versions et téléchargement</a> : <a className="text-link" href="#storyboard-heading">Voir les scènes</a>}
             </div>
@@ -427,8 +436,11 @@ export default function ProjectStudio({ id }: { id: string }) {
         </section>
 
         <StudioDesk bundle={bundle} state={live.state} connection={live.connection} go={focusStudioSection}/>
-        <CreativeEditor bundle={bundle} serverHead={live.state?.revisions[0]?.version} serverRenders={live.state?.renders}/>
-        <ProjectAssistant key={bundle.project.id} projectId={bundle.project.id} contextId={bundle.context.id} creativeHead={live.state?.revisions[0]?.version} />
+        <CreativeEditor bundle={bundle} serverHead={live.state?.revisions[0]?.version} serverRenders={live.state?.renders} calendarSource={calendarSource}/>
+        <ProjectAssistant key={bundle.project.id} projectId={bundle.project.id} contextId={bundle.context.id} creativeHead={live.state?.revisions[0]?.version} preferredOffer={calendarSource?.offerId} useCta={(cta) => {
+          setBriefCta(cta); setBriefEdited(true); focusStudioSection('brief-heading');
+          notify('Appel à l’action repris. Enregistrez le brief après relecture.');
+        }} />
         <MarketingAssistant key={bundle.project.id} project={bundle.project.id} context={bundle.context.id}/>
         {demo&&<details className="studio-demo">
           <summary>Pipeline de démonstration · Rendu local et transfert simulé</summary>

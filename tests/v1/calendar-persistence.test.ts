@@ -100,6 +100,20 @@ it('persists history, rejects cross-account links, retries safely and arbitrates
     expect(history.statusCode).toBe(200);
     expect(history.json()).toEqual([]);
     expect((await app.inject({ method: 'GET', url: '/api/calendar/offers' })).statusCode).toBe(401);
+    const handoff = randomUUID();
+    await store.save(a, cmd(handoff, 0, 'IDEA'));
+    const path = `/api/calendar/${handoff}`;
+    expect((await app.inject({ url: path, headers })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'POST', url: path + '/project', headers, payload: { expectedVersion: 1, platform: 'Instagram' } })).statusCode).toBe(404);
+    await expect(store.startProject(a, handoff, 2, 'Instagram')).rejects.toMatchObject({ statusCode: 409 });
+    await expect(store.startProject(a, handoff, 1, 'TikTok')).rejects.toMatchObject({ statusCode: 409 });
+    const links = await Promise.all([store.startProject(a, handoff, 1, 'Instagram'), store.startProject(a, handoff, 1, 'Instagram')]);
+    expect(links[0]).toEqual(links[1]);
+    expect(await store.get(a, handoff)).toMatchObject({ projectId: links[0].projectId, version: 2 });
+    expect(await prisma.project.findMany({ where: { userId: a } })).toMatchObject([
+      { id: links[0].projectId, contextId: ctx.id, title: data.title, objective: data.objective, format: 'Affiche', platform: 'Instagram' }
+    ]);
+    expect(await store.history(a, handoff)).toHaveLength(2);
     const second = randomUUID();
     await store.save(a, cmd(second, 0, 'IDEA'));
     for (const item of [id, second]) {
@@ -122,7 +136,7 @@ it('persists history, rejects cross-account links, retries safely and arbitrates
     await app.close();
     await prisma.auditEvent.deleteMany({ where: { actorId: { in: [a, b] } } });
     await prisma.contentItem.deleteMany({ where: { userId: { in: [a, b] } } });
-    await prisma.project.deleteMany({ where: { userId: b } });
+    await prisma.project.deleteMany({ where: { userId: { in: [a, b] } } });
     await prisma.user.deleteMany({ where: { id: { in: [a, b] } } });
   }
 });

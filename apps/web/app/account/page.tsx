@@ -92,7 +92,7 @@ export default function Account() {
       <main className="page stack">
         <header>
           <p className="eyebrow">ESPACE CLIENT{view?.mode ? ` · STRIPE ${view.mode.toUpperCase()}` : ''}</p>
-          <h1>{t("Abonnement et assistance","Billing and support")}</h1>
+          <h1>{t("Facturation et assistance","Billing and support")}</h1>
           <p>
             Pass prépayés sans reconduction. {view?.mode === 'test' && 'Mode test : aucun paiement réel.'} Les fournisseurs externes nécessitent aussi une connexion et un budget autorisés.
           </p>
@@ -153,6 +153,7 @@ export default function Account() {
             </section>
             <section className="card stack">
               <h2>{t("Catalogue approuvé","Approved catalog")}</h2>
+              {view.mode === 'test' && <p>Stripe en mode test : aucun débit réel.</p>}
               {!view.catalog.length && <p>Aucune offre commerciale approuvée.</p>}
               {!view.checkoutAvailable && <p>Les nouveaux paiements sont indisponibles. Votre historique reste accessible.</p>}
               {view.catalog.map((p) => (
@@ -188,7 +189,7 @@ export default function Account() {
             </section>
           </>
         )}
-        <section className="card stack">
+        <section className="card stack" id="assistance">
           <h2>{t("Contacter l’assistance","Contact support")}</h2>
           <p>Ne transmettez ni numéro de carte ni secret.</p>
           <form

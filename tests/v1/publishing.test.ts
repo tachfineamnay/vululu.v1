@@ -85,6 +85,7 @@ beforeEach(async () => {
     }
   });
   const offer = await prisma.confirmedOffer.create({ data: { contextId: ctx.id, name: 'Atelier' } });
+  const plannedAt = new Date(Math.floor((Date.now() + 86400000) / 60000) * 60000);
   await prisma.contentItem.create({
     data: {
       id: item,
@@ -95,7 +96,7 @@ beforeEach(async () => {
       audience: 'Équipes',
       objective: 'test',
       status: 'APPROVED',
-      plannedAt: new Date(Date.now() + 86400000),
+      plannedAt,
       timeZone: 'UTC',
       archived: false,
       version: 1,
@@ -118,7 +119,7 @@ beforeEach(async () => {
         audience: 'Équipes',
         objective: 'test',
         status: 'APPROVED',
-        plannedAt: '2030-01-01T00:00:00Z',
+        plannedAt: plannedAt.toISOString(),
         timeZone: 'UTC',
         archived: false,
         campaignId: null,
@@ -264,6 +265,25 @@ it('exports a manual TikTok target as ordered, checksummed files and caption wit
   );
   await expect(prepare(owner, item, 2, conn)).rejects.toMatchObject({ statusCode: 409 });
   expect(await prisma.publicationRequest.count({ where: { itemId: item } })).toBe(0);
+});
+it.each(['caption', 'time', 'archive'] as const)('preserves an approval across status-only changes, not a %s edit', async (change) => {
+  const url = `/api/calendar/${item}/publishing/2/package?target=TikTok`;
+  const first = await prisma.contentRevision.findUniqueOrThrow({ where: { itemId_version: { itemId: item, version: 1 } } });
+  const current = await prisma.contentItem.findUniqueOrThrow({ where: { id: item } });
+  const snapshot = first.snapshot as Record<string, unknown>;
+  async function advance(version: number, changes: { status?: 'SCHEDULED' | 'APPROVED'; plannedAt?: Date; archived?: boolean; variants?: typeof current.variants }) {
+    await prisma.contentItem.update({ where: { id: item }, data: { version, ...changes, variants: changes.variants ?? current.variants } });
+    await prisma.contentRevision.create({ data: { itemId: item, version, requestId: randomUUID(), digest: 'history-fixture',
+      snapshot: { ...snapshot, ...changes, plannedAt: (changes.plannedAt ?? current.plannedAt).toISOString() } } });
+  }
+  await advance(2, { status: 'SCHEDULED' });
+  expect((await app.inject({ url, headers: h })).statusCode).toBe(200);
+  await advance(3, change === 'time' ? { plannedAt: new Date(current.plannedAt.getTime() + 60000) }
+    : change === 'archive' ? { archived: true }
+    : { variants: (current.variants as { caption: string }[]).map((v) => ({ ...v, caption: 'Texte changé' })) });
+  expect((await app.inject({ url, headers: h })).statusCode).toBe(409);
+  await advance(4, { status: 'APPROVED', archived: false });
+  expect((await app.inject({ url, headers: h })).statusCode).toBe(409);
 });
 it('rechecks token expiry after approval and never retries an ambiguous write', async () => {
   const c = await prepare(owner, item, 1, conn);

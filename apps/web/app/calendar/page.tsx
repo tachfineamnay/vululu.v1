@@ -3,7 +3,7 @@ import {useWorkspace} from '../../components/WorkspacePreferences';
 import { useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import type { CalendarItem, Content } from '@vululu/contracts';
+import { availableFormats, type CalendarItem, type Content, type MarketingContext, type MarketingOutput, type ProjectFormat } from '@vululu/contracts';
 import StudioNav from '../../components/StudioNav';
 import { api, postJson, type BrandContext, type CampaignSummary, type ProjectSummary } from '../../lib/api';
 import { SocialConnections } from './SocialConnections';
@@ -34,10 +34,21 @@ export default function CalendarPage() {
     [contextId, choose] = useState(''),
     [busy, working] = useState(false),
     [revision, refresh] = useState(0), [connectionsVersion, connectionsChanged] = useState(0);
+  const [lastSaved, setLastSaved] = useState<CalendarItem>();
   const [error, fail] = useState(''),
     [notice, say] = useState('');
   useEffect(() => {
-    setAnchor(new URLSearchParams(location.search).get('week')==='next'?shift(period(new Date(),false).start,7):new Date());
+    const q = new URLSearchParams(location.search), day = q.get('date');
+    const initial = day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? new Date(day + 'T12:00') : null;
+    setAnchor(initial && Number.isFinite(initial.getTime()) ? initial : q.get('week') === 'next' ? shift(period(new Date(), false).start, 7) : new Date());
+    const item = q.get('item');
+    if (!item) return;
+    let active = true;
+    void api<CalendarItem>(`/api/calendar/${encodeURIComponent(item)}`).then((row) => {
+      if (!active) return;
+      edit(row); setAnchor(new Date(row.plannedAt)); archives(row.archived);
+    }).catch((error) => { if (active) fail(message(error)); });
+    return () => { active = false; };
   }, []);
   useEffect(() => {
     let active = true;
@@ -51,7 +62,8 @@ export default function CalendarPage() {
         if (active) {
           resources({ contexts: c.items, campaigns: g.items, projects: p.items, offers: o });
           const project = p.items.find((item) => item.id === new URLSearchParams(location.search).get('project'));
-          choose((current) => current || project?.contextId || c.items[0]?.id || '');
+          const query = new URLSearchParams(location.search);
+          choose((current) => current || o.find((entry) => entry.id === query.get('offer'))?.contextId || project?.contextId || c.items[0]?.id || '');
           select(
             (current) =>
               current ||
@@ -69,6 +81,33 @@ export default function CalendarPage() {
       active = false;
     };
   }, [revision]);
+  useEffect(() => {
+    const query = new URLSearchParams(location.search);
+    const id = query.get('planProject'), version = query.get('planVersion'), rawIndex = query.get('idea');
+    const project = refs?.projects.find((row) => row.id === id);
+    if (!refs || !project || !version || !/^\d+$/.test(version) || !rawIndex || !/^[0-2]$/.test(rawIndex)) return;
+    let active = true;
+    void api<{ context: MarketingContext; result: MarketingOutput; approvedAt: string | null }>(`/api/projects/${encodeURIComponent(project.id)}/marketing/${version}`)
+      .then((plan) => {
+        if (!active) return;
+        const idea = plan.result.suggestions[Number(rawIndex)];
+        const offer = refs.offers.find((row) => row.id === plan.context.offerId && row.contextId === project.contextId);
+        if (!plan.approvedAt || !idea || !offer) throw new Error('Approuvez ce plan dans le Studio avant de le reprendre.');
+        const context = refs.contexts.find((row) => row.id === offer.contextId);
+        const matches = project.platform === idea.platform && (availableFormats[idea.platform] as readonly string[]).includes(project.format);
+        const date = new Date(`${idea.day ?? plan.context.week}T10:00`);
+        const url = new URL(location.href);
+        for (const key of ['planProject', 'planVersion', 'idea']) url.searchParams.delete(key);
+        window.history.replaceState(null, '', url);
+        edit({ id: crypto.randomUUID(), version: 0, title: idea.hook.slice(0, 160), offerId: offer.id,
+          audience: context?.audience || `Personnes intéressées par ${offer.name}`, objective: idea.idea,
+          projectId: matches ? project.id : null, campaignId: project.campaignId ?? null,
+          status: 'IDEA', archived: false, plannedAt: date.toISOString(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          variants: [{ platform: idea.platform, format: matches ? project.format as ProjectFormat : availableFormats[idea.platform][0], caption: idea.caption, cta: idea.cta.slice(0, 240) }] });
+        say('Idée reprise du plan approuvé. Relisez et enregistrez ce contenu.');
+      }).catch((error) => { if (active) fail(message(error)); });
+    return () => { active = false; };
+  }, [refs]);
   const range = anchor && period(anchor, month),
     start = range?.start.toISOString(),
     end = range?.end.toISOString();
@@ -104,6 +143,14 @@ export default function CalendarPage() {
         )
       : [];
   const nextPlan = !!anchor && new URLSearchParams(location.search).get('week') === 'next';
+  const showPlan = !!anchor && (nextPlan || new URLSearchParams(location.search).has('offer'));
+  function showItem(item: CalendarItem | null, date = anchor) {
+    const url = new URL(location.href);
+    if (item) url.searchParams.set('item', item.id); else url.searchParams.delete('item');
+    if (date) url.searchParams.set('date', dayKey(date));
+    window.history.replaceState(null, '', url);
+    edit(item);
+  }
   if(nextPlan && selected && ideas[0] && new URLSearchParams(location.search).get('angle')==='question') {
     ideas[0]={...ideas[0],title:`Une question sur ${selected.name}`.slice(0,160),objective:'Répondre à une question concrète avec un exemple différent',variants:ideas[0].variants.map(v=>({...v,caption:'',cta:'Posez votre question'}))};
   }
@@ -164,7 +211,7 @@ export default function CalendarPage() {
       </StudioNav>
       <main id="calendar-main" tabIndex={-1} className="page stack cal-page">
         <header>
-          <p className="eyebrow">Studio · Planification marketing</p>
+          <p className="eyebrow">{typeof window !== 'undefined' && anchor && new URLSearchParams(location.search).get('onboarding') === '1' ? 'Bienvenue · Étape 3 sur 3' : 'Studio · Planification marketing'}</p>
           <h1>{t("Calendrier éditorial","Editorial calendar")}</h1>
           <p className="muted">{t("Organisez vos contenus, de la première idée au suivi de publication.","Organize content from your first idea to publication tracking.")}</p>
         </header>
@@ -181,20 +228,23 @@ export default function CalendarPage() {
             >
               Réessayer
             </button>{' '}
-            <Link href="/login?next=/calendar">{t("Se connecter","Sign in")}</Link>
+            <Link href={'/login?next=' + encodeURIComponent('/calendar' + (typeof window === 'undefined' ? '' : location.search))}>{t("Se connecter","Sign in")}</Link>
           </div>
         )}
         {notice && <p role="status">{notice}</p>}
+        {!draft && lastSaved && <button type="button" className="btn btn-secondary" onClick={() => showItem(lastSaved)}>Reprendre ce contenu</button>}
         {draft && refs ? (
           <>
             <Editor
               key={draft.id}
               initial={draft}
               {...refs}
-              close={() => edit(null)}
-              saved={(d, isArchived) => {
-                edit(null);
-                archives(isArchived);
+              close={() => showItem(null)}
+              saved={(row) => {
+                const d = new Date(row.plannedAt);
+                setLastSaved(row);
+                showItem(null, d);
+                archives(row.archived);
                 setAnchor(d);
                 refresh((r) => r + 1);
                 say('Modification enregistrée.');
@@ -254,9 +304,9 @@ export default function CalendarPage() {
                             ))}
                           </select>
                         </label>
-                        <details open={nextPlan || undefined}>
+                        <details open={showPlan || undefined}>
                           <summary>Suggestions hebdomadaires · {ideas.length} idées</summary>
-                          <p>À adapter avant enregistrement. Aucune génération payante.</p>
+                          <p>Choisissez une idée, adaptez le brief marketing et enregistrez-la. Ouvrez ensuite le Studio depuis le contenu enregistré.</p>
                           <div className="cal-actions">
                             {ideas.map((i) => (
                               <button className="btn btn-secondary" key={i.title} onClick={() => make(i)}>
@@ -362,7 +412,7 @@ export default function CalendarPage() {
                                 })}{' '}
                                 · {labels[item.status]}
                               </small>
-                              <button className="cal-title" onClick={() => edit(item)}>
+                              <button className="cal-title" onClick={() => showItem(item)}>
                                 {item.title}
                               </button>
                               <small>{item.variants.map((v) => v.platform).join(' · ')}</small>

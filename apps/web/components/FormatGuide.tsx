@@ -8,15 +8,19 @@ import {
   platformSchema,
   type CreativeSpec,
   type OutputKind,
-  type Platform
+  type Platform,
+  type ProjectFormat
 } from '@vululu/contracts';
 import type { ProjectBundle } from '../lib/api';
 export type Destination = {
   id: string;
   version: number;
   title: string;
+  objective: string;
+  audience: string;
+  offerId: string;
   offer: { name: string };
-  variants: { platform: Platform; caption: string; cta: string }[];
+  variants: { platform: Platform; format: ProjectFormat; caption: string; cta: string }[];
 };
 export type MediaChoice = { id: string; name: string; kind: string };
 export function FormatGuide({

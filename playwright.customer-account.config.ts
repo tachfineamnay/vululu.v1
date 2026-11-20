@@ -14,7 +14,7 @@ export default defineConfig({
   testMatch: 'customer-account.spec.ts',
   timeout: 120_000,
   workers: 1,
-  use: { baseURL, extraHTTPHeaders: { 'x-forwarded-for': browserSource }, launchOptions: { executablePath: process.env.CHROMIUM_EXECUTABLE }, trace: 'off' },
+  use: { baseURL, actionTimeout: 15_000, extraHTTPHeaders: { 'x-forwarded-for': browserSource }, launchOptions: { executablePath: process.env.CHROMIUM_EXECUTABLE }, trace: 'off' },
   projects: [
     { name: 'desktop', use: { viewport: { width: 1440, height: 900 } } },
     { name: 'mobile', use: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } }

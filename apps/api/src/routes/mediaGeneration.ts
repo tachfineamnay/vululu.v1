@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { prisma } from '@vululu/db';
 import { capability } from '../infrastructure/mediaGeneration/providers';
 import {
   prepareMedia,
@@ -21,9 +22,11 @@ export async function mediaGenerationRoutes(app: FastifyInstance) {
     base = '/api/projects/:project/media-generation',
     p = z.object({ project: z.string().min(1).max(128) }),
     g = p.extend({ id: z.uuid() });
-  app.get('/api/media/capabilities', auth, () =>
-    ['image', 'video'].map((k) => capability(k as 'image' | 'video'))
-  );
+  app.get('/api/media/capabilities', auth, async (r) => {
+    const policy = await prisma.executionAccount.findUnique({ where: { userId: r.currentUser!.id }, select: { enabled: true, tools: true } });
+    return (['image', 'video'] as const).map((kind) => ({ ...capability(kind),
+      accountAuthorized: Boolean(policy?.enabled && policy.tools.includes(`media.${kind}@1`)) }));
+  });
   app.post(base, auth, (r) => prepareMedia(r.currentUser!.id, p.parse(r.params).project, r.body));
   app.get(base, auth, (r) => mediaHistory(r.currentUser!.id, p.parse(r.params).project));
   app.post(base + '/:id/cancel', auth, (r) => {

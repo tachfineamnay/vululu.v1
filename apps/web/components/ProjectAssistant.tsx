@@ -20,7 +20,7 @@ function monday() {
   return today.toISOString().slice(0, 10);
 }
 
-export function ProjectAssistant({ projectId, contextId, creativeHead }: { projectId: string; contextId: string; creativeHead?: number }) {
+export function ProjectAssistant({ projectId, contextId, creativeHead, preferredOffer, useCta }: { projectId: string; contextId: string; creativeHead?: number; preferredOffer?: string; useCta?: (cta: string) => void }) {
   const { t } = useWorkspace();
   const base = `/api/projects/${encodeURIComponent(projectId)}`;
   const endpoint = `${base}/assistant`;
@@ -60,6 +60,7 @@ export function ProjectAssistant({ projectId, contextId, creativeHead }: { proje
         const data = await api<{ model: string | null; turns: Turn[] }>(endpoint);
         if (!alive) return;
         setModel(data.model); setTurns(data.turns);
+        select((current) => current || data.turns[0]?.id || '');
         if (data.turns.some((turn) => turn.operation && waiting.has(turn.operation.state))) timer = setTimeout(load, 2400);
       } catch (e) { if (alive) setError(e instanceof Error ? e.message : 'Assistant indisponible.'); }
     }
@@ -69,14 +70,14 @@ export function ProjectAssistant({ projectId, contextId, creativeHead }: { proje
   useEffect(() => {
     if (!open) return;
     let alive = true;
-    const requested = new URLSearchParams(location.search).get('offer');
+    const requested = preferredOffer ?? new URLSearchParams(location.search).get('offer');
     void api<Offer[]>('/api/calendar/offers').then((data) => {
       if (!alive) return;
       const own = data.filter((o) => o.contextId === contextId);
       setOffers(own); setOffer((before) => own.some((o) => o.id === before) ? before : own.find((o) => o.id === requested)?.id ?? own[0]?.id ?? '');
     }).catch((e: Error) => { if (alive) setError(e.message); });
     return () => { alive = false; };
-  }, [open, contextId]);
+  }, [open, contextId, preferredOffer]);
   useEffect(() => {
     if (!open || kind !== 'creative') return;
     let alive = true;
@@ -196,8 +197,9 @@ export function ProjectAssistant({ projectId, contextId, creativeHead }: { proje
         <textarea id="assistant-prompt" className="input" value={prompt} onChange={(e) => setPrompt(e.target.value)} minLength={3} maxLength={1200} required
           placeholder={kind === 'marketing' ? t('Prépare une campagne pour faire découvrir mon offre aux débutants.', 'Draft a campaign introducing my offer to beginners.') : t('Rends le CTA plus chaleureux et utilise un fond bleu nuit.', 'Make the CTA warmer and use a midnight-blue background.')} />
         <label className="label">{t('Mode', 'Mode')}<select className="input" value={engine} onChange={(e) => setEngine(e.target.value as typeof engine)}>
-          <option value="offline">{t('Hors ligne · sans frais', 'Offline · no charge')}</option><option value="ai" disabled={!model}>{model ?? t('IA non configurée ou non autorisée', 'AI not configured or not authorized')}</option>
+          <option value="offline">{t('Hors ligne · sans frais', 'Offline · no charge')}</option><option value="ai" disabled={!model}>{model ?? t('IA indisponible pour ce compte', 'AI not configured or not authorized')}</option>
         </select></label>
+        {!model && <p className="hint">{t('La génération IA nécessite un fournisseur configuré et une autorisation de compte. Le mode local reste disponible.', 'AI requires a configured provider and account authorization. Offline mode is still available.')}</p>}
         {engine === 'offline' && <p className="hint">{kind === 'marketing' ? t('Le mode local utilise votre offre et votre profil, sans interpréter la demande libre.', 'Offline mode uses your offer and profile without interpreting free-form requests.') : t('En mode local, utilisez une commande explicite, par exemple : CTA "Parlons de votre projet" ; couleur #225588.', 'Offline mode expects explicit commands, e.g. CTA "Let’s talk about your project" ; color #225588.')}</p>}
         {engine === 'ai' && <p className="hint">{t('Après votre accord, la demande, le profil d’activité et les extraits de cette conversation seront transmis à Vertex AI. N’ajoutez pas de données sensibles.', 'After you approve, the request, business profile and excerpts from this conversation go to Vertex AI. Do not include sensitive data.')}</p>}
         <button className="btn btn-primary" disabled={busy || (engine === 'ai' && !model) || (kind === 'marketing' ? !offerId : !source)}>{engine === 'ai' ? t('Préparer une demande IA', 'Prepare AI request') : t('Créer un brouillon hors ligne', 'Create offline draft')}</button>
@@ -223,6 +225,7 @@ export function ProjectAssistant({ projectId, contextId, creativeHead }: { proje
           <ol className="stack">{result.copy.posts.map((post, index) => <li key={index}>
             <small>{result.slots?.[index]?.day ?? t('À planifier', 'Unscheduled')} · {result.slots?.[index]?.platform}</small>
             <h4>{post.headline}</h4><p>{post.caption}</p><p><strong>CTA:</strong> {post.cta}</p>
+            {selected.approvedAt && !edit && useCta && <button type="button" className="btn btn-secondary" onClick={() => useCta(post.cta)}>Reprendre le CTA {index + 1} dans le brief</button>}
             <details><summary>Storyboard</summary><ol>{post.storyboard.map((frame, i) => <li key={i}>{frame.shot} — {frame.onScreen}</li>)}</ol></details>
           </li>)}</ol>
           {!edit && <button type="button" className="btn btn-secondary" onClick={() => setEdit(structuredClone(result.copy!))}>{t('Modifier le texte', 'Edit copy')}</button>}

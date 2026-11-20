@@ -65,8 +65,8 @@ function NumberField({
     </label>
   );
 }
-export function CreativeEditor({ bundle, serverHead, serverRenders }: {
-  bundle: ProjectBundle; serverHead?: number; serverRenders?: { id: string; revision: number; state: string }[]
+export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSource }: {
+  bundle: ProjectBundle; serverHead?: number; serverRenders?: { id: string; revision: number; state: string }[]; calendarSource?: Destination
 }) {
   const {t}=useWorkspace();
   const base = '/api/projects/' + encodeURIComponent(bundle.project.id) + '/creative';
@@ -161,7 +161,10 @@ export function CreativeEditor({ bundle, serverHead, serverRenders }: {
     const chosen = all.filter((a) => selected.versionIds.includes(a.id)),
       photos = chosen.filter((a) => a.kind !== 'logo'),
       logos = chosen.filter((a) => a.kind === 'logo');
-    const kind = productionCapability(bundle.project.format)?.studio;
+    const target = (calendarSource && linked.find((item) => item.id === calendarSource.id)) ?? (linked.length === 1 ? linked[0] : undefined);
+    const platform = platformSchema.parse(bundle.project.platform);
+    const calendarVariant = target?.variants.find((v) => v.platform === platform && v.format === bundle.project.format);
+    const kind = productionCapability(bundle.project.format)?.studio ?? (calendarVariant && bundle.project.format === 'Video' ? 'short' : undefined);
     const seed = { sceneKey: 'SCENE-001', title: bundle.project.title,
       durationSeconds: bundle.brief?.settings?.defaultSceneDurationSeconds ?? bundle.project.sceneDurationSeconds };
     const seeds = bundle.scenes.length ? bundle.scenes : [seed,
@@ -174,7 +177,7 @@ export function CreativeEditor({ bundle, serverHead, serverRenders }: {
       schemaVersion: 1,
       width: kind ? outputSize[kind][0] : width,
       height: kind ? outputSize[kind][1] : height,
-      ...(kind ? {delivery:{kind,platform:platformSchema.parse(bundle.project.platform)}} : {}),
+      ...(kind ? { delivery: { kind, platform, ...(target && calendarVariant ? { calendar: { itemId: target.id, version: target.version } } : {}) } } : {}),
       safeArea: 0.05,
       brand: { background: bundle.context.colorPrimary, accent: bundle.context.colorSecondary },
       scenes: (kind === 'square' || kind === 'story' ? seeds.slice(0,1) : seeds).map((s, i) => ({
@@ -189,7 +192,7 @@ export function CreativeEditor({ bundle, serverHead, serverRenders }: {
                 { ...copy(s.description, 'body'), y: 0.69, h: 0.11, size: 28, bold: false }
               ]
             : [copy(s.title, 'headline')]),
-          copy(bundle.brief?.cta || 'Nous contacter', 'cta')
+          copy(bundle.brief?.cta || calendarVariant?.cta || 'Nous contacter', 'cta')
         ]
       }))
     });
@@ -231,6 +234,11 @@ export function CreativeEditor({ bundle, serverHead, serverRenders }: {
     setExpected(r.version);
     history(await api<Rev[]>(base));
   }
+  const linked = spec?.delivery?.calendar;
+  const calendarTarget = (calendarSource && items.find((item) => item.id === calendarSource.id)) ?? (items.length === 1 ? items[0] : undefined);
+  const variant = calendarTarget?.variants.find((v) => v.platform === (spec?.delivery?.platform ?? bundle.project.platform));
+  const targetKind = variant?.format === 'Video' ? 'short' : variant && productionCapability(variant.format)?.studio;
+  const sameFormat = targetKind && (spec?.delivery?.kind === targetKind || (targetKind === 'square' && spec?.delivery?.kind === 'portrait'));
   return (
     <details
       className="card stack"
@@ -239,6 +247,11 @@ export function CreativeEditor({ bundle, serverHead, serverRenders }: {
       }}
     >
       <summary id="composition-heading">{t("Composition et versions","Composition and versions")}</summary>
+      {linked && <p className="hint">Composition liée au calendrier · <a href={`/calendar?item=${encodeURIComponent(linked.itemId)}`}>Ouvrir le contenu</a></p>}
+      {spec && calendarTarget && sameFormat && (linked?.itemId !== calendarTarget.id || linked.version !== calendarTarget.version) &&
+        <button type="button" className="btn btn-secondary" onClick={() => change({ ...spec, delivery: { ...spec.delivery!, calendar: { itemId: calendarTarget.id, version: calendarTarget.version } } })}>
+          Lier au contenu actuel du calendrier
+        </button>}
       {spec&&serverHead!==undefined&&serverHead>expected&&<p role="status">La version v{serverHead} est disponible. Votre saisie reste intacte ; rechargez pour travailler sur la dernière version.</p>}
       {error && (
         <p role="alert" className="error">

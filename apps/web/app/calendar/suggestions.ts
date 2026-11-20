@@ -1,4 +1,4 @@
-import { variant, type Content } from '@vululu/contracts';
+import { availableFormats, variant, type Content } from '@vululu/contracts';
 import type { BrandContext, ProjectSummary } from '../../lib/api';
 import { shift, dayKey } from './dates';
 export type Offer = { id: string; contextId: string; name: string };
@@ -9,14 +9,13 @@ export function suggestions(
   projects: ProjectSummary[],
   preferredProject: string | null = null
 ) {
-  const candidates = projects.filter((p) => p.contextId === context.id).sort((a, b) => a.id.localeCompare(b.id));
-  const week = Math.floor(Date.UTC(start.getFullYear(), start.getMonth(), start.getDate()) / (7 * 86400000));
-  const audience = context.audience || '';
+  const project = projects.find((p) => p.contextId === context.id && p.id === preferredProject);
+  const audience = context.audience || `Personnes intéressées par ${offer.name}`;
   return ['Présenter', 'Expliquer', 'Inviter à découvrir'].map((angle, i) => {
-    const project =
-      candidates.find((p) => p.id === preferredProject) || candidates[Math.abs(week + i) % candidates.length];
-    const platform = variant.shape.platform.safeParse(project?.platform);
-    const format = variant.shape.format.safeParse(project?.format);
+    const platform = variant.shape.platform.safeParse(project?.platform).data ?? 'Instagram';
+    const storedFormat = variant.shape.format.safeParse(project?.format).data;
+    const format = storedFormat && (availableFormats[platform] as readonly string[]).includes(storedFormat)
+      ? storedFormat : platform === 'TikTok' ? 'Reel' : i === 1 ? 'Carrousel' : 'Affiche';
     const title = `${angle} : ${offer.name}`.slice(0, 160);
     const caption = [
       `Découvrez ${offer.name} avec ${context.name}.`,
@@ -37,8 +36,8 @@ export function suggestions(
       plannedAt: new Date(dayKey(shift(start, i * 2)) + 'T10:00').toISOString(),
       variants: [
         {
-          platform: platform.data || 'Instagram',
-          format: format.data || (i === 1 ? 'Carrousel' : 'Affiche'),
+          platform,
+          format,
           caption,
           cta: ['Découvrez l’offre', 'Posez votre question', 'Contactez-nous'][i]
         }

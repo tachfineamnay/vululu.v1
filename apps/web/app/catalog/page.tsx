@@ -44,8 +44,8 @@ export default function Guide() {
       '/account',
       'Facturation et assistance',
       'Billing and support',
-      'Consultez les pass de test, les réservations et les crédits média. Ouvrez un dossier pour toute question.',
-      'Review test passes, reservations and media credits. Open a ticket if you need help.',
+      'Consultez les offres disponibles, les réservations et les crédits média. Ouvrez un dossier pour toute question.',
+      'Review available offers, reservations and media credits. Open a ticket if you need help.',
     ],
   ];
   return (
@@ -60,8 +60,8 @@ export default function Guide() {
           <h1>{t('Guide de création', 'Creation guide')}</h1>
           <p>
             {t(
-              'Un parcours sur invitation, du profil au résultat vérifiable.',
-              'An invitation-only workflow from business profile to verifiable results.',
+              'Du profil au résultat : planifiez votre semaine, créez et livrez une version approuvée.',
+              'From profile to results: plan your week, create and deliver an approved version.',
             )}
           </p>
         </header>
@@ -73,7 +73,7 @@ export default function Guide() {
             <p>{t(frText, enText)}</p>
           </article>
         ))}
-        <Link href="/terms">{t('Conditions de la version de test', 'Test release terms')}</Link>
+        <Link href="/terms">{t('Informations et conditions', 'Information and terms')}</Link>
       </main>
     </div>
   );
