@@ -293,3 +293,10 @@ main :where(input,select,textarea){max-inline-size:100%;box-sizing:border-box}
 [data-vululu-theme="blue"] #assets-decision, [data-vululu-theme="blue"] #brainstorm-locked { scroll-margin-top: var(--v-space-24); }
 [data-vululu-theme="blue"] #brainstorm-locked { border-left: 4px solid var(--v-color-accent); }
 [data-vululu-theme="blue"] .assets-step .asset-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
+
+/* P03 — brainstorming créatif structuré. */
+[data-vululu-theme="blue"] .brainstorm-thread { list-style: none; display: grid; gap: var(--v-space-16); padding: 0; margin: 0; }
+[data-vululu-theme="blue"] .brainstorm-turn, [data-vululu-theme="blue"] .brainstorm-angle { background: var(--v-color-surface); border: 1px solid var(--v-color-border); border-radius: var(--v-radius-control); padding: var(--v-space-16); }
+[data-vululu-theme="blue"] .brainstorm-prompt { border-left: 4px solid var(--v-color-accent); padding: var(--v-space-8) var(--v-space-16); background: var(--v-color-background); border-radius: var(--v-radius-small); }
+[data-vululu-theme="blue"] .brainstorm-angles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: var(--v-space-12); }
+[data-vululu-theme="blue"] .brainstorm-angles .actions { flex-wrap: wrap; }

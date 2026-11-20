@@ -170,7 +170,19 @@ Implémenté depuis l'inventaire (commit P02, `BUILD_UNVERIFIED`, aucun test ex�
 
 Limites P02 : les suites existantes qui appellent l'assistant/le plan marketing sans confirmer les ressources échoueront jusqu'au réalignement P12 ; aucune exécution réelle (tests, build, lint, typecheck) en P02 ; le client Prisma doit être régénéré avant toute vérification TypeScript.
 
-## 8. Mise à jour P01 — entrée de campagne (2026-11-20)
+## 8. Mise à jour P03 — brainstorming contextuel (2026-11-20)
+
+Implémenté depuis l'inventaire (commit P03, `BUILD_UNVERIFIED`, aucun test exécuté) :
+
+- `packages/contracts/src/assistant.ts` : type de tour `brainstorm` (`offerId` optionnel) et résultat structuré `brainstormOutput` — ack, questions utiles (≤5), pistes créatives `{ title, reasoning, premise, assets }` (≤4), décisions `{ fact, source: 'user' }` (≤8).
+- `apps/api/src/infrastructure/assistant/service.ts` : snapshot du tour `brainstorm` = identité confirmée (objectif, canal, format, public, ton), offre retenue, décision de ressources ; repli local déterministe `brainstormResult` (étiqueté hors ligne, aucune affirmation inventée) ; fraîcheur liée au hash des sources (identité/offre/assets) ; résultats IA validés et nettoyés (`vettedBrainstorm` + filtrage des noms de ressources au jeu confirmé).
+- `apps/api/src/infrastructure/assistant/vertex.ts` : `ModelInput` étendu (`brainstorm`), schéma de réponse JSON et consigne de partenariat créatif ; payload minimisé (noms/kind de ressources, jamais d'identifiants, d'URL ni de médias).
+- `apps/web/components/BrainstormPanel.tsx` : conversation multi-tours persistée (historique serveur, reprise après rechargement, polling des générations en file), affiner/contester/rejeter/combiner, décisions utilisateur distinctes des suggestions, autorisation explicite du budget ToolBroker avant inférence.
+- Gate P02 conservé : sans décision de ressources confirmée, le brainstorming est refusé côté serveur et verrouillé côté UI.
+
+Limites P03 : l'inférence Vertex réelle reste `NOT_VERIFIED` (aucun fournisseur activé) ; les suites assistant existantes ne couvrent pas encore le type `brainstorm` (réalignement P12).
+
+## 9. Mise à jour P01 — entrée de campagne (2026-11-20)
 
 Implémenté depuis cet inventaire (commit P01, `BUILD_UNVERIFIED`, aucun test exécuté) :
 

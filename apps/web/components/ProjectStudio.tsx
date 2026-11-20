@@ -18,6 +18,7 @@ import { useUnsavedChanges } from '../lib/useUnsavedChanges';
 import ProjectJourney from './ProjectJourney';
 import CampaignJourney from './CampaignJourney';
 import ProjectAssetsStep from './ProjectAssetsStep';
+import BrainstormPanel from './BrainstormPanel';
 import type { ProjectAssetDecision } from '../lib/api';
 import { projectJourney } from '../lib/projectJourney';
 import CreationDelivery from './CreationDelivery';
@@ -460,6 +461,7 @@ export default function ProjectStudio({ id }: { id: string }) {
         <StudioDesk bundle={bundle} state={live.state} connection={live.connection} go={focusStudioSection}/>
         <CreativeEditor bundle={bundle} serverHead={live.state?.revisions[0]?.version} serverRenders={live.state?.renders} calendarSource={calendarSource}/>
         {assetDecision?.confirmed ? <>
+          <BrainstormPanel projectId={bundle.project.id} contextId={bundle.context.id} />
           <ProjectAssistant key={bundle.project.id} projectId={bundle.project.id} contextId={bundle.context.id} creativeHead={live.state?.revisions[0]?.version} preferredOffer={calendarSource?.offerId} useCta={(cta) => {
             setBriefCta(cta); setBriefEdited(true); focusStudioSection('brief-heading');
             notify('Appel à l’action repris. Enregistrez le brief après relecture.');

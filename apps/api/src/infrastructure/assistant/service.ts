@@ -1,16 +1,16 @@
 import { createHash } from 'node:crypto';
 import { type AssistantTurn, Prisma } from '@prisma/client';
 import { prisma } from '@vululu/db';
-import { assistantRequest, creativeSpec, marketingContext, type AssistantCopy, type AssistantRequest, type ActionPreview } from '@vululu/contracts';
+import { assistantRequest, creativeSpec, marketingContext, type AssistantCopy, type AssistantRequest, type ActionPreview, type BrainstormOutput } from '@vululu/contracts';
 import { HttpError } from '../../errors';
 import { localTranslator, previewOf } from '../../application/creativeActions';
 import { proposeTx } from '../execution/broker';
 import { marketingSnapshot } from '../marketing/service';
 import { compile, fallback, sensitive } from '../marketing/editorial';
-import { evaluateAssetDecision } from '@vululu/application';
+import { evaluateAssetDecision, type AssetDecisionSnapshot } from '@vululu/application';
 import { readAssetDecisionRow } from '../prisma/assetDecisionRepository';
 import { receipt, vertexConfig, vertexProfile, vertexProvider, type AssistantProvider, type ModelInput } from './vertex';
-import { minimizeModelData, vettedChanges, vettedCopy } from './safety';
+import { minimizeModelData, vettedBrainstorm, vettedChanges, vettedCopy } from './safety';
 
 export const assistantTool = 'assistant.draft@1';
 const unavailable = () => new HttpError(409, 'assistant_unavailable', 'IA indisponible pour ce projet. Utilisez le brouillon hors ligne.');
@@ -31,7 +31,7 @@ const turnSelect = { id: true, parentId: true, kind: true, request: true, result
 
 async function projectScope(tx: Tx, userId: string, projectId: string) {
   const row = await tx.project.findFirst({ where: { id: projectId, userId, context: { userId } }, select: {
-    title: true, objective: true, platform: true, contextId: true,
+    title: true, objective: true, platform: true, format: true, contextId: true,
     context: { select: { name: true, description: true, audience: true, tone: true } }
   } });
   if (!row) throw missing();
@@ -67,7 +67,11 @@ async function snapshot(tx: Tx, userId: string, projectId: string, input: Assist
   // No account identifiers, contacts, website, documents, media IDs or other projects are sent to the model.
   const profile = { name: trimmed(row.context.name, 160), description: trimmed(row.context.description, 1600),
     audience: trimmed(row.context.audience, 450), tone: trimmed(row.context.tone, 300), objective: trimmed(row.objective, 600),
-    platform: row.platform };
+    platform: row.platform, format: row.format };
+  if (input.kind === 'brainstorm') {
+    const offer = input.offerId ? await offerName(tx, userId, projectId, input.offerId) : null;
+    return { profile, offer, assets };
+  }
   if (input.kind === 'marketing') {
     const c = await marketingSnapshot(tx, userId, projectId, input.offerId, input.week,
       input.regulated || sensitive([profile.description, input.prompt, profile.objective].join(' ')));
@@ -81,8 +85,9 @@ async function snapshot(tx: Tx, userId: string, projectId: string, input: Assist
       : { index, type: l.type, fit: l.fit, gravity: l.gravity }) }, assets };
 }
 function sameScope(a: AssistantRequest, b: AssistantRequest) {
-  return a.kind === 'marketing' && b.kind === 'marketing' ? a.offerId === b.offerId :
-    a.kind === 'creative' && b.kind === 'creative' && a.scope.target.sceneKey === b.scope.target.sceneKey;
+  if (a.kind === 'marketing' && b.kind === 'marketing') return a.offerId === b.offerId;
+  if (a.kind === 'brainstorm' && b.kind === 'brainstorm') return true;
+  return a.kind === 'creative' && b.kind === 'creative' && a.scope.target.sceneKey === b.scope.target.sceneKey;
 }
 async function lineage(tx: Tx, projectId: string, input: AssistantRequest) {
   const previous = [];
@@ -91,14 +96,55 @@ async function lineage(tx: Tx, projectId: string, input: AssistantRequest) {
     const row = await tx.assistantTurn.findFirst({ where: { id, projectId } });
     const prior = row && assistantRequest.parse(row.request);
     if (!row || !prior || !sameScope(input, prior) || !row.result) throw missing();
-    const result = row.result as { copy?: AssistantCopy; preview?: ActionPreview };
-    previous.unshift({ request: trimmed(prior.prompt, 300), suggestion: result.copy
-      ? { campaign: result.copy.campaign, strategy: result.copy.strategy, headlines: result.copy.posts.map((p) => p.headline) }
-      : { changes: result.preview?.action.changes.map((c) => c.operation === 'cta' || c.operation === 'text'
-        ? { operation: c.operation, text: trimmed(c.parameters.text, 200) } : { operation: c.operation }) ?? [] } });
+    const result = row.result as { copy?: AssistantCopy; preview?: ActionPreview; ack?: string; angles?: Array<{ title: string }> };
+    const suggestion = prior.kind === 'brainstorm'
+      ? { ack: trimmed(result.ack ?? '', 200), angles: (result.angles ?? []).map((a) => a.title).slice(0, 4) }
+      : result.copy
+        ? { campaign: result.copy.campaign, strategy: result.copy.strategy, headlines: result.copy.posts.map((p) => p.headline) }
+        : { changes: result.preview?.action.changes.map((c) => c.operation === 'cta' || c.operation === 'text'
+          ? { operation: c.operation, text: trimmed(c.parameters.text, 200) } : { operation: c.operation }) ?? [] };
+    previous.unshift({ request: trimmed(prior.prompt, 300), suggestion });
     id = row.parentId ?? undefined;
   }
   return previous;
+}
+type BrainstormSource = { profile: { name: string; description: string; audience: string; tone: string; objective: string; platform: string; format: string }; offer: { id: string; name: string } | null; assets: AssetDecisionSnapshot };
+async function offerName(tx: Tx, userId: string, projectId: string, offerId: string) {
+  const project = await tx.project.findFirst({ where: { id: projectId, userId }, select: { contextId: true } });
+  if (!project) throw missing();
+  const offer = await tx.confirmedOffer.findFirst({ where: { id: offerId, contextId: project.contextId, context: { userId } }, select: { name: true } });
+  return offer ? { id: offerId, name: offer.name } : null;
+}
+function assetNames(assets: AssetDecisionSnapshot) { return (assets?.items ?? []).map((item) => ({ name: item.name, kind: item.kind })); }
+/** Repli local déterministe et honnête : aucune affirmation métier inventée, aucune intelligence simulée. */
+function brainstormResult(source: BrainstormSource): BrainstormOutput {
+  const { profile, offer, assets } = source;
+  const names = assetNames(assets);
+  const visual = names.some((n) => n.kind === 'image' || n.kind === 'logo');
+  const ack = 'Brainstorming pour « ' + trimmed(profile.objective, 220) + ' » sur ' + profile.platform + ' (' + profile.format + ').'
+    + (offer ? ' Offre retenue : ' + offer.name + '.' : '') + (names.length ? ' Ressources disponibles : ' + names.map((n) => n.name).join(', ') + '.' : ' Aucune ressource confirmée.');
+  const questions: string[] = [];
+  if (!profile.audience) questions.push('À qui s’adresse cette création ? (public, contexte)');
+  if (!profile.tone) questions.push('Quel ton souhaitez-vous : formel, chaleureux, neutre ?');
+  if (!offer) questions.push('Y a-t-il une offre ou un appel à l’action précis à mettre en avant ?');
+  const angles: BrainstormOutput['angles'] = [
+    { title: visual ? 'Mettre en avant votre visuel' : 'Faire découvrir votre univers',
+      reasoning: 'Sur ' + profile.platform + ', un ' + profile.format + ' accroche mieux avec un point d’entrée simple.',
+      premise: 'Une entrée visuelle forte, puis une invitation à en savoir plus.',
+      assets: names.filter((n) => n.kind === 'image' || n.kind === 'logo').map((n) => n.name).slice(0, 3) },
+    { title: 'Expliquer votre objectif ou votre offre', reasoning: 'Clarifier ce que vous proposez répond à l’intention de découverte.',
+      premise: 'Une explication courte de la valeur, sans chiffre ni promesse.', assets: [] },
+    { title: 'Poser une question à votre public', reasoning: 'Une question invite à réagir et engage le commentaire.',
+      premise: 'Une question simple liée à votre activité.', assets: [] }
+  ];
+  return { schemaVersion: 1, ack, questions: questions.slice(0, 5), angles: angles.slice(0, 4), decisions: [] };
+}
+/** Garde les seules références de ressources réellement confirmées ; aucune invention de nom par le modèle. */
+function sanitizeBrainstorm(value: unknown, source: BrainstormSource): BrainstormOutput | null {
+  const br = vettedBrainstorm(value);
+  if (!br) return null;
+  const allowed = new Set(assetNames(source.assets).map((n) => n.name));
+  return { ...br, angles: br.angles.map((angle) => ({ ...angle, assets: angle.assets.filter((name) => allowed.has(name)).slice(0, 12) })) };
 }
 function localPlan(s: Awaited<ReturnType<typeof snapshot>>) {
   const c = marketingContext.parse(s.context);
@@ -121,6 +167,7 @@ async function creativePreview(tx: Tx, projectId: string, input: Extract<Assista
 }
 async function fallbackResult(tx: Tx, projectId: string, input: AssistantRequest, s: Awaited<ReturnType<typeof snapshot>>) {
   if (input.kind === 'marketing') return marketingResult(s);
+  if (input.kind === 'brainstorm') return brainstormResult(s as unknown as BrainstormSource);
   try { return await creativePreview(tx, projectId, input); }
   catch (e) {
     if (!(e instanceof HttpError || (e instanceof Error && e.name === 'ZodError'))) throw e;
@@ -178,8 +225,11 @@ export async function generateAssistantClaim(job: { id: string; accountId: strin
   if (hash([input, row.snapshot, row.providerProfile]) !== row.inputDigest) throw stale();
   const config = vertexConfig();
   const c = input.kind === 'marketing' ? marketingContext.parse(source.context) : undefined;
-  const modelInput: ModelInput = { kind: input.kind, data: minimizeModelData({ request: input.prompt, previous, business: source.profile,
-    ...(c ? { offer: c.offer, week: c.week, slots: marketingResult(source).slots, professionalReview: c.regulated } : { selectedScene: source.selected }) }) };
+  const modelInput: ModelInput = input.kind === 'marketing'
+    ? { kind: 'marketing', data: minimizeModelData({ request: input.prompt, previous, business: source.profile, offer: c!.offer, week: c!.week, slots: marketingResult(source).slots, professionalReview: c!.regulated }) }
+    : input.kind === 'creative'
+      ? { kind: 'creative', data: minimizeModelData({ request: input.prompt, previous, business: source.profile, selectedScene: source.selected }) }
+      : { kind: 'brainstorm', data: minimizeModelData({ request: input.prompt, previous, business: source.profile, offer: (source as unknown as BrainstormSource).offer?.name ?? null, assets: assetNames((source as unknown as BrainstormSource).assets) }) };
   const fresh = await snapshot(prisma, job.accountId, job.projectId, input).then((s) => hash(s) === hash(source)).catch((error: unknown) => {
     if (error instanceof HttpError && [404, 409, 422].includes(error.statusCode)) return false;
     throw error;
@@ -204,6 +254,9 @@ export async function generateAssistantClaim(job: { id: string; accountId: strin
     if (input.kind === 'marketing') {
       const copy = vettedCopy(outcome.output);
       if (copy) result = marketingResult(source, copy);
+    } else if (input.kind === 'brainstorm') {
+      const br = sanitizeBrainstorm(outcome.output, source as unknown as BrainstormSource);
+      if (br) result = br;
     } else if (outcome.output !== undefined) {
       try { result = await creativePreview(prisma, job.projectId, input, outcome.output); }
       catch (e) { if (!(e instanceof HttpError || (e instanceof Error && e.name === 'ZodError'))) throw e; }
