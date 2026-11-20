@@ -37,6 +37,36 @@ function findFfprobe(): string {
   return 'ffprobe';
 }
 
+function findFfmpeg(): string {
+  const configured = process.env.FFMPEG_PATH;
+  if (!configured || !fs.existsSync(configured)) {
+    throw new Error('FFMPEG_PATH requis pour les tests media FIX01.');
+  }
+  return configured;
+}
+
+function ffmpeg(args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(findFfmpeg(), args, { windowsHide: true });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+    child.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve(stdout);
+      } else {
+        reject(new Error('ffmpeg failed with code ' + code + ': ' + stderr.slice(0, 2000)));
+      }
+    });
+  });
+}
+
 function ffprobe(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(findFfprobe(), args, { windowsHide: true });
@@ -258,6 +288,58 @@ describe('Media FIX01 — duree reelle du master', () => {
     const digest = (await import('node:crypto')).createHash('sha256').update(fs.readFileSync(v1.absolutePath)).digest('hex');
     expect(digest).toBe(v1Checksum);
     expect(v1After.frames).toBe(150);
+  });
+
+  it('conserve la duree exacte avec une piste audio reelle (chemin audio active)', async () => {
+    const projectId = 'fix01-audio';
+    const durations = [2, 3, 4];
+    const scenes = await renderScenes(projectId, durations);
+    const musicDir = path.join(root, projectId);
+    fs.mkdirSync(musicDir, { recursive: true });
+    const music = path.join(musicDir, 'music.m4a');
+    await ffmpeg([
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-y',
+      '-f',
+      'lavfi',
+      '-i',
+      'sine=frequency=220:sample_rate=44100:duration=20',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '128k',
+      music
+    ]);
+
+    const startedAt = Date.now();
+    const master = await assembleMaster({
+      projectId,
+      artifactRoot: root,
+      version: 1,
+      scenePaths: scenes.map((scene) => scene.absolutePath),
+      sceneDurationsSeconds: durations,
+      motion: {
+        width: 1080,
+        height: 1920,
+        dip: false,
+        clips: scenes.map(() => undefined),
+        audio: { path: music, gain: 0.8 }
+      }
+    });
+    // Aucun processus ne doit rester bloque (apad + anullsrc sont coupes par -t).
+    expect(Date.now() - startedAt).toBeLessThan(120000);
+
+    const probed = await probeWithFfprobe(master.absolutePath);
+    expect(probed.video.codec_name).toBe('h264');
+    expect(probed.audio?.codec_name).toBe('aac');
+    expect(Math.abs(probed.duration - 9)).toBeLessThanOrEqual(oneFrame);
+    expect(probed.frames).toBe(270);
+    expect(Math.abs(Number(probed.audio?.duration ?? 0) - 9)).toBeLessThanOrEqual(
+      MASTER_DURATION_TOLERANCE_FRAMES / MASTER_FRAME_RATE
+    );
+    expect((await runQa(scenes, master)).status).toBe('PASS');
   });
 
   it('preserve le chemin motion (scenes animes avec fondus) et sa duree', async () => {
