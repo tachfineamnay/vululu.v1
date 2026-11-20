@@ -64,3 +64,5 @@ Le registre d’inauguration reste historique. La stack présente est décrite d
 - [ADR 0028 — Mots de passe de recette](0028-mots-de-passe-de-recette.md)
 
 - [ADR 0033 — Inscription vérifiée des clients](0033-comptes-clients.md)
+
+- [ADR 0034 — Assistant de projet via Vertex AI](0034-assistant-vertex.md)

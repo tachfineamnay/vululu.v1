@@ -40,10 +40,15 @@ async function owned(tx: Tx, id: string, actor: string) {
     })) ?? missing()
   );
 }
-async function allowed(tx: Tx, actor: string, id: string, tool: keyof typeof tools, revision: number) {
+async function allowed(tx: Tx, actor: string, id: string, tool: keyof typeof tools, revision: number, key: string) {
   if(tool.startsWith('sandbox.')&&demoDisabled()) deny(403,'tool_disabled');
   const a = await lock(tx, actor);
   if (!a.enabled || !a.tools.includes(tool)) deny(403, 'tool_disabled');
+  if (tool === 'assistant.draft@1') {
+    if (!await tx.assistantTurn.count({ where: { id: key, projectId: id, revision, providerProfile: { not: null },
+      origin: null, project: { userId: actor, context: { userId: actor } } } })) return missing();
+    return a;
+  }
   if (tool === 'marketing.plan@1') {
     if (
       !(await tx.marketingRevision.count({
@@ -62,7 +67,7 @@ async function allowed(tx: Tx, actor: string, id: string, tool: keyof typeof too
   return a;
 }
 async function reserve(tx: Tx, o: Op, actor: string) {
-  const a = await allowed(tx, actor, o.projectId, toolSchema.parse(o.tool), o.revision);
+  const a = await allowed(tx, actor, o.projectId, toolSchema.parse(o.tool), o.revision, o.key);
   await holdTool(tx,o);
   if (a.limitCents - a.spentCents - a.reservedCents < o.maxCents) deny(409, 'budget_exhausted');
   await tx.executionAccount.update({
@@ -88,6 +93,11 @@ export async function proposeTx(tx: Tx, actor: string, projectId: string, input:
   const parts: unknown[] = [projectId, p.tool, p.revision];
   if (p.tool.startsWith('postiz.') || p.tool === 'marketing.plan@1') parts.push(p.key);
   let digest = createHash('sha256').update(JSON.stringify(parts)).digest('hex');
+  if (p.tool === 'assistant.draft@1') {
+    const turn = await tx.assistantTurn.findFirst({ where: { id: p.key, projectId, revision: p.revision, project: { userId: actor } }, select: { inputDigest: true } });
+    if (!turn) return missing();
+    digest = createHash('sha256').update(JSON.stringify([...parts, p.key, turn.inputDigest, tools[p.tool].maxCents])).digest('hex');
+  }
   if (p.tool.startsWith('media.')) {
     const g = await tx.mediaGeneration.findFirst({
       where: {
@@ -101,7 +111,7 @@ export async function proposeTx(tx: Tx, actor: string, projectId: string, input:
     if (!g) return missing();
     digest = mediaApprovalDigest(g, tools[p.tool].maxCents);
   }
-  await allowed(tx, actor, projectId, p.tool, p.revision);
+  await allowed(tx, actor, projectId, p.tool, p.revision, p.key);
   if (
     p.tool === 'marketing.plan@1' &&
     !(await tx.marketingRevision.count({ where: { projectId, version: p.revision, requestId: p.key } }))
@@ -222,7 +232,7 @@ export async function execute(id: string, engine: EnginePort, timeoutMs = 120000
     const tool = toolSchema.parse(row.tool);
     try {
       if(!polling)await checkClaim(tx,row);
-      await allowed(tx, row.accountId, row.projectId, tool, row.revision);
+      await allowed(tx, row.accountId, row.projectId, tool, row.revision, row.key);
     } catch (e) {
       if (!(e instanceof HttpError)) throw e;
       if (polling) await incident(tx, row);

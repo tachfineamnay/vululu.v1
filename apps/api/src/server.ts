@@ -1,4 +1,5 @@
 import './env';
+import { assistantRoutes } from './routes/assistant';
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import { z } from 'zod';
@@ -142,6 +143,7 @@ export async function buildServer({ accountMail = configuredAccountMail() }: { a
   await app.register(creativeRoutes);
   await app.register(executionRoutes);
   await app.register(marketingRoutes);
+  await app.register(assistantRoutes);
   await app.register(mediaGenerationRoutes);
   await app.register(studioRoutes);
   await app.register(publishingRoutes);

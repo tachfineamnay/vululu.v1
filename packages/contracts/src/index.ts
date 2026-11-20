@@ -108,3 +108,5 @@ export * from './compositionGuide';
 export * from './marketing';
 export * from './creativeAction';
 export * from './mediaGeneration';
+
+export * from './assistant';
