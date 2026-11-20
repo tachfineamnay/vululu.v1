@@ -218,6 +218,10 @@ export async function dispatchMedia(
         await update('CREDENTIAL_REJECTED');
         return { costCents: 0 };
       }
+      if (error instanceof ProviderHttpError && [400, 402, 422, 429].includes(error.status)) {
+        await update([402, 429].includes(error.status) ? 'QUOTA_REJECTED' : 'PROVIDER_REJECTED');
+        return { costCents: 0 };
+      }
       await update('SUBMISSION_UNKNOWN');
       throw Error('media_submission_unknown', { cause: error });
     }
@@ -226,25 +230,25 @@ export async function dispatchMedia(
     await update('OUTCOME_UNKNOWN');
     throw Error('media_poll_expired');
   }
-  if (g.cancelRequested && !g.cancelSent) {
-    await prisma.mediaGeneration.update({ where: { id: g.id }, data: { cancelSent: true } });
-    try {
-      await p.cancel(g.remoteId, signal);
-      return { pendingMedia: true as const };
-    } catch {
-      await update('CANCEL_UNKNOWN');
-      throw Error('media_cancel_cost_unknown');
-    }
-  }
-  let receipt: number | undefined;
+  let receipt: number | undefined = g.reportedCents ?? undefined;
+  let ready = false, reading = true;
+  const readSignal = () => AbortSignal.any([signal, AbortSignal.timeout(25000)]);
   try {
-    const result = await p.poll(g.remoteId, signal).catch((e) => {
-      if (e instanceof ProviderHttpError && [429, 502, 503, 504].includes(e.status))
-        return { state: 'pending' as const, costCents: undefined };
-      throw e;
-    });
-    if (result.state === 'pending') return { pendingMedia: true as const };
-    receipt = result.costCents;
+    const result = await p.poll(g.remoteId, readSignal());
+    reading = false;
+    if (result.state === 'pending') {
+      if (g.cancelRequested && !g.cancelSent) {
+        await prisma.mediaGeneration.update({ where: { id: g.id }, data: { cancelSent: true } });
+        try {
+          // Runway DELETE also deletes terminal tasks. Check status first to reduce that race.
+          await p.cancel(g.remoteId, readSignal());
+        } catch {
+          // A DELETE can be ambiguous. Never repeat it; the next GET may recover a receipt.
+        }
+      }
+      return { pendingMedia: true as const };
+    }
+    receipt = result.costCents ?? receipt;
     if (receipt !== undefined)
       await prisma.mediaGeneration.update({ where: { id: g.id }, data: { reportedCents: receipt } });
     if (receipt !== undefined && receipt > op.maxCents) {
@@ -252,10 +256,15 @@ export async function dispatchMedia(
       return { costCents: receipt };
     }
     if (result.state === 'ready') {
-      const bytes = await p.download(result.url, signal),
-        mime = await verifyOutput(bytes, r);
+      ready = true;
+      reading = true;
+      const bytes = await p.download(result.url, readSignal());
+      reading = false;
+      const mime = await verifyOutput(bytes, r);
       signal.throwIfAborted();
       const ctx = await context(job.accountId, job.projectId, r);
+      // Mark the storage boundary so a crash cannot import the same output twice.
+      await update('MATERIALIZING');
       const asset = await assets.upload(
         actor(job.accountId),
         ctx,
@@ -274,23 +283,28 @@ export async function dispatchMedia(
           state: 'READY',
           outputVersion: asset.id,
           modelVersion: result.modelVersion,
-          reportedCents: result.costCents
+          reportedCents: receipt
         }
       });
     } else
       await prisma.mediaGeneration.update({
         where: { id: g.id },
-        data: { state: result.state.toUpperCase(), reportedCents: result.costCents }
+        data: { state: result.state.toUpperCase(), reportedCents: receipt }
       });
-    if (result.costCents === undefined) throw Error('media_cost_unknown');
-    return { costCents: result.costCents };
-  } catch {
+    if (receipt === undefined) throw Error('media_cost_unknown');
+    return { costCents: receipt };
+  } catch (error) {
+    // Safe reads may be retried without repeating generation, including a freshly signed CDN URL.
+    if (reading && !signal.aborted && (
+      (error instanceof ProviderHttpError && [408, 429, 500, 502, 503, 504, ...(ready ? [403, 404] : [])].includes(error.status)) ||
+      (error instanceof Error && (error.name === 'TimeoutError' || error.message === 'fetch failed'))
+    )) return { pendingMedia: true as const };
     await prisma.mediaGeneration.updateMany({
-      where: { id: g.id, state: 'PENDING' },
-      data: { state: receipt === undefined ? 'OUTCOME_UNKNOWN' : 'INVALID_OUTPUT' }
+      where: { id: g.id, state: { in: ['PENDING', 'MATERIALIZING'] } },
+      data: { state: ready ? 'INVALID_OUTPUT' : 'OUTCOME_UNKNOWN' }
     });
     if (receipt !== undefined) return { costCents: receipt };
-    throw Error('media_outcome_or_cost_unknown');
+    throw Error('media_outcome_or_cost_unknown', { cause: error });
   }
 }
 // Placement is a separate owner decision. Never edit the project from a worker callback.

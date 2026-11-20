@@ -214,7 +214,9 @@ it('controlled HTTP fixtures only: claim → durable poll → verified asset →
   const vo = await prepareMedia(user, project, video);
   await approve(user, vo.id, vo.digest);
   await execute(vo.id, vengine);
+  await cancelMedia(user, project, vo.key); // A completed task must still be imported, never deleted.
   await execute(vo.id, vengine);
+  expect(vhttp.mock.calls.some(([, req]) => req?.method === 'DELETE')).toBe(false);
   [g] = await mediaHistory(user, project);
   expect(g).toMatchObject({
     state: 'READY',
@@ -284,6 +286,7 @@ it('cancel after submit requests one remote cancellation and holds budget until 
   const http = vi
     .fn<typeof fetch>()
     .mockResolvedValueOnce(Response.json({ id: 'cancel-id' }))
+    .mockResolvedValueOnce(Response.json({ id: 'cancel-id', status: 'processing' }))
     .mockResolvedValueOnce(Response.json({}))
     .mockResolvedValueOnce(Response.json({ id: 'cancel-id', status: 'canceled' }));
   const e = engine(new ReplicateImage('fixture', http));
@@ -356,4 +359,37 @@ it('does not execute an altered prompt under an earlier financial approval', asy
   await execute(o.id, engine(new ReplicateImage('fixture', http)));
   expect(http).not.toHaveBeenCalled();
   expect((await mediaHistory(user, project))[0].operation?.state).toBe('UNKNOWN');
+});
+
+it('recovers an expired claim with a durable remote ID and retries a temporary download failure without another POST', async () => {
+  const { recover } = await import('../../apps/api/src/infrastructure/execution/broker');
+  const png = await sharp({ create: { width: 1024, height: 1024, channels: 3, background: '#aaccee' } }).png().toBuffer();
+  const ready = () => Response.json({ id: 'recoverable', status: 'succeeded', output: ['https://replicate.delivery/output.png'] });
+  const http = vi.fn<typeof fetch>()
+    .mockResolvedValueOnce(Response.json({ id: 'recoverable' }))
+    .mockResolvedValueOnce(ready())
+    .mockResolvedValueOnce(new Response(null, { status: 503 }))
+    .mockResolvedValueOnce(ready())
+    .mockResolvedValueOnce(new Response(png));
+  const port = engine(new ReplicateImage('fixture', http));
+  const op = await prepareMedia(user, project, input());
+  await approve(user, op.id, op.digest);
+  await execute(op.id, port);
+  await prisma.executionOperation.update({ where: { id: op.id }, data: { state: 'CLAIMED', claimUntil: new Date(0) } });
+  await recover();
+  await execute(op.id, port);
+  expect((await mediaHistory(user, project))[0]).toMatchObject({ state: 'PENDING', operation: { state: 'POLLING' } });
+  await execute(op.id, port);
+  expect((await mediaHistory(user, project))[0]).toMatchObject({ state: 'READY', operation: { costState: 'UNKNOWN' } });
+  expect(http.mock.calls.filter(([, req]) => req?.method === 'POST')).toHaveLength(1);
+});
+
+it('reports a rejected quota without spending or retrying the provider', async () => {
+  const op = await prepareMedia(user, project, input());
+  const http = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 429 }));
+  await approve(user, op.id, op.digest);
+  await execute(op.id, engine(new ReplicateImage('fixture', http)));
+  expect((await mediaHistory(user, project))[0]).toMatchObject({ state: 'QUOTA_REJECTED', operation: { reportedCents: 0 } });
+  expect(await prisma.executionAccount.findUnique({ where: { userId: user } })).toMatchObject({ reservedCents: 0, spentCents: 0 });
+  expect(http).toHaveBeenCalledOnce();
 });

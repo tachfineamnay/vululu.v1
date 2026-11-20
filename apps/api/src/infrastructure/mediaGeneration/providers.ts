@@ -18,6 +18,7 @@ export const caps = {
     maxCents: 25
   }
 } as const;
+const toggle = (kind: MediaRequest['kind']) => kind === 'image' ? 'MEDIA_IMAGE_ENABLED' : 'MEDIA_VIDEO_ENABLED';
 const key = (kind: MediaRequest['kind']) =>
   kind === 'image' ? 'REPLICATE_API_TOKEN' : 'RUNWAYML_API_SECRET';
 export function capability(kind: MediaRequest['kind']): MediaCapability {
@@ -26,7 +27,7 @@ export function capability(kind: MediaRequest['kind']): MediaCapability {
     kind,
     ...caps[kind],
     availability:
-      process.env.MEDIA_GENERATION_ENABLED !== '1'
+      process.env.MEDIA_GENERATION_ENABLED !== '1' || (process.env[toggle(kind)] ?? '1') !== '1'
         ? 'disabled'
         : !(
               process.env[key(kind)]?.trim() ||
@@ -56,6 +57,7 @@ const remote = z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/);
 async function bounded(response: Response, max: number) {
   if (!response.ok || !response.body || Number(response.headers.get('content-length')) > max) {
     await response.body?.cancel();
+    if (!response.ok) throw new ProviderHttpError(response.status);
     throw Error('media_provider_unavailable');
   }
   const reader = response.body.getReader(),

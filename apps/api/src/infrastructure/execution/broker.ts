@@ -298,6 +298,19 @@ export async function recover() {
   });
   for (const { id } of rows)
     await transition(id, async (tx, o) => {
-      if (o.state === 'CLAIMED' && o.claimUntil && o.claimUntil < new Date()) await incident(tx, o);
+      if (o.state !== 'CLAIMED' || !o.claimUntil || o.claimUntil >= new Date()) return;
+      if (o.tool.startsWith('media.')) {
+        const media = await tx.mediaGeneration.findFirst({ where: { id: o.key, projectId: o.projectId, remoteId: { not: null } } });
+        if (media?.state === 'PENDING') {
+          // A persisted remote ID makes the next invocation resume polling instead of replaying submission.
+          await tx.executionOperation.update({ where: { id }, data: { state: 'POLLING', claimUntil: null, notifyAfter: new Date() } });
+          return;
+        }
+        if (media && ['READY', 'FAILED', 'CANCELLED', 'INVALID_OUTPUT'].includes(media.state) && media.reportedCents !== null) {
+          await settle(tx, o, media.reportedCents);
+          return;
+        }
+      }
+      await incident(tx, o);
     });
 }
