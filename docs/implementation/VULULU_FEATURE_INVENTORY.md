@@ -30,7 +30,7 @@
 | 1 | OBJECTIVE | IMPLEMENTED | `apps/web/app/projects/new/page.tsx:87-91` (titre + objectif), `apps/api/src/routes/projects.ts:27` | Porté par `Project` ; `Campaign` n'a que nom/description (`packages/domain/src/campaign.ts:6-27`) |
 | 2 | CHANNEL | PARTIAL | `packages/contracts/src/channels.ts:3`, `apps/web/app/projects/new/page.tsx` (P01 : cartes canal, formats filtrés), `apps/web/components/CampaignJourney.tsx` | 3 canaux projet (TikTok/Instagram/LinkedIn) ; publication en gère 5 (`provider.ts:3`) — Facebook/Google absents du projet |
 | 3 | FORMAT | PARTIAL | `packages/contracts/src/productionFormats.ts:5-17`, choix canal→format de `apps/web/app/projects/new/page.tsx` (P01) | `Video` = `studio:null` (aucune composition éditable) ; `Motion` déclaré (`channels.ts:4`) sans `productionFormat` ni rendu |
-| 4 | USER ASSETS | PARTIAL | `apps/web/app/assets/page.tsx`, `apps/api/src/routes/assets.ts:18-49`, `packages/application/src/use-cases/assets.ts` ; positionnée après le format dans `CampaignJourney` (P01) | Capacité réelle et navigable avant le brainstorming, mais **aucun prérequis serveur** : la confirmation/gate reste à faire (P02) |
+| 4 | USER ASSETS | IMPLEMENTED (décision) / PARTIAL (sélection) | `apps/web/components/ProjectAssetsStep.tsx`, `apps/api/src/routes/assets.ts` (decision/confirm), `packages/application/src/assetDecisionPorts.ts`, migration `20261121100000_project_assets_confirmation` | Sélection **ou** absence de ressource explicitement confirmée ; gate serveur `assets_required`/`assets_confirmation_stale` avant assistant et plan marketing. Import/upload inchangés ; la composition des assets dans les scènes dépend encore des caps existants |
 | 5 | AI BRAINSTORMING | PARTIAL | `apps/api/src/infrastructure/assistant/service.ts:49-65,125-151` (turns versionnés), `marketing/service.ts:45-92` | Moteur IA Vertex seulement si `ASSISTANT_VERTEX_ENABLED=1` ; repli hors-ligne déterministe ; **aucun asset utilisateur** dans le snapshot |
 | 6 | ART DIRECTIONS | MISSING (entité) | Substituts : `ProjectStudio.tsx:496-499` « Direction artistique simulée » (champ libre déterministe), stratégie de `MarketingRevision` | Aucun modèle Prisma de propositions de DA, aucune comparaison/versionnement de DA alternatives |
 | 7 | HUMAN SELECTION | PARTIAL | Approbation/refine : `routes/creative.ts:104`, `routes/marketing.ts:34`, `routes/assistant.ts:18-22` ; comparaison `RevisionCompare.tsx` | Pas de « rejeter/écarter » explicite d'une proposition ni de sélection multi-DA côte à côte |
@@ -157,7 +157,20 @@
 - **Leads/ventes/attribution : MISSING.** `results/page.tsx:35-41` les expose en `NOT_AVAILABLE` (« Aucun CRM connecté », « Aucune source de vente connectée »).
 - **Deux pipelines créatifs coexistent** : Studio natif versionné (`CreativeEditor.tsx`, `CreativeRevision`) et production historique déterministe (`ProjectStudio.tsx` + `worker/pipeline.ts` + `ProductionRun`). La coexistence est un risque de duplication et de parcours incohérent, pas une fonctionnalité.
 
-## 7. Mise à jour P01 — entrée de campagne (2026-11-20)
+## 7. Mise à jour P02 — décision de ressources et gate serveur (2026-11-20)
+
+Implémenté depuis l'inventaire (commit P02, `BUILD_UNVERIFIED`, aucun test exécuté) :
+
+- Migration additive `20261121100000_project_assets_confirmation` : `Project.assetsConfirmedAt`, `assetsConfirmationDigest`, `assetsConfirmation` (JSONB, snapshot stable).
+- `packages/application/src/assetDecisionPorts.ts` : décision `assets` ou `none`, digest SHA-256 canonique (domaine), évaluation `confirmed/stale` (sélection modifiée, version indisponible, format incompatible, droits insuffisants), `AssetDecisionUseCases`.
+- `apps/api/src/infrastructure/prisma/assetDecisionRepository.ts` : lecture partagée API/assistant (propriétaire + contexte vérifiés), confirmation transactionnelle (verrou projet, sélection exacte, versions `ready`).
+- API : `GET /api/projects/:id/assets/decision` et `POST /api/projects/:id/assets/confirm` (`{ noAssets }`). La sauvegarde de sélection (`PUT /api/projects/:id/assets`) invalide désormais la confirmation.
+- Gate serveur : l'assistant (`createTurn`) refuse en 409 `assets_required` / `assets_confirmation_stale` avant toute création de tour, et le plan marketing (`POST /api/projects/:id/marketing`) applique le même prérequis. Le snapshot du tour contient la décision confirmée (hash inclus dans la fraîcheur IA).
+- Web : `apps/web/components/ProjectAssetsStep.tsx` (bibliothèque, prévisualisations, droits, usage, confirmations), carte du parcours (étape ressources = faite/à faire), brainstorming verrouillé tant que la décision n'est pas confirmée.
+
+Limites P02 : les suites existantes qui appellent l'assistant/le plan marketing sans confirmer les ressources échoueront jusqu'au réalignement P12 ; aucune exécution réelle (tests, build, lint, typecheck) en P02 ; le client Prisma doit être régénéré avant toute vérification TypeScript.
+
+## 8. Mise à jour P01 — entrée de campagne (2026-11-20)
 
 Implémenté depuis cet inventaire (commit P01, `BUILD_UNVERIFIED`, aucun test exécuté) :
 

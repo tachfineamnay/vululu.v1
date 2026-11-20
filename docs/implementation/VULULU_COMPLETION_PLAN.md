@@ -193,5 +193,6 @@ Chaque lot laisse l'application fonctionnelle et se termine par un commit unique
 | Lot | État | Commit / date | Preuves |
 |---|---|---|---|
 | P01 | **BUILD_UNVERIFIED** | `feat(p01)` du 2026-11-20 | Aucun test exécuté. Vérification manuelle : lecture du diff, parse syntaxique des fichiers modifiés, parcours de code (objectif → canal → format → identité → vérification, campagne optionnelle, carte 12 étapes, ressources liées). Limites : E2E non réaligné (P12) ; gate assets en P02. |
+| P02 | **BUILD_UNVERIFIED** | `feat(p02)` du 2026-11-20 | Aucun test exécuté. Migration additive `20261121100000_project_assets_confirmation` (3 colonnes nullables) ; décision explicite (sélection ou « aucune ressource ») ; digest SHA-256 de la sélection ; gate `assets_required`/`assets_confirmation_stale` sur l'assistant et le plan marketing ; snapshot d'assets dans `AssistantTurn.snapshot`. Limites : E2E/tests d'intégration non réalignés (P12) ; types Prisma à régénérer (`pnpm db:generate`) avant typecheck réel. |
 
 *Disclaimer : aucun test n'a été exécuté en P00–P01 ; les statuts décrivent la présence de code à HEAD `f5d515b`, jamais une certification.*

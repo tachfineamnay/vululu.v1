@@ -55,7 +55,9 @@ export class PrismaAssetRepository implements AssetRepository {
       for (const version of versions) assertAssetUsage(version.license as AssetLicense, usage);
       await tx.projectAssetSelection.deleteMany({ where: { projectId } });
       await tx.projectAssetSelection.createMany({ data: versions.map((v) => ({ projectId, assetId: v.assetId, assetVersionId: v.id })) });
-      await tx.project.update({ where: { id: projectId }, data: { usage } });
+      // Toute modification de sélection invalide la confirmation : le brainstorming devra être reconfirmé.
+      await tx.project.update({ where: { id: projectId }, data: { usage, assetsConfirmedAt: null,
+        assetsConfirmationDigest: null, assetsConfirmation: Prisma.DbNull } });
     });
   }
 }

@@ -17,6 +17,8 @@ import ConversationProposalCard from './ConversationProposalCard';
 import { useUnsavedChanges } from '../lib/useUnsavedChanges';
 import ProjectJourney from './ProjectJourney';
 import CampaignJourney from './CampaignJourney';
+import ProjectAssetsStep from './ProjectAssetsStep';
+import type { ProjectAssetDecision } from '../lib/api';
 import { projectJourney } from '../lib/projectJourney';
 import CreationDelivery from './CreationDelivery';
 import { matchesStudioRevision, readStudioDraft, type CorrectionDraft, type StudioDraft } from '../lib/studioDraft';
@@ -74,6 +76,7 @@ export default function ProjectStudio({ id }: { id: string }) {
   const {demo: demoMode,t}=useWorkspace();
   const router = useRouter();
   const [bundle, setBundle] = useState<ProjectBundle | null>(null);
+  const [assetDecision, setAssetDecision] = useState<ProjectAssetDecision | null>(null);
   const demo = demoMode && bundle?.project.format === 'Video';
   const [calendarSource, setCalendarSource] = useState<Destination>();
   const [error, setError] = useState('');
@@ -442,20 +445,32 @@ export default function ProjectStudio({ id }: { id: string }) {
           channelDone={!!bundle.project.platform}
           formatDone={!!bundle.project.format}
           assetsActive={true}
+          assetsConfirmed={!!assetDecision?.confirmed}
           assetsHref={'/assets?context=' + encodeURIComponent(bundle.context.id) + '&project=' + encodeURIComponent(bundle.project.id)}
-          assetsHint={t('Choisissez les photos, le logo et les références de ce projet. La sélection reste modifiable ensuite.', 'Choose this project’s photos, logo and references. The selection stays editable afterwards.')}
+          assetsHint={assetDecision?.confirmed
+            ? t('Ressources confirmées. Toute modification de la sélection demandera une reconfirmation avant le brainstorming.', 'Assets confirmed. Any change to the selection will require confirmation again before brainstorming.')
+            : t('Choisissez les photos, le logo et les références de ce projet, puis confirmez la décision.', 'Choose this project’s photos, logo and references, then confirm the decision.')}
           identityName={bundle.context.name}
           campaignId={bundle.project.campaignId ?? null}
           projectId={bundle.project.id}
         />
 
+        <ProjectAssetsStep projectId={bundle.project.id} contextId={bundle.context.id} format={bundle.project.format} onDecision={setAssetDecision} />
+
         <StudioDesk bundle={bundle} state={live.state} connection={live.connection} go={focusStudioSection}/>
         <CreativeEditor bundle={bundle} serverHead={live.state?.revisions[0]?.version} serverRenders={live.state?.renders} calendarSource={calendarSource}/>
-        <ProjectAssistant key={bundle.project.id} projectId={bundle.project.id} contextId={bundle.context.id} creativeHead={live.state?.revisions[0]?.version} preferredOffer={calendarSource?.offerId} useCta={(cta) => {
-          setBriefCta(cta); setBriefEdited(true); focusStudioSection('brief-heading');
-          notify('Appel à l’action repris. Enregistrez le brief après relecture.');
-        }} />
-        <MarketingAssistant key={bundle.project.id} project={bundle.project.id} context={bundle.context.id}/>
+        {assetDecision?.confirmed ? <>
+          <ProjectAssistant key={bundle.project.id} projectId={bundle.project.id} contextId={bundle.context.id} creativeHead={live.state?.revisions[0]?.version} preferredOffer={calendarSource?.offerId} useCta={(cta) => {
+            setBriefCta(cta); setBriefEdited(true); focusStudioSection('brief-heading');
+            notify('Appel à l’action repris. Enregistrez le brief après relecture.');
+          }} />
+          <MarketingAssistant key={bundle.project.id} project={bundle.project.id} context={bundle.context.id}/>
+        </> : <section className="card stack" id="brainstorm-locked" data-testid="brainstorm-locked" aria-labelledby="brainstorm-locked-heading">
+          <p className="eyebrow">{t('Brainstorming', 'Brainstorming')}</p>
+          <h2 id="brainstorm-locked-heading">{t('Confirmez vos ressources pour commencer', 'Confirm your assets to start')}</h2>
+          <p>{t('Le brainstorming et les propositions créatives restent verrouillés jusqu’à la confirmation de votre sélection de ressources — ou de l’absence de ressource. Le serveur refuse toute demande directe qui contournerait cette étape.', 'Brainstorming and creative suggestions stay locked until you confirm your asset selection — or that you have no assets. The server rejects any direct request that bypasses this step.')}</p>
+          <a className="text-link" href="#assets-decision">{t('Revenir à la décision de ressources', 'Go to the asset decision')}</a>
+        </section>}
         {demo&&<details className="studio-demo">
           <summary>Pipeline de démonstration · Rendu local et transfert simulé</summary>
           <div className="studio-demo-details">

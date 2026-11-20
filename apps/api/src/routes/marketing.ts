@@ -8,6 +8,7 @@ import {
   prepareRefinement
 } from '../infrastructure/marketing/service';
 import { rateLimitPreHandler } from '../infrastructure/security/rateLimiter';
+import { actorOf, assetDecisions } from '../application/container';
 export async function marketingRoutes(app: FastifyInstance) {
   const auth = {
     preHandler: [
@@ -22,7 +23,12 @@ export async function marketingRoutes(app: FastifyInstance) {
     project = z.object({ project: z.string().min(1).max(128) }),
     rev = project.extend({ version: z.coerce.number().int().positive() });
   app.get(base, auth, (r) => history(r.currentUser!.id, project.parse(r.params).project));
-  app.post(base, auth, (r) => createDraft(r.currentUser!.id, project.parse(r.params).project, r.body));
+  app.post(base, auth, async (r) => {
+    const p = project.parse(r.params);
+    // Même prérequis que l'assistant : aucune génération de brainstorming sans décision de ressources confirmée.
+    await assetDecisions.assertConfirmed(actorOf(r.currentUser), p.project);
+    return createDraft(r.currentUser!.id, p.project, r.body);
+  });
   app.get(base + '/:version', auth, (r) => {
     const p = rev.parse(r.params);
     return readDraft(r.currentUser!.id, p.project, p.version);

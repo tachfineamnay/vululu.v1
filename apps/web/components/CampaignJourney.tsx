@@ -31,6 +31,7 @@ type Props = {
   channelDone: boolean;
   formatDone: boolean;
   assetsActive: boolean;
+  assetsConfirmed?: boolean;
   assetsHref?: string;
   assetsHint?: string;
   identityName?: string;
@@ -41,14 +42,17 @@ type Props = {
 };
 
 /** Carte de parcours commune à l'entrée de campagne et au projet. Elle ne déclenche aucune action. */
-export default function CampaignJourney({ objectiveDone, channelDone, formatDone, assetsActive, assetsHref, assetsHint, identityName, campaignId, campaignName, projectId, variant }: Props) {
+export default function CampaignJourney({ objectiveDone, channelDone, formatDone, assetsActive, assetsConfirmed, assetsHref, assetsHint, identityName, campaignId, campaignName, projectId, variant }: Props) {
   const { t } = useWorkspace();
   const [campaign, setCampaign] = useState<{ name: string } | null>(campaignName ? { name: campaignName } : null);
   const [campaignFailed, setCampaignFailed] = useState(false);
   const [campaignLoading, setCampaignLoading] = useState(!!campaignId && !campaignName);
   const [assets, setAssets] = useState<{ count: number } | null>(null);
   const [assetsFailed, setAssetsFailed] = useState(false);
-  const states = campaignJourneyStates({ objectiveDone, channelDone, formatDone, assetsState: assetsActive ? 'current' : 'upcoming' });
+  const assetsState: CampaignJourneyState = variant === 'project'
+    ? (assetsConfirmed ? 'done' : 'current')
+    : (assetsActive ? 'current' : 'upcoming');
+  const states = campaignJourneyStates({ objectiveDone, channelDone, formatDone, assetsState });
 
   useEffect(() => {
     if (!campaignId || campaignName) return;

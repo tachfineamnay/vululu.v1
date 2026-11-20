@@ -7,6 +7,8 @@ import { localTranslator, previewOf } from '../../application/creativeActions';
 import { proposeTx } from '../execution/broker';
 import { marketingSnapshot } from '../marketing/service';
 import { compile, fallback, sensitive } from '../marketing/editorial';
+import { evaluateAssetDecision } from '@vululu/application';
+import { readAssetDecisionRow } from '../prisma/assetDecisionRepository';
 import { receipt, vertexConfig, vertexProfile, vertexProvider, type AssistantProvider, type ModelInput } from './vertex';
 import { minimizeModelData, vettedChanges, vettedCopy } from './safety';
 
@@ -46,8 +48,22 @@ async function creativeSource(tx: Tx, projectId: string, input: Extract<Assistan
   if (index === -1) throw missing();
   return { spec, scene: spec.scenes[index], index, checksum: hash(spec) };
 }
+async function assetDecision(tx: Tx, userId: string, projectId: string) {
+  const row = await readAssetDecisionRow(tx, projectId, userId);
+  if (!row) throw missing();
+  const state = evaluateAssetDecision(row);
+  if (!state.confirmed) {
+    throw state.reason === 'not_confirmed'
+      ? new HttpError(409, 'assets_required', 'Confirmez vos ressources (ou l’absence de ressources) avant de lancer le brainstorming.')
+      : new HttpError(409, 'assets_confirmation_stale', 'La sélection de ressources a changé. Reconfirmez-la avant de lancer le brainstorming.');
+  }
+  if (!state.snapshot) throw new HttpError(409, 'assets_required', 'Confirmez vos ressources (ou l’absence de ressources) avant de lancer le brainstorming.');
+  return state.snapshot;
+}
 async function snapshot(tx: Tx, userId: string, projectId: string, input: AssistantRequest) {
   const row = await projectScope(tx, userId, projectId);
+  // Prérequis serveur : la décision de ressources est confirmée et non périmée. Aucun identifiant de média n'est envoyé au modèle.
+  const assets = await assetDecision(tx, userId, projectId);
   // No account identifiers, contacts, website, documents, media IDs or other projects are sent to the model.
   const profile = { name: trimmed(row.context.name, 160), description: trimmed(row.context.description, 1600),
     audience: trimmed(row.context.audience, 450), tone: trimmed(row.context.tone, 300), objective: trimmed(row.objective, 600),
@@ -55,14 +71,14 @@ async function snapshot(tx: Tx, userId: string, projectId: string, input: Assist
   if (input.kind === 'marketing') {
     const c = await marketingSnapshot(tx, userId, projectId, input.offerId, input.week,
       input.regulated || sensitive([profile.description, input.prompt, profile.objective].join(' ')));
-    return { profile, context: c, sourceDigest: hash(row) };
+    return { profile, context: c, sourceDigest: hash(row), assets };
   }
   const c = await creativeSource(tx, projectId, input, true);
   return { profile, checksum: c.checksum, selected: { position: c.index + 1, total: c.spec.scenes.length,
     seconds: c.scene.seconds, background: c.scene.background ?? c.spec.brand.background, transition: c.scene.transition,
     layers: c.scene.layers.map((l, index) => l.type === 'text'
       ? { index, type: l.type, role: l.role, text: trimmed(l.text, 200) }
-      : { index, type: l.type, fit: l.fit, gravity: l.gravity }) } };
+      : { index, type: l.type, fit: l.fit, gravity: l.gravity }) }, assets };
 }
 function sameScope(a: AssistantRequest, b: AssistantRequest) {
   return a.kind === 'marketing' && b.kind === 'marketing' ? a.offerId === b.offerId :

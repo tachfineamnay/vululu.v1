@@ -95,6 +95,9 @@ model Project {
   objective   String
   usage       String   @default("organic")
   storyboardBriefVersion Int?
+  assetsConfirmedAt       DateTime?
+  assetsConfirmationDigest String?
+  assetsConfirmation      Json?
   sceneDurationSeconds Int @default(2)
   status      String   @default("draft")
   createdAt   DateTime @default(now())

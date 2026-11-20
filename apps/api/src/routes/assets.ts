@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { MAX_ASSET_BYTES } from '@vululu/domain';
-import { assetUploadSchema, assetSelectionSchema } from '@vululu/contracts';
-import { actorOf, assets } from '../application/container';
+import { assetUploadSchema, assetSelectionSchema, assetDecisionConfirmSchema } from '@vululu/contracts';
+import { actorOf, assetDecisions, assets } from '../application/container';
 import { HttpError } from '../errors';
 import { parseByteRange } from '../infrastructure/http/byteRange';
 import { rateLimitPreHandler } from '../infrastructure/security/rateLimiter';
@@ -49,5 +49,16 @@ export async function assetRoutes(app: FastifyInstance) {
   app.put('/api/projects/:id/assets', authenticated, async (request) => {
     const input = assetSelectionSchema.parse(request.body);
     return assets.select(actorOf(request.currentUser), (request.params as { id: string }).id, input.usage, input.versionIds);
+  });
+  // Décision de ressources : état confirmé/périmé + prérequis serveur du brainstorming (P02).
+  app.get('/api/projects/:id/assets/decision', authenticated, async (request) => ({
+    decision: await assetDecisions.state(actorOf(request.currentUser), (request.params as { id: string }).id)
+  }));
+  app.post('/api/projects/:id/assets/confirm', {
+    preHandler: [app.authenticate, rateLimitPreHandler({ name: 'asset-decision', limit: 30, windowSeconds: 60, failClosed: true },
+      (request) => 'asset-decision:' + request.currentUser!.id)]
+  }, async (request) => {
+    const input = assetDecisionConfirmSchema.parse(request.body);
+    return { decision: await assetDecisions.confirm(actorOf(request.currentUser), (request.params as { id: string }).id, input.noAssets) };
   });
 }
