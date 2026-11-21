@@ -42,6 +42,8 @@ __pycache__/
 venv/
 .pytest_cache/
 pytest-cache-files-*/
+data/.models-*/
+services/python-tools/.models-*/
 .mypy_cache/
 .ruff_cache/
 *.egg-info/

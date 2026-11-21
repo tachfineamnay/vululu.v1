@@ -11,9 +11,14 @@ le worker TypeScript reste seul décideur, l'agent ne fait que recommander.
 | `image.segment@1` | GENERATE | dérive de nouvelles versions d'assets | OpenCV GrabCut | `cutout` (PNG transparent), `mask` (masque alpha PNG) |
 | `audio.analyze@1` | READ | lecture seule | module `wave` + NumPy | analyse JSON (durée, fréquence, canaux, largeur, crête/RMS dBFS, écrêtage, silences) |
 
-Aucun modèle n'est activé : le détourage est un algorithme local déterministe (GrabCut), sans
-téléchargement ni dépendance à un fournisseur. `app/models.py` détecte un modèle facultatif présent
-dans `/models` (monté en lecture seule) ; `download: "forbidden"` est explicite.
+Aucun modèle n'est activé : le détourage est un algorithme **classique local** (GrabCut), sans
+téléchargement ni dépendance à un fournisseur. **Ce n'est pas une segmentation apprise** : le registre
+expose `learned: false` et `modelUsed: null` pour les trois capacités.
+
+`app/models.py` **détecte** un fichier facultatif présent dans `/models` (monté en lecture seule) et le
+déclare honnêtement : `present`, `active: false`, `loaded: false`, `usedBy: []`, `sha256Pinned`,
+`verified` (vrai **seulement** si une empreinte attendue est épinglée et correspond), `download: "forbidden"`.
+Un modèle présent ne rend jamais le service « prêt » et n'est jamais présenté comme actif.
 
 ## Sécurité (état P12-03)
 
@@ -61,10 +66,16 @@ PYTHON_TOOLS_TOKEN="CHANGE_ME_LOCAL_DEV_ONLY_32_CHARS" \
 curl -s http://127.0.0.1:8090/readyz
 ```
 
-Tests (limites, auth, pool de processus, disponibilité, arrêt propre — aucun réseau) :
+Tests (34 cas : limites, auth, pool de processus, disponibilité, arrêt propre, formats réels,
+ratios extrêmes, corruptions, empreintes, qualité du détourage, honnêteté des modèles, parité de
+contrats Python/TypeScript/ToolBroker — aucun réseau, aucun binaire commité) :
 ```bash
 uv run python -m pytest tests -q
 ```
+
+Le contrat côté TypeScript est vérifié par `tests/v1/python-client-contract.test.ts` (serveur HTTP local,
+aucune base) et par `tests/test_capability_quality.py` qui relit `adapter.ts`, `client.ts` et
+`registry.ts` pour comparer champs, bornes et ordre des garde-fous avec les modèles Pydantic.
 
 Smoke local (analyse, détourage et analyse audio réels sur des médias générés, sans réseau) :
 ```bash

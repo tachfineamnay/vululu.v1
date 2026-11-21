@@ -17,6 +17,9 @@ class Capability:
     params_model: str
     outputs: tuple[str, ...]
     limits: dict[str, object]
+    #: True uniquement si un modèle entraîné est réellement exécuté. Aucune capacité n'en utilise :
+    #: le détourage est GrabCut (algorithme classique), jamais présenté comme une segmentation apprise.
+    learned: bool = False
 
 
 CAPABILITIES: dict[str, Capability] = {
@@ -79,6 +82,8 @@ def catalog(models_dir: str, models: list[dict[str, object]]) -> dict[str, objec
                 "paramsModel": capability.params_model,
                 "outputs": list(capability.outputs),
                 "limits": capability.limits,
+                "learned": capability.learned,
+                "modelUsed": None if not capability.learned else capability.engine,
             }
             for key, capability in CAPABILITIES.items()
         ],
