@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type Stripe from 'stripe';
 import { z } from 'zod';
 import { prisma } from '@vululu/db';
+import type { Prisma } from '@prisma/client';
 import {
   account,
   applyEvent,
@@ -20,6 +21,8 @@ import {
   reauth,
   openTicket,
   threads,
+  threadsPage,
+  THREAD_PAGE_SIZE,
   replyTicket,
   exportPage,
   erase,
@@ -97,7 +100,7 @@ export async function billingRoutes(app: FastifyInstance, { stripe }: { stripe?:
   });
   app.post('/api/billing/orders/:id/cancel', auth, (r) => cancelCheckout(r.currentUser!.id, id(r.params), stripe));
   app.post('/api/billing/orders/:id/receipt', auth, (r) => paymentReceipt(r.currentUser!.id, id(r.params), stripe));
-  app.get('/api/billing/tickets', auth, (r) => threads({ userId: r.currentUser!.id }));
+  app.get('/api/billing/tickets', auth, (r) => threads({ userId: r.currentUser!.id }, { take: THREAD_PAGE_SIZE }));
   app.post('/api/billing/tickets', auth, (r) => {
     const b = z
       .strictObject({
@@ -119,42 +122,36 @@ export async function billingRoutes(app: FastifyInstance, { stripe }: { stripe?:
     kind: z.enum(['SUPPORT', 'BETA_FEEDBACK']).optional(),
     status: status.optional(),
     q: z.string().trim().max(120).optional(),
+    // P12-08 — pagination bornée par curseur stable (identifiant de dossier).
+    cursor: z.uuid().optional(),
+    pageSize: z.coerce.number().int().min(1).max(50).optional(),
   });
   app.get('/api/support/cases', support, async (r) => {
     const filters = supportQuery.parse(r.query);
+    // BETA01 : les retours de bêta arrivent dans la même file d'assistance.
+    const where: Prisma.ServiceTicketWhereInput = {
+      kind: filters.kind ?? { in: ['SUPPORT', 'BETA_FEEDBACK'] },
+      ...(filters.status ? { status: filters.status } : {}),
+      ...(filters.q
+        ? {
+            OR: [
+              { subject: { contains: filters.q, mode: 'insensitive' as const } },
+              { user: { email: { contains: filters.q, mode: 'insensitive' as const } } },
+            ],
+          }
+        : {}),
+    };
+    // P12-08 — la file ne charge plus tout l'historique : page bornée (curseur) + messages
+    // récents (THREAD_ENTRY_LIMIT) + total réel par état calculé avec le MÊME filtre.
     return prisma.$transaction(async (tx) => {
       await audit(tx, r.currentUser!.id, 'support.queue_read', 'support');
-      const tickets = await tx.serviceTicket.findMany({
-        // BETA01 : les retours de bêta arrivent dans la même file d'assistance.
-        where: {
-          kind: filters.kind ?? { in: ['SUPPORT', 'BETA_FEEDBACK'] },
-          ...(filters.status ? { status: filters.status } : {}),
-          ...(filters.q
-            ? {
-                OR: [
-                  { subject: { contains: filters.q, mode: 'insensitive' as const } },
-                  { user: { email: { contains: filters.q, mode: 'insensitive' as const } } },
-                ],
-              }
-            : {}),
-        },
-        orderBy: { updatedAt: 'desc' },
-        take: 100,
-        include: {
-          entries: { orderBy: { createdAt: 'asc' } },
-          // Contexte de compte nécessaire au traitement support (aucun autre rôle n'y accède).
-          user: { select: { email: true, name: true, status: true } },
-        },
-      });
-      return tickets.map((ticket) => ({
-        ...ticket,
-        entriesCount: ticket.entries.length,
-        lastEntryRole: ticket.entries.length > 0 ? ticket.entries[ticket.entries.length - 1].role : null,
-        lastEntryAt:
-          ticket.entries.length > 0
-            ? ticket.entries[ticket.entries.length - 1].createdAt.toISOString()
-            : null,
-      }));
+      const [page, byStatus] = await Promise.all([
+        threadsPage(where, { cursor: filters.cursor, pageSize: filters.pageSize }),
+        tx.serviceTicket.groupBy({ by: ['status'], where, _count: { _all: true } })
+      ]);
+      const counts: Record<string, number> = {};
+      for (const row of byStatus) counts[row.status] = row._count._all;
+      return { ...page, counts, filters: { kind: filters.kind ?? null, status: filters.status ?? null, q: filters.q ?? null } };
     });
   });
   app.post('/api/support/cases/:id', support, (r) => {
@@ -211,7 +208,8 @@ export async function billingRoutes(app: FastifyInstance, { stripe }: { stripe?:
         select: { id: true, action: true, targetId: true, actorId: true, createdAt: true, metadata: true } }),
       products: await prisma.billingProduct.findMany({ orderBy: { createdAt: 'desc' }, take: 100 }),
       commercial: control.enabled,
-      cases: await threads({}),
+      // P12-08 — la console commerce lit une page bornée, jamais toutes les files.
+      cases: await threads({}, { take: 20 }),
       incidents: await prisma.billingOrder.findMany({
         where: { OR: [{ state: 'PARTIAL_REVIEW' }, { refundReview: true }] },
         take: 100,

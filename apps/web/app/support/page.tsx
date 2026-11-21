@@ -2,13 +2,7 @@
 import { useWorkspace } from '../../components/WorkspacePreferences';
 import { useEffect, useMemo, useState } from 'react';
 import StudioNav from '../../components/StudioNav';
-import {
-  ServiceCases,
-  ticketState,
-  TICKET_STATE_LABELS,
-  type Ticket,
-  type TicketState
-} from '../../components/ServiceCases';
+import { ServiceCases, type Ticket } from '../../components/ServiceCases';
 import { api } from '../../lib/api';
 import Link from 'next/link';
 
@@ -18,62 +12,83 @@ const KIND_FILTERS = [
   { value: 'BETA_FEEDBACK', label: 'Retour bêta' }
 ];
 
-const STATE_ORDER: TicketState[] = ['awaiting_support', 'answered', 'in_progress', 'open', 'closed'];
-const STATE_FILTERS: Array<{ value: '' | TicketState; label: string }> = [
-  { value: '', label: 'Tous les états' },
-  ...STATE_ORDER.map((value) => ({ value, label: TICKET_STATE_LABELS[value] }))
+// P12-08 — l'état DB est la seule valeur filtrable côté serveur (OPEN / IN_PROGRESS / CLOSED).
+// Les états dérivés (en attente, répondu) restent affichés en badge mais ne pilotent plus les totaux.
+const STATUS_FILTERS: Array<{ value: '' | 'OPEN' | 'IN_PROGRESS' | 'CLOSED'; label: string }> = [
+  { value: '', label: 'Tous les états serveur' },
+  { value: 'OPEN', label: 'Ouvert' },
+  { value: 'IN_PROGRESS', label: 'En cours' },
+  { value: 'CLOSED', label: 'Clôturé' }
 ];
+type SupportPage = {
+  items: Ticket[];
+  total: number;
+  nextCursor: string | null;
+  pageSize: number;
+  entryLimit: number;
+  counts: Record<string, number>;
+  filters: { kind: string | null; status: string | null; q: string | null };
+};
 
 export default function Support() {
   const { t } = useWorkspace();
   const [rows, list] = useState<Ticket[]>([]),
     [err, fail] = useState('');
   const [kind, setKind] = useState('');
-  const [state, setState] = useState<'' | TicketState>('');
+  const [status, setStatus] = useState<'' | 'OPEN' | 'IN_PROGRESS' | 'CLOSED'>('');
   const [search, setSearch] = useState('');
+  const [total, setTotal] = useState(0);
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [entryLimit, setEntryLimit] = useState(20);
+  const [busy, setBusy] = useState(false);
 
+  function endpoint(cursor: string | null) {
+    const params = new URLSearchParams();
+    if (kind) params.set('kind', kind);
+    if (status) params.set('status', status);
+    if (search.trim()) params.set('q', search.trim());
+    if (cursor) params.set('cursor', cursor);
+    return '/api/support/cases' + (params.toString() ? '?' + params.toString() : '');
+  }
+
+  // P12-08 — filtres, totaux et page viennent du serveur : plus de filtrage local qui
+  // contredirait les compteurs, et plus de chargement de tous les historiques.
   async function load() {
-    list(await api<Ticket[]>('/api/support/cases'));
+    setBusy(true);
+    try {
+      const page = await api<SupportPage>(endpoint(null));
+      list(page.items);
+      setTotal(page.total);
+      setCounts(page.counts);
+      setNextCursor(page.nextCursor);
+      setEntryLimit(page.entryLimit);
+      fail('');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function loadMore() {
+    if (!nextCursor) return;
+    setBusy(true);
+    try {
+      const page = await api<SupportPage>(endpoint(nextCursor));
+      list((previous) => [...previous, ...page.items]);
+      setNextCursor(page.nextCursor);
+    } finally {
+      setBusy(false);
+    }
   }
 
   useEffect(() => {
     load().catch((e) => fail(e.message));
   }, []);
 
-  const counts = useMemo(() => {
-    const base: Record<TicketState, number> = {
-      open: 0,
-      awaiting_support: 0,
-      answered: 0,
-      in_progress: 0,
-      closed: 0
-    };
-    let beta = 0;
-    for (const ticket of rows) {
-      base[ticketState(ticket)] += 1;
-      if (ticket.kind === 'BETA_FEEDBACK') beta += 1;
-    }
-    return { ...base, beta };
-  }, [rows]);
-
-  const visible = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return rows.filter((ticket) => {
-      if (kind && ticket.kind !== kind) return false;
-      if (state && ticketState(ticket) !== state) return false;
-      if (!query) return true;
-      const haystack = [
-        ticket.subject,
-        ticket.id,
-        ticket.user?.email ?? '',
-        ticket.user?.name ?? '',
-        ticket.userId
-      ]
-        .join(' ')
-        .toLowerCase();
-      return haystack.includes(query);
-    });
-  }, [rows, kind, state, search]);
+  const beta = useMemo(
+    () => rows.filter((ticket) => ticket.kind === 'BETA_FEEDBACK').length,
+    [rows]
+  );
 
   return (
     <div className="shell" data-vululu-theme="blue">
@@ -106,9 +121,15 @@ export default function Support() {
               </select>
             </label>
             <label>
-              État
-              <select value={state} onChange={(event) => setState(event.target.value as '' | TicketState)}>
-                {STATE_FILTERS.map((option) => (
+              État serveur
+              <select
+                value={status}
+                onChange={(event) => {
+                  setStatus(event.target.value as '' | 'OPEN' | 'IN_PROGRESS' | 'CLOSED');
+                  void load().catch((e) => fail(e.message));
+                }}
+              >
+                {STATUS_FILTERS.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
                   </option>
@@ -123,6 +144,12 @@ export default function Support() {
                 maxLength={120}
                 placeholder="Objet, email ou référence"
                 onChange={(event) => setSearch(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    void load().catch((e) => fail(e.message));
+                  }
+                }}
               />
             </label>
             <button
@@ -135,10 +162,17 @@ export default function Support() {
               Actualiser
             </button>
           </div>
+          <p className="muted" data-testid="support-totals">
+            {t('Dossiers correspondants', 'Matching cases')} : {total} · {t('affichés', 'shown')} : {rows.length} ·{' '}
+            {t('ouverts', 'open')} : {counts.OPEN ?? 0} · {t('en cours', 'in progress')} : {counts.IN_PROGRESS ?? 0} ·{' '}
+            {t('clôturés', 'closed')} : {counts.CLOSED ?? 0} · {t('retours bêta affichés', 'beta feedback shown')} :{' '}
+            {beta}
+          </p>
           <p className="muted">
-            Dossiers : {rows.length} · En attente d’assistance : {counts.awaiting_support} · Répondus :{' '}
-            {counts.answered} · En cours : {counts.in_progress} · Clôturés : {counts.closed} · Retours bêta :{' '}
-            {counts.beta}
+            {t(
+              'Chaque dossier n’affiche que ses ' + entryLimit + ' messages les plus récents ; le total réel reste compté côté serveur.',
+              'Each case shows only its ' + entryLimit + ' most recent messages; the real total stays counted server-side.'
+            )}
           </p>
           <p className="muted">
             {t(
@@ -148,7 +182,17 @@ export default function Support() {
           </p>
         </section>
 
-        {err ? <p role="alert">{err}</p> : <ServiceCases items={visible} mode="support" reload={load} />}
+        {err ? <p role="alert">{err}</p> : <ServiceCases items={rows} mode="support" reload={load} />}
+        {nextCursor ? (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={busy}
+            onClick={() => void loadMore().catch((e) => fail(e.message))}
+          >
+            {busy ? t('Chargement…', 'Loading…') : t('Charger les dossiers suivants', 'Load more cases')}
+          </button>
+        ) : null}
         <Link href="/account#assistance">
           {t('Ouvrir ou suivre ma demande depuis Mon compte', 'Open or follow my case in My account')}
         </Link>
