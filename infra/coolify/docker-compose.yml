@@ -166,9 +166,10 @@ services:
       start_period: 20s
     networks:
       - internal
+      - python
 
-  # P06 — capacités de vision locales (FastAPI). Réseau interne uniquement, non-root,
-  # rootfs en lecture seule, limites mémoire/CPU/PID, aucun modèle téléchargé.
+  # P06/P12-03 — capacités de vision locales (FastAPI). Réseau PRIVÉ sans passerelle, non-root,
+  # rootfs en lecture seule, limites mémoire/CPU/PID, aucun modèle téléchargé, aucun port publié.
   python-tools:
     build:
       context: ../../services/python-tools
@@ -180,8 +181,16 @@ services:
       PYTHON_TOOLS_MAX_SOURCE_BYTES: "16777216"
       PYTHON_TOOLS_MAX_PIXELS: "24000000"
       PYTHON_TOOLS_MAX_DIMENSION: "4096"
+      PYTHON_TOOLS_MAX_OUTPUT_BYTES: "8388608"
+      PYTHON_TOOLS_MAX_AUDIO_SAMPLES: "16000000"
       PYTHON_TOOLS_TIMEOUT_SECONDS: "25"
       PYTHON_TOOLS_MAX_CONCURRENCY: "2"
+      PYTHON_TOOLS_WORKER_START_SECONDS: "20"
+      # Un seul thread par bibliothèque native : les processus du pool ne multiplient pas les threads.
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
     expose:
       - "8090"
     read_only: true
@@ -192,17 +201,19 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    pids_limit: 128
-    mem_limit: 768m
+    pids_limit: 64
+    mem_limit: 1g
+    memswap_limit: 1g
     cpus: "1.0"
+    stop_grace_period: 15s
     healthcheck:
-      test: ["CMD", "python", "-c", "import json,urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8090/healthz',timeout=2); sys.exit(0 if json.load(r).get('status')=='ok' else 1)"]
+      test: ["CMD", "python", "-c", "import json,urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8090/readyz',timeout=3); sys.exit(0 if json.load(r).get('status')=='ready' else 1)"]
       interval: 10s
       timeout: 5s
       retries: 12
-      start_period: 20s
+      start_period: 30s
     networks:
-      - internal
+      - python
 
   web:
     build:
@@ -256,6 +267,7 @@ services:
         condition: service_completed_successfully
     networks:
       - internal
+      - python
 
   # Profil durable : moteur Hatchet embedded + PostgreSQL dedie (preprod uniquement).
   hatchet-pg:
@@ -321,5 +333,11 @@ volumes:
   s3data:
 
 networks:
+  # Réseau applicatif : accès sortant (fournisseurs) + services internes.
   internal:
     driver: bridge
+  # P12-03 — réseau PRIVÉ du service python-tools : aucune passerelle, donc aucun accès Internet,
+  # et aucun autre service que l'API/le worker n'y est attaché (db, web et s3 en sont absents).
+  python:
+    driver: bridge
+    internal: true

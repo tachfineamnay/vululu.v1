@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass
 
@@ -18,8 +19,21 @@ class Settings:
     max_dimension: int
     timeout_seconds: float
     max_concurrency: int
+    max_output_bytes: int
+    max_audio_samples: int
+    worker_start_seconds: float
     models_dir: str
     log_level: str
+
+    @property
+    def max_base64_chars(self) -> int:
+        """Longueur base64 maximale admise pour une source (4 caractères par 3 octets + marge)."""
+        return math.ceil(self.max_source_bytes * 4 / 3) + 16
+
+    @property
+    def max_body_bytes(self) -> int:
+        """Borne du corps HTTP brut : base64 maximal + enveloppe JSON, appliquée sans Content-Length."""
+        return self.max_base64_chars + 4096
 
 
 def _int(name: str, default: int, minimum: int, maximum: int) -> int:
@@ -59,6 +73,9 @@ def settings() -> Settings:
         max_dimension=_int("PYTHON_TOOLS_MAX_DIMENSION", 4096, 256, 8192),
         timeout_seconds=_float("PYTHON_TOOLS_TIMEOUT_SECONDS", 25.0, 1.0, 120.0),
         max_concurrency=_int("PYTHON_TOOLS_MAX_CONCURRENCY", 2, 1, 8),
+        max_output_bytes=_int("PYTHON_TOOLS_MAX_OUTPUT_BYTES", 8 * 1024 * 1024, 65_536, 64 * 1024 * 1024),
+        max_audio_samples=_int("PYTHON_TOOLS_MAX_AUDIO_SAMPLES", 16_000_000, 8_000, 40_000_000),
+        worker_start_seconds=_float("PYTHON_TOOLS_WORKER_START_SECONDS", 20.0, 2.0, 60.0),
         models_dir=os.environ.get("PYTHON_TOOLS_MODELS_DIR", "/models").strip() or "/models",
         log_level=os.environ.get("PYTHON_TOOLS_LOG_LEVEL", "info").strip() or "info",
     )

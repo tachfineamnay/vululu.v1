@@ -23,13 +23,17 @@ _DCT_CACHE: np.ndarray | None = None
 
 def decode_source(base64_text: str, expected_sha256: str, mime_type: str) -> bytes:
     """Décode et vérifie l'empreinte avant toute utilisation : l'octet traité est celui annoncé."""
+    limits = settings()
+    # Borne AVANT l'allocation : une chaîne base64 trop longue est refusée sans décodage complet.
+    if len(base64_text) > limits.max_base64_chars:
+        raise PayloadTooLarge("Image source au-delà de la limite interne.")
     try:
         raw = base64.b64decode(base64_text, validate=True)
     except (binascii.Error, ValueError) as error:
         raise InvalidSource("invalid_base64", "Contenu image illisible.") from error
     if not raw:
         raise InvalidSource("empty_source", "Contenu image vide.")
-    if len(raw) > settings().max_source_bytes:
+    if len(raw) > limits.max_source_bytes:
         raise PayloadTooLarge("Image source au-delà de la limite interne.")
     digest = hashlib.sha256(raw).hexdigest()
     if not hmac.compare_digest(digest, expected_sha256):
@@ -51,9 +55,17 @@ def _sniff_format(raw: bytes) -> str | None:
 
 
 def load_image(raw: bytes) -> Image.Image:
+    """Ouvre l'image et contrôle les dimensions DÉCLARÉES avant tout décodage de pixels.
+
+    Une bombe de décompression (fichier minuscule annonçant des millions de pixels) allouerait sinon
+    plusieurs gigaoctets avant le contrôle : l'en-tête est donc vérifié avant `image.load()`.
+    """
+    limits = settings()
+    Image.MAX_IMAGE_PIXELS = max(limits.max_pixels, 65_536)
     try:
         image = Image.open(io.BytesIO(raw))
-        image.load()
+    except Image.DecompressionBombError as error:
+        raise InvalidSource("image_pixels_exceeded", "Nombre de pixels au-delà de la limite interne.") from error
     except (UnidentifiedImageError, OSError) as error:
         raise InvalidSource("invalid_image", "Image illisible ou corrompue.") from error
     if image.format not in _ALLOWED_FORMATS:
@@ -61,10 +73,16 @@ def load_image(raw: bytes) -> Image.Image:
     width, height = image.size
     if width < 8 or height < 8:
         raise InvalidSource("image_too_small", "Image trop petite pour être traitée.")
-    if width > settings().max_dimension or height > settings().max_dimension:
+    if width > limits.max_dimension or height > limits.max_dimension:
         raise InvalidSource("image_dimensions_exceeded", "Dimensions au-delà de la limite interne.")
-    if width * height > settings().max_pixels:
+    if width * height > limits.max_pixels:
         raise InvalidSource("image_pixels_exceeded", "Nombre de pixels au-delà de la limite interne.")
+    try:
+        image.load()
+    except Image.DecompressionBombError as error:
+        raise InvalidSource("image_pixels_exceeded", "Nombre de pixels au-delà de la limite interne.") from error
+    except OSError as error:
+        raise InvalidSource("invalid_image", "Image illisible ou corrompue.") from error
     return image
 
 
@@ -133,9 +151,13 @@ def analyze(raw: bytes) -> dict[str, object]:
 
 
 def _png_bytes(image: Image.Image) -> bytes:
+    """Encode en PNG et borne la sortie : aucune réponse non bornée ne quitte le service."""
     buffer = io.BytesIO()
     image.save(buffer, format="PNG", optimize=True)
-    return buffer.getvalue()
+    payload = buffer.getvalue()
+    if len(payload) > settings().max_output_bytes:
+        raise PayloadTooLarge("Sortie image au-delà de la limite interne.")
+    return payload
 
 
 @dataclass(frozen=True)

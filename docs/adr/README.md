@@ -61,6 +61,7 @@ Chaque décision suit [template.md](template.md) :
 | [0045](0045-administration-couts-budgets.md) | Administration des coûts et budgets d'exécution | Acceptée pour la mission P11-D | 2026-11-21 |
 | [0046](0046-provenance-des-couts-et-reglement.md) | Provenance des coûts et règle de règlement (aucun rognage, estimation ≠ facture) | Acceptée pour la mission P12-01 | 2026-11-21 |
 | [0047](0047-resultats-outils-volumineux-hors-base.md) | Résultats d'outils volumineux stockés hors base, référence bornée et résolution transparente | Acceptée pour la mission P12-02 | 2026-11-21 |
+| [0048](0048-isolation-python-tools.md) | Isolation process-level et réseau privé du service python-tools | Acceptée pour la mission P12-03 | 2026-11-21 |
 
 ## Décisions encore ouvertes
 

@@ -11,22 +11,32 @@ le worker TypeScript reste seul décideur, l'agent ne fait que recommander.
 | `image.segment@1` | GENERATE | dérive de nouvelles versions d'assets | OpenCV GrabCut | `cutout` (PNG transparent), `mask` (masque alpha PNG) |
 | `audio.analyze@1` | READ | lecture seule | module `wave` + NumPy | analyse JSON (durée, fréquence, canaux, largeur, crête/RMS dBFS, écrêtage, silences) |
 
-Aucun modèle n'est activé en P06 : le détourage est un algorithme local déterministe (GrabCut),
-sans téléchargement ni dépendance à un fournisseur. `app/models.py` détecte un modèle facultatif
-présent dans `/models` (monté en lecture seule) ; `download: "forbidden"` est explicite.
+Aucun modèle n'est activé : le détourage est un algorithme local déterministe (GrabCut), sans
+téléchargement ni dépendance à un fournisseur. `app/models.py` détecte un modèle facultatif présent
+dans `/models` (monté en lecture seule) ; `download: "forbidden"` est explicite.
 
-Le checkpoint P09B ajoute l'analyse audio locale `audio.analyze@1` (module standard `wave` + NumPy) :
-WAV/PCM uniquement, aucun modèle audio, aucun téléchargement.
+## Sécurité (état P12-03)
 
-## Sécurité
-
-- Aucun port publié : `expose: 8090` seulement, réseau Compose interne.
-- Jeton partagé `PYTHON_TOOLS_TOKEN` (≥ 24 caractères) obligatoire ; comparaison à temps constant.
+- **Réseau privé** : `python-tools` n'est attaché qu'au réseau Compose `python` déclaré `internal: true`
+  (aucune passerelle, donc aucun accès Internet) ; ni `db`, ni `web`, ni `s3` n'y sont attachés.
+  L'API et le worker sont sur `internal` (sortant vers Vertex/Postiz) **et** sur `python`. Aucun port
+  publié : `expose: 8090` seulement.
+- **Jeton partagé** `PYTHON_TOOLS_TOKEN` (≥ 24 caractères) obligatoire ; comparaison à temps constant sur
+  octets, `401` structuré même pour un en-tête non ASCII ou surdimensionné.
+- **Corps borné avant tout tamponnage** : un middleware ASGI compte les octets réellement reçus et refuse
+  au-delà de la limite — y compris en `Transfer-Encoding: chunked` sans `Content-Length`.
+- **Traitement natif isolé** : chaque appel s'exécute dans un processus enfant dédié, jamais dans un thread
+  du serveur. Un dépassement de délai **tue** le processus (annulation réellement applicable à OpenCV),
+  puis le remplace ; le pool est borné (processus et requêtes en vol), le surplus est refusé en `503 overloaded`.
+- **Bornes mémoire** : source base64 vérifiée en longueur avant décodage, pixels et dimensions contrôlés sur
+  l'en-tête **avant** `image.load()` (bombes de décompression), sorties PNG bornées, échantillons audio bornés
+  avant `readframes`.
 - Aucune URL, aucun chemin de fichier, aucun SQL, aucune exécution de code dans les contrats.
-- Aucun client HTTP sortant : les dépendances runtime n'incluent ni `requests` ni `httpx` (dev : `httpx` pour de futurs tests).
-- Limites : source ≤ 16 Mio, ≤ 24 Mpx, dimensions ≤ 4096, délai 25 s, concurrence 2, corps JSON borné. Audio : WAV/PCM, 1–2 canaux, 8–96 kHz, 1–4 octets par échantillon, durée ≤ 300 s.
-- Conteneur non-root (UID 10001), rootfs en lecture seule, `/tmp` en tmpfs, `no-new-privileges`, capacités Linux supprimées.
-- Les octets source sont vérifiés par SHA-256 avant traitement ; chaque sortie est renvoyée avec son SHA-256 et vérifiée par le worker avant stockage.
+- Aucun client HTTP sortant : les dépendances runtime n'incluent ni `requests` ni `httpx` (dev : `httpx` pour les tests).
+- Conteneur non-root (UID 10001), rootfs en lecture seule, `/tmp` en tmpfs, `no-new-privileges`, capacités
+  Linux supprimées, `pids_limit` et mémoire plafonnés, threads natifs limités à 1 par bibliothèque.
+- Les octets source sont vérifiés par SHA-256 avant traitement ; chaque sortie est renvoyée avec son SHA-256
+  et vérifiée par le worker avant stockage.
 
 ## Contrats
 
@@ -34,8 +44,11 @@ WAV/PCM uniquement, aucun modèle audio, aucun téléchargement.
 - `POST /v1/tools/image.segment@1` : idem + `outputs?: ["cutout","mask"]`, `maxDimension?: 256..4096`.
 - `POST /v1/tools/audio.analyze@1` : `{ requestId, source: { assetVersionId, sha256, mimeType: "audio/wav", audioBase64 } }`.
 - Réponses : `{ requestId, capability, capabilityVersion, version, durationMs, data, source }`.
-- Erreurs : `{ error: { code, message, requestId, retryable } }` (codes stables : `unauthorized`, `invalid_request`, `payload_too_large`, `source_checksum_mismatch`, `segmentation_empty`, `processing_timeout`...).
-- Santé : `GET /healthz` (sans jeton), `GET /readyz` (dépendances + modèles), `GET /v1/capabilities` (jeton requis).
+- Erreurs : `{ error: { code, message, requestId, retryable } }` (codes stables : `unauthorized`,
+  `invalid_request`, `payload_too_large`, `source_checksum_mismatch`, `segmentation_empty`,
+  `processing_timeout`, `overloaded`, `worker_unavailable`, `internal_error`...).
+- Santé : `GET /healthz` = vivacité (sans jeton) ; `GET /readyz` = disponibilité **réelle** (pool de
+  processus vivant + auto-test natif OpenCV/NumPy/Pillow), `503` sinon ; `GET /v1/capabilities` (jeton requis).
 
 ## Développement local
 
@@ -45,10 +58,15 @@ uv lock
 uv sync
 PYTHON_TOOLS_TOKEN="CHANGE_ME_LOCAL_DEV_ONLY_32_CHARS" \
   PYTHON_TOOLS_LOG_LEVEL=info uv run python -m app
-curl -s http://127.0.0.1:8090/healthz
+curl -s http://127.0.0.1:8090/readyz
 ```
 
-Smoke local (vérifie analyse, détourage et analyse audio réels sur des médias générés, sans réseau) :
+Tests (limites, auth, pool de processus, disponibilité, arrêt propre — aucun réseau) :
+```bash
+uv run python -m pytest tests -q
+```
+
+Smoke local (analyse, détourage et analyse audio réels sur des médias générés, sans réseau) :
 ```bash
 uv run python scripts/smoke.py   # génère son propre jeton éphémère
 ```
@@ -58,7 +76,7 @@ uv run python scripts/smoke.py   # génère son propre jeton éphémère
 - Worker TypeScript : `apps/api/src/infrastructure/python/{client,adapter}.ts`.
 - Registre agent : `image.analyze@1` (READ, automatique) et `image.segment@1` (GENERATE, approbation humaine) — `apps/api/src/infrastructure/execution/registry.ts`.
 - Les sorties sont stockées via `AssetUseCases.upload` : mêmes versions immuables, inspection, droits et checksums que les imports clients.
-- Coolify : service `python-tools` dans `infra/coolify/docker-compose.yml`, jamais exposé publiquement.
+- Coolify : service `python-tools` dans `infra/coolify/docker-compose.yml`, réseau privé `python`, jamais exposé publiquement.
 
 ## Variables
 
@@ -67,15 +85,21 @@ uv run python scripts/smoke.py   # génère son propre jeton éphémère
 | `PYTHON_TOOLS_TOKEN` | Jeton interne partagé (obligatoire) | — |
 | `PORT` | Port d'écoute interne | `8090` |
 | `PYTHON_TOOLS_MAX_SOURCE_BYTES` | Taille source maximale | `16777216` |
-| `PYTHON_TOOLS_MAX_PIXELS` | Pixels maximaux | `24000000` |
+| `PYTHON_TOOLS_MAX_PIXELS` | Pixels maximaux (contrôlés avant décodage) | `24000000` |
 | `PYTHON_TOOLS_MAX_DIMENSION` | Dimension maximale | `4096` |
-| `PYTHON_TOOLS_TIMEOUT_SECONDS` | Délai de traitement | `25` |
-| `PYTHON_TOOLS_MAX_CONCURRENCY` | Traitements simultanés | `2` |
+| `PYTHON_TOOLS_MAX_OUTPUT_BYTES` | Taille maximale d'une sortie PNG | `8388608` |
+| `PYTHON_TOOLS_MAX_AUDIO_SAMPLES` | Échantillons audio maximaux (avant lecture PCM) | `16000000` |
+| `PYTHON_TOOLS_TIMEOUT_SECONDS` | Délai de traitement (au-delà : processus tué) | `25` |
+| `PYTHON_TOOLS_MAX_CONCURRENCY` | Processus de traitement simultanés | `2` |
+| `PYTHON_TOOLS_WORKER_START_SECONDS` | Délai de démarrage d'un processus | `20` |
 | `PYTHON_TOOLS_MODELS_DIR` | Modèles facultatifs (lecture seule) | `/models` |
 
-## Limites P06
+La borne du corps HTTP est dérivée automatiquement de `PYTHON_TOOLS_MAX_SOURCE_BYTES` (base64 + enveloppe JSON).
 
-- Aucune exécution Docker/Compose vérifiée dans cette session (`NOT_RUN`) ; le smoke local ne certifie pas l'image.
-- Le détourage GrabCut est local et déterministe ; il ne remplace pas un modèle de segmentation avancé (P07+).
-- P09B : `audio.analyze@1` est local et déterministe (module `wave` + NumPy), WAV PCM uniquement (format 0x0001 et sous-type PCM du format étendu 0xFFFE, accepté par Python 3.12) ; aucun modèle audio, aucun téléchargement. Le smoke audio n'a pas été exécuté dans cette phase (`NOT_RUN`).
-- Pas de tests complets (P12).
+## Limites connues
+
+- **Docker non exécuté dans cette session** : le démon Docker n'est pas joignable (voir le rapport P12-03) ;
+  le `Dockerfile` et le `docker-compose.yml` sont validés par `docker compose config`, pas par un build réel.
+- Le détourage GrabCut est local et déterministe ; il ne remplace pas un modèle de segmentation avancé.
+- `audio.analyze@1` est local et déterministe (module `wave` + NumPy), WAV PCM uniquement.
+- `/readyz` atteste le pool et la chaîne native ; il ne prouve pas la qualité d'une image fournie.

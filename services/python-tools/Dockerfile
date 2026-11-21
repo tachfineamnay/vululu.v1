@@ -9,6 +9,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_PYTHON_DOWNLOADS=never \
     HOME=/tmp \
     PYTHONPATH=/app \
+    OMP_NUM_THREADS=1 \
+    OPENBLAS_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    NUMEXPR_NUM_THREADS=1 \
     PATH="/app/.venv/bin:$PATH"
 
 COPY --from=ghcr.io/astral-sh/uv:0.10.6 /uv /usr/local/bin/uv
@@ -30,7 +34,8 @@ RUN chown -R 10001:10001 /app
 USER 10001:10001
 EXPOSE 8090
 
-HEALTHCHECK --interval=10s --timeout=3s --retries=6 --start-period=15s \
-  CMD python -c "import json,urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8090/healthz',timeout=2); sys.exit(0 if json.load(r).get('status')=='ok' else 1)"
+# Disponibilité réelle : pool de processus vivant + chaîne native auto-testée (jamais /healthz seul).
+HEALTHCHECK --interval=10s --timeout=4s --retries=6 --start-period=30s \
+  CMD python -c "import json,urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8090/readyz',timeout=3); sys.exit(0 if json.load(r).get('status')=='ready' else 1)"
 
 CMD ["python", "-m", "app"]

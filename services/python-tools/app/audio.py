@@ -48,13 +48,17 @@ def _dbfs(amplitude: float) -> float:
 
 def decode_source(base64_text: str, expected_sha256: str) -> bytes:
     """Décode, borne et vérifie l'empreinte de la source avant tout décodage PCM."""
+    limits = settings()
+    # Borne AVANT l'allocation : une chaîne base64 trop longue est refusée sans décodage complet.
+    if len(base64_text) > limits.max_base64_chars:
+        raise PayloadTooLarge("Audio source au-delà de la limite interne.")
     try:
         raw = base64.b64decode(base64_text, validate=True)
     except (binascii.Error, ValueError) as error:
         raise InvalidSource("invalid_base64", "Contenu audio illisible.") from error
     if not raw:
         raise InvalidSource("empty_source", "Contenu audio vide.")
-    if len(raw) > settings().max_source_bytes:
+    if len(raw) > limits.max_source_bytes:
         raise PayloadTooLarge("Audio source au-delà de la limite interne.")
     digest = hashlib.sha256(raw).hexdigest()
     if not hmac.compare_digest(digest, expected_sha256):
@@ -141,6 +145,13 @@ def analyze(raw: bytes) -> dict[str, object]:
             duration = frames / float(sample_rate)
             if frames <= 0 or duration <= 0.0 or duration > _MAX_SECONDS:
                 raise InvalidSource("audio_duration_out_of_range", "Durée audio nulle ou au-delà de 300 secondes.")
+            # Bornes AVANT lecture : nombre d'échantillons et octets PCM ne peuvent dépasser la mémoire prévue.
+            limits = settings()
+            if frames * channels > limits.max_audio_samples:
+                raise PayloadTooLarge("Nombre d'échantillons audio au-delà de la limite interne.")
+            expected_bytes = frames * channels * sample_width
+            if expected_bytes > limits.max_source_bytes:
+                raise PayloadTooLarge("Données audio au-delà de la limite interne.")
             data = stream.readframes(frames)
     except EOFError as error:
         raise InvalidSource("audio_data_truncated", "Les données audio sont incomplètes ou tronquées.") from error

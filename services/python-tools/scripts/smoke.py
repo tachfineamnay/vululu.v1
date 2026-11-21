@@ -83,11 +83,21 @@ def audio_source(raw: bytes, version_id: str = "asset-version-audio-smoke") -> d
 
 
 def main() -> int:
-    client = TestClient(app)
     raw = sample_png()
+    # Le cycle de vie démarre le pool de processus (traitement natif isolé) : sans lui, aucune capacité.
+    with TestClient(app) as client:
+        return _run(client, raw)
 
+
+def _run(client: TestClient, raw: bytes) -> int:
     health = client.get("/healthz")
     check("healthz", health.status_code == 200 and health.json().get("status") == "ok", str(health.status_code))
+
+    ready = client.get("/readyz")
+    ready_body = ready.json()
+    check("readyz prêt", ready.status_code == 200 and ready_body.get("status") == "ready", str(ready.status_code))
+    check("readyz auto-test natif", ready_body.get("selfTest", {}).get("ok") is True, str(ready_body.get("selfTest")))
+    check("readyz pool vivant", ready_body.get("workers", {}).get("alive", 0) >= 1, str(ready_body.get("workers")))
 
     unauthorized = client.post("/v1/tools/image.analyze@1", json={})
     check("jeton requis", unauthorized.status_code == 401, str(unauthorized.status_code))
