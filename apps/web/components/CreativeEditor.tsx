@@ -7,17 +7,20 @@ import { FormatGuide, type Destination } from './FormatGuide';
 import { StudioCanvas } from './StudioCanvas';
 import { StudioInspector } from './StudioInspector';
 import { StudioDelivery } from './StudioDelivery';
+import { StudioTimeline } from './StudioTimeline';
+import { StudioRegenerate } from './StudioRegenerate';
 import { useUnsavedChanges } from '../lib/useUnsavedChanges';
 import { useStudioHistory } from '../lib/useStudioHistory';
 import { useStudioPreview } from '../lib/useStudioPreview';
+import { useStudioVideoPreview } from '../lib/useStudioVideoPreview';
 import { clearCreativeDraft, readCreativeDraft, writeCreativeDraft, type CreativeDraft } from '../lib/studioDraftStore';
 import { applyChannelPreset, compatiblePresets, defaultPreset, CHANNEL_PRESETS } from '../lib/studioChannels';
 import { alignLayers, clampLayer, distributeLayers, specWithLayers } from '../lib/studioGeometry';
-import { outputSize, platformSchema, productionCapability, readableInk, studioExportExtension, creativeSpec, type CreativeSpec, type CreativeLayer } from '@vululu/contracts';
+import { outputSize, platformSchema, productionCapability, readableInk, studioExportExtension, creativeSpec, isVideoOutput, type CreativeSpec, type CreativeLayer } from '@vululu/contracts';
 import { api, apiResponse, postJson, type ProjectBundle } from '../lib/api';
 import type { StudioAlignMode, StudioLayerSpec } from '../lib/studioTypes';
 
-type RenderStatus = { revision: number; state: string; reason: string | null };
+type RenderStatus = { revision: number; state: string; reason: string | null; progress: number };
 
 type Rev = { version: number; approvedAt: string | null };
 type Revision = Rev & {
@@ -97,6 +100,8 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
   const spec = studio.spec;
   const scene = spec?.scenes[index] ?? null;
   const { preview, refresh: refreshPreview } = useStudioPreview(base, spec, scene, open);
+  const videoOutput = isVideoOutput(spec?.delivery?.kind);
+  const { preview: videoPreview, refresh: refreshVideoPreview } = useStudioVideoPreview(base, spec, Boolean(open && spec && videoOutput));
   const [draft, setDraft] = useState<CreativeDraft | null>(null);
   const [draftNotice, setDraftNotice] = useState('');
   const [draftStored, setDraftStored] = useState(false);
@@ -134,9 +139,9 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
           if (!stopped) show((current) => current?.version === selectedVersion ? result : current);
           return;
         }
-        if (status.state === 'idle' || status.state === 'failed') return;
+        if (status.state === 'idle' || status.state === 'failed' || status.state === 'cancelled') return;
       } catch {
-        if (!stopped) setRender({ revision: selectedVersion, state: 'offline', reason: 'Suivi indisponible. Nouvelle tentative automatique.' });
+        if (!stopped) setRender({ revision: selectedVersion, state: 'offline', reason: 'Suivi indisponible. Nouvelle tentative automatique.', progress: 0 });
       }
       if (!stopped) timer = setTimeout(poll, 1500);
     };
@@ -352,6 +357,15 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
     setRender({ ...result, revision: view.version });
     refreshRender((n) => n + 1);
   }
+  async function cancelRender() {
+    if (!view) return;
+    const result = await postJson<Omit<RenderStatus, 'revision'>>(`${base}/${view.version}/render/cancel`, {});
+    setRender({ ...result, revision: view.version });
+    refreshRender((n) => n + 1);
+    notify(result.state === 'cancelled'
+      ? 'Rendu annulé côté serveur.'
+      : 'Annulation demandée : le rendu s’arrêtera à la fin de la scène en cours.');
+  }
   async function approveVersion(checksum: string) {
     if (!view) return;
     const r = await postJson<Revision>(`${base}/${view.version}/approve`, { checksum });
@@ -403,6 +417,14 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
   const variant = calendarTarget?.variants.find((v) => v.platform === (spec?.delivery?.platform ?? bundle.project.platform));
   const targetKind = variant?.format === 'Video' ? 'short' : variant && productionCapability(variant.format)?.studio;
   const sameFormat = targetKind && (spec?.delivery?.kind === targetKind || (targetKind === 'square' && spec?.delivery?.kind === 'portrait'));
+  // Références admissibles pour une génération de clip (mêmes règles que le panneau média existant).
+  const referenceImages = sources.filter((v) => ['image/png', 'image/jpeg'].includes(v.mimeType ?? '') &&
+    ['internal', 'commercial'].includes(v.license ?? '') && (v.sizeBytes ?? Infinity) <= 3 * 1024 * 1024 &&
+    (v.metadata?.width ?? 0) >= 320 && (v.metadata?.height ?? 0) >= 320 &&
+    (v.metadata?.width ?? 0) / (v.metadata?.height ?? 1) >= 0.5 &&
+    (v.metadata?.width ?? 0) / (v.metadata?.height ?? 1) <= 2);
+  // Le serveur refuse un clip dont le ratio ne suit pas l'orientation du cadre.
+  const clipSize: '1280:720' | '720:1280' = spec && spec.width / spec.height >= 1.4 ? '1280:720' : '720:1280';
   const currentRenderState = renderState;
   return (
     <details
@@ -492,30 +514,91 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
                   onChange={canvasChange}
                   onRefreshPreview={refreshPreview}
                 />
-                <nav className="studio-scenes composition-rail" aria-label="Scènes de la composition">
-                  {spec.scenes.map((s, i) => (
-                    <button key={s.key} type="button" className="studio-scene-choice" aria-pressed={i === index} onClick={() => setScene(i)}>
-                      <span>{i + 1} · {s.key}</span>
-                      <small>{s.seconds} s · {s.layers.length} calque(s){s.clip ? ' · clip' : ''}</small>
-                    </button>
-                  ))}
-                </nav>
-              </section>
-              <div className="card studio-inspector-shell">
-                <StudioInspector
+                <StudioTimeline
                   spec={spec}
                   sceneIndex={index}
-                  selected={selected}
-                  sources={sources}
-                  confirmedIds={confirmed}
-                  presets={presets}
-                  channel={channel}
                   busy={busy}
                   onSpec={change}
-                  onSelect={selectLayer}
-                  onChannel={changeChannel}
+                  onSelect={setScene}
                   onNotice={notify}
                 />
+                {videoOutput ? (
+                  <figure className="studio-video-preview" aria-labelledby="studio-video-preview-label">
+                    <figcaption id="studio-video-preview-label">Aperçu vidéo · 20 s maximum</figcaption>
+                    {videoPreview.url ? (
+                      <video
+                        controls
+                        preload="metadata"
+                        src={videoPreview.url}
+                        aria-label="Aperçu vidéo borné à 20 secondes, produit par le serveur"
+                      />
+                    ) : null}
+                    <p
+                      className="hint"
+                      role={videoPreview.state === 'error' || videoPreview.state === 'invalid' ? 'alert' : 'status'}
+                    >
+                      {videoPreview.state === 'loading'
+                        ? 'Préparation de l’aperçu vidéo par le serveur…'
+                        : videoPreview.state === 'invalid'
+                          ? 'Aperçu vidéo impossible : ' + videoPreview.message
+                          : videoPreview.state === 'error'
+                            ? 'Aperçu vidéo indisponible : ' + videoPreview.message
+                            : videoPreview.state === 'ready'
+                              ? 'Aperçu vidéo généré par le serveur' +
+                                (videoPreview.message ? ' · ' + videoPreview.message : '') + '.'
+                              : 'Aperçu vidéo en attente de la composition.'}
+                      {videoPreview.state === 'error' ? (
+                        <>
+                          {' '}
+                          <button type="button" className="text-link" onClick={refreshVideoPreview}>
+                            Réessayer
+                          </button>
+                        </>
+                      ) : null}
+                    </p>
+                    <p className="hint">
+                      Cet aperçu n’est pas le rendu final : il est borné à 20 s, ne crée aucune révision et ne
+                      remplace pas le master scellé.
+                    </p>
+                  </figure>
+                ) : null}
+              </section>
+              <div className="studio-editor-side">
+                <div className="card studio-inspector-shell">
+                  <StudioInspector
+                    spec={spec}
+                    sceneIndex={index}
+                    selected={selected}
+                    sources={sources}
+                    confirmedIds={confirmed}
+                    presets={presets}
+                    channel={channel}
+                    busy={busy}
+                    onSpec={change}
+                    onSelect={selectLayer}
+                    onChannel={changeChannel}
+                    onNotice={notify}
+                  />
+                </div>
+                {!dirty && view?.version === expected ? (
+                  <StudioRegenerate
+                    key={'regenerate:' + expected + ':' + scene.key}
+                    project={projectId}
+                    revision={expected}
+                    sceneKey={scene.key}
+                    sceneSeconds={scene.seconds}
+                    clipSize={clipSize}
+                    video={videoOutput}
+                    assets={referenceImages}
+                    run={action}
+                    onPlaced={async () => {
+                      await load();
+                    }}
+                    onNotice={notify}
+                  />
+                ) : (
+                  <p className="hint">Enregistrez la composition pour activer la régénération ciblée.</p>
+                )}
               </div>
             </div>
             <details className="studio-advanced card" open>
@@ -547,12 +630,9 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
                       project={bundle.project.id}
                       revision={expected}
                       sceneKey={scene.key}
-                      images={sources.filter((v) => ['image/png', 'image/jpeg'].includes(v.mimeType ?? '') &&
-                        ['internal', 'commercial'].includes(v.license ?? '') && (v.sizeBytes ?? Infinity) <= 3 * 1024 * 1024 &&
-                        (v.metadata?.width ?? 0) >= 320 && (v.metadata?.height ?? 0) >= 320 &&
-                        (v.metadata?.width ?? 0) / (v.metadata?.height ?? 1) >= 0.5 &&
-                        (v.metadata?.width ?? 0) / (v.metadata?.height ?? 1) <= 2)}
-                      short={spec.delivery?.kind === 'short' && scene.seconds <= 5}
+                      images={referenceImages}
+                      short={videoOutput && scene.seconds <= 5}
+                      clipSize={videoOutput ? clipSize : undefined}
                       run={action}
                       reload={async () => {
                         await load();
@@ -684,7 +764,7 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
                   </button>{' '}
                   <button
                     type="button"
-                    disabled={!!spec.delivery && !['carousel', 'short'].includes(spec.delivery.kind)}
+                    disabled={!!spec.delivery && spec.delivery.kind !== 'carousel' && !isVideoOutput(spec.delivery.kind)}
                     onClick={() => {
                       const n = Math.max(...spec.scenes.map((s) => Number(s.key.slice(6)))) + 1;
                       change({
@@ -715,7 +795,7 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
                     change({ ...spec, scenes: spec.scenes.map((s, i) => (i === index ? { ...s, seconds } : s)) })
                   }
                 />}
-                {spec.delivery?.kind === 'short' && (
+                {isVideoOutput(spec.delivery?.kind) && (
                   <label>
                     Clip de la bibliothèque
                     <select value={scene.clip?.versionId ?? ''} onChange={(event) => {
@@ -919,6 +999,7 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
                   onApprove={approveVersion}
                   onRestore={restoreVersion}
                   onView={viewVersion}
+                  onCancel={() => action(cancelRender)}
                   onNotice={notify}
                 />
               </>

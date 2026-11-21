@@ -3,12 +3,14 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { buffer } from 'node:stream/consumers';
-import { creativeSpec, type CreativeAssetApply, type CreativeSpec } from '@vululu/contracts';
+import { creativeSpec, isVideoOutput, type CreativeAssetApply, type CreativeSpec } from '@vululu/contracts';
 import type { ArtifactStoragePort } from '@vululu/application';
 import { creativeFrame, assembleMaster, clipPoster, masterDurationTolerance } from '@vululu/media';
 import { HttpError } from '../errors';
 
 const missing = () => new HttpError(404, 'creative_not_found', 'Projet, révision ou ressource introuvable.');
+/** Un apercu video est borne : au-dela, le rendu final (file durable) reste la reference. */
+const PREVIEW_SECONDS = 20;
 const hash = (v: Buffer | string) => createHash('sha256').update(v).digest('hex');
 const sourceIds = (s: CreativeSpec) => [
   ...new Set([
@@ -197,7 +199,7 @@ export class CreativeStudio {
     await fs.writeFile(overlay, await creativeFrame(spec, scene, resolve, { height: c.height }));
     return {
       bytes: await creativeFrame(spec, scene, resolve, { height: c.height, poster }),
-      clip: { path: file, overlay, start: c.start, height }
+      clip: { path: file, overlay, start: c.start, height, fit: c.fit, focusY: c.focusY }
     };
   }
   async preview(userId: string, id: string, spec: CreativeSpec) {
@@ -209,7 +211,66 @@ export class CreativeStudio {
       await fs.rm(dir, { recursive: true, force: true });
     }
   }
-  async render(userId: string, id: string, version: number, seal = (manifest: Manifest) => this.repo.seal(userId, id, version, manifest)) {
+  /**
+   * Apercu video reel (meme compositeur que le master), borne a 20 s, sans revision,
+   * sans stockage et sans verification d'approbation : ce n'est pas un artefact livrable.
+   */
+  async previewVideo(userId: string, id: string, spec: CreativeSpec, hooks: { isCancelled?: () => boolean } = {}) {
+    const p = await this.repo.project(userId, id),
+      sources = await this.checked(userId, p, spec),
+      dir = await fs.mkdtemp(path.join(os.tmpdir(), 'vululu-creative-video-'));
+    try {
+      const clips: NonNullable<Parameters<typeof assembleMaster>[0]['motion']>['clips'] = [],
+        paths: string[] = [],
+        seconds: number[] = [],
+        dips: boolean[] = [];
+      const available = spec.scenes.reduce((sum, scene) => sum + scene.seconds, 0);
+      let total = 0;
+      for (const scene of spec.scenes) {
+        if (total >= PREVIEW_SECONDS) break;
+        if (hooks.isCancelled?.()) throw new Error('creative_render_cancelled');
+        const draw = await this.draw(spec, scene, sources, dir),
+          file = path.join(dir, scene.key + '.png'),
+          take = Math.min(scene.seconds, PREVIEW_SECONDS - total);
+        await fs.writeFile(file, draw.bytes);
+        paths.push(file);
+        seconds.push(take);
+        clips[paths.length - 1] = draw.clip;
+        dips.push((scene.transition ?? spec.delivery?.transition) === 'dip');
+        total += take;
+      }
+      const master = await assembleMaster({
+        motion: {
+          width: spec.width,
+          height: spec.height,
+          clips,
+          dip: spec.delivery?.transition === 'dip',
+          sceneDip: dips,
+          preset: 'ultrafast'
+        },
+        artifactRoot: dir,
+        projectId: 'preview',
+        version: 1,
+        scenePaths: paths,
+        sceneDurationsSeconds: seconds
+      });
+      return {
+        bytes: await fs.readFile(master.absolutePath),
+        seconds: master.duration,
+        bounded: available > PREVIEW_SECONDS + 0.001,
+        contentType: 'video/mp4' as const
+      };
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  }
+  async render(
+    userId: string,
+    id: string,
+    version: number,
+    seal = (manifest: Manifest) => this.repo.seal(userId, id, version, manifest),
+    hooks: { onProgress?: (percent: number) => void; isCancelled?: () => Promise<boolean> } = {}
+  ) {
     const row = await this.get(userId, id, version);
     if (row.manifest) return row.manifest;
     const spec = creativeSpec.parse(row.spec),
@@ -234,6 +295,8 @@ export class CreativeStudio {
     try {
       const clips: NonNullable<Parameters<typeof assembleMaster>[0]['motion']>['clips'] = [];
       for (const scene of spec.scenes) {
+        // Annulation cooperative : une scene en cours d'encodage se termine, la suivante non.
+        if (hooks.isCancelled && (await hooks.isCancelled())) throw new Error('creative_render_cancelled');
         const deps = scene.layers.flatMap((l) =>
           l.type === 'image' ? [{ id: l.versionId, sha256: sources.get(l.versionId)!.sha256 }] : []
         );
@@ -272,7 +335,9 @@ export class CreativeStudio {
               path: file,
               overlay: overlayPath,
               start: clip.start,
-              height: Math.round((spec.height * clip.height) / 2) * 2
+              height: Math.round((spec.height * clip.height) / 2) * 2,
+              fit: clip.fit,
+              focusY: clip.focusY
             };
           }
         } else {
@@ -293,8 +358,9 @@ export class CreativeStudio {
           sources: deps,
           seconds: scene.seconds
         });
+        hooks.onProgress?.(10 + Math.round((frames.length / spec.scenes.length) * 70));
       }
-      if (spec.delivery && spec.delivery.kind !== 'short') {
+      if (spec.delivery && !isVideoOutput(spec.delivery.kind)) {
         await seal({
           renderer: 'creative-2',
           approvalSha256: hash(JSON.stringify(frames.map((f) => [f.sceneKey, f.sha256]))),
@@ -307,6 +373,7 @@ export class CreativeStudio {
       const audio = spec.delivery?.audio;
       const audioPath = path.join(dir, 'audio');
       if (audio) await fs.writeFile(audioPath, await this.bytes(sources, audio.versionId));
+      hooks.onProgress?.(85);
       const master = await assembleMaster({
         motion: spec.delivery
           ? {
@@ -347,8 +414,10 @@ export class CreativeStudio {
         master: { key, provider: this.storage.provider, sha256: master.checksum, sizeBytes },
         seconds: master.duration
       };
+      hooks.onProgress?.(95);
       // Never replace a sealed manifest, even on concurrent render requests.
       await seal(manifest);
+      hooks.onProgress?.(100);
       return (await this.get(userId, id, version)).manifest!;
     } finally {
       await fs.rm(dir, { recursive: true, force: true });

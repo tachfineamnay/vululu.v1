@@ -1,11 +1,12 @@
-import { creativeSpec, outputSize, type CreativeLayer, type CreativeSpec, type OutputKind } from './creative';
+import { creativeSpec, isVideoOutput, outputSize, type CreativeLayer, type CreativeSpec, type OutputKind } from './creative';
 
 export const formatLabels: Record<OutputKind, string> = {
   square: 'Publication carrée',
   portrait: 'Publication portrait',
   story: 'Story verticale',
   carousel: 'Carrousel',
-  short: 'Vidéo courte'
+  short: 'Vidéo courte',
+  landscape: 'Vidéo paysage'
 };
 function luminance(hex: string) {
   return [0, 1, 2]
@@ -45,12 +46,12 @@ export function composeGuide({
 }: GuideInput): CreativeSpec {
   const { kind } = delivery,
     [width, height] = outputSize[kind];
-  if (!photos.length && !(kind === 'short' && clip))
+  if (!photos.length && !(isVideoOutput(kind) && clip))
     throw new Error('Choisissez au moins une photo ou un clip.');
   if (kind === 'carousel' && photos.length < 2)
     throw new Error('Choisissez au moins deux photos pour un carrousel.');
   const pages =
-    kind === 'carousel' ? photos.length : kind === 'short' ? Math.max(1, photos.length + (clip ? 1 : 0)) : 1;
+    kind === 'carousel' ? photos.length : isVideoOutput(kind) ? Math.max(1, photos.length + (clip ? 1 : 0)) : 1;
   const img = (
     versionId: string,
     x: number,
@@ -91,8 +92,8 @@ export function composeGuide({
     safeArea: 0.05,
     delivery,
     scenes: Array.from({ length: pages }, (_, i) => {
-      const video = kind === 'short' && clip && i === 0;
-      const photo = photos[kind === 'short' && clip ? Math.max(0, i - 1) : i];
+      const video = isVideoOutput(kind) && clip && i === 0;
+      const photo = photos[isVideoOutput(kind) && clip ? Math.max(0, i - 1) : i];
       const layers: CreativeLayer[] = [];
       const square = kind === 'square',
         inset = kind === 'carousel' && i % 2 === 1;
@@ -103,7 +104,7 @@ export function composeGuide({
             : inset
               ? img(photo, 0.07, 0.16, 0.86, 0.48)
               : ({
-                  ...img(photo, 0, 0, 1, kind === 'story' || kind === 'short' ? 0.7 : 0.59),
+                  ...img(photo, 0, 0, 1, kind === 'story' || isVideoOutput(kind) ? 0.7 : 0.59),
                   gravity: 'north'
                 } as CreativeLayer)
         );
@@ -117,7 +118,7 @@ export function composeGuide({
           txt('cta', cta, 0.06, 0.81, 0.37, 0.12, 32, brand.accent)
         );
       } else {
-        const tall = kind === 'short' || kind === 'story';
+        const tall = isVideoOutput(kind) || kind === 'story';
         layers.push(
           txt(
             'body',
@@ -154,7 +155,7 @@ export function composeGuide({
       }
       return {
         key: 'SCENE-' + String(i + 1).padStart(3, '0'),
-        seconds: kind === 'short' ? sceneDurationSeconds : 2,
+        seconds: isVideoOutput(kind) ? sceneDurationSeconds : 2,
         layers,
         ...(video ? { clip: { versionId: clip, start: 0, height: 0.7 } } : {})
       };

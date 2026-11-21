@@ -1,5 +1,5 @@
 'use client';
-import { studioExportExtension } from '@vululu/contracts';
+import { isVideoOutput, studioExportExtension } from '@vululu/contracts';
 import type { StudioDeliveryProps } from '../lib/studioComponentTypes';
 import { StudioCompare } from './StudioCompare';
 
@@ -25,6 +25,7 @@ export function StudioDelivery({
   onApprove,
   onRestore,
   onView,
+  onCancel,
   onNotice
 }: StudioDeliveryProps) {
   const manifest = view.manifest;
@@ -35,13 +36,16 @@ export function StudioDelivery({
   const extension = studioExportExtension(kind);
   const hero = view.spec.scenes[0];
   // Sans delivery explicite (format « Vidéo multiscène »), le serveur assemble quand même un master MP4.
-  const video = !view.spec.delivery || kind === 'short';
+  const video = !view.spec.delivery || isVideoOutput(kind);
   const carousel = kind === 'carousel';
   const state = renderState?.state;
   const rendering = state === 'queued' || state === 'running';
   const failed = state === 'failed' || state === 'offline';
+  const cancelled = state === 'cancelled';
+  // Progression uniquement issue du serveur : aucune estimation locale, aucun pourcentage inventé.
+  const progress = Math.max(0, Math.min(100, Math.round(renderState?.progress ?? 0)));
   const locked = busy || dirty;
-  const renderLabel = failed ? 'Relancer le rendu v' + view.version : 'Rendre le master v' + view.version;
+  const renderLabel = failed || cancelled ? 'Relancer le rendu v' + view.version : 'Rendre le master v' + view.version;
 
   return (
     <section className="studio-delivery" aria-labelledby="creative-deliver">
@@ -152,14 +156,56 @@ export function StudioDelivery({
       ) : (
         <div className="studio-delivery-render">
           {rendering ? (
-            <p role="status">
-              {state === 'queued' ? 'Rendu en attente' : 'Rendu en cours'} · v{view.version}
-            </p>
+            <div className="studio-render-progress" role="group" aria-label={'Progression du rendu v' + view.version}>
+              <p role="status">
+                {state === 'queued' ? 'Rendu en attente' : 'Rendu en cours'} · v{view.version} ·{' '}
+                <span className="studio-render-progress-value">{progress} %</span>
+              </p>
+              <div
+                className="studio-render-progress-track"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={progress}
+                aria-valuetext={progress + ' %'}
+                aria-label="Progression transmise par le serveur"
+              >
+                <span style={{ width: progress + '%' }} />
+              </div>
+              <p className="hint">
+                Pourcentage transmis par le serveur : ce n’est pas une estimation locale. Le master n’est scellé
+                qu’à la fin du rendu.
+              </p>
+              {onCancel ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={busy}
+                  onClick={() => {
+                    void onCancel();
+                  }}
+                >
+                  Annuler le rendu
+                </button>
+              ) : null}
+              {state === 'running' ? (
+                <p className="hint">
+                  L’annulation prend effet à la fin de la scène en cours ; le suivi continue jusqu’à l’état final.
+                </p>
+              ) : null}
+            </div>
           ) : state === 'succeeded' ? (
             <p role="status">Rendu terminé · chargement du master v{view.version}…</p>
           ) : (
             <>
-              {renderState?.reason && <p role={failed ? 'alert' : 'status'}>{renderState.reason}</p>}
+              {cancelled ? (
+                <p role="status">
+                  Rendu annulé · v{view.version}. Aucun master n’a été scellé pour cette révision.
+                </p>
+              ) : null}
+              {renderState?.reason && !cancelled && (
+                <p role={failed ? 'alert' : 'status'}>{renderState.reason}</p>
+              )}
               <button
                 type="button"
                 className="btn btn-primary"

@@ -147,6 +147,8 @@
 
 ## P09 — Boucle résultats → prochaine création
 
+> **Note d'exécution (2026-11-21) — écart documenté.** La mission exécutée sous le nom `P09` porte sur la **production vidéo et audio** (checkpoints P09A et P09B), pas sur la boucle résultats décrite ci-dessous. La carte des lots n'est pas réécrite : la boucle résultats reste la définition initiale de P09 et est **reportée** (elle n'est ni supprimée ni déclarée faite). Le checkpoint vidéo est documenté par ADR-0040 et `docs/delivery/P09A_VIDEO.md` ; le checkpoint audio qui suit dans la même mission sera documenté par un ADR et un rapport dédiés. Le numéro P09 de cette section est conservé pour la traçabilité ; le prochain lot d'intégration UX reste P10.
+
 **Objectif / vision** : relier exports, approbations, publications et mesures à la campagne, puis proposer une reprise (étape 12 et retour à l'objectif).
 **Inclus** : regroupement campagne/projet dans le rapport résultats ; liens vers la création et « reprendre » ; mesures manquantes explicites ; filtre par campagne dans `/campaigns`.
 **Exclu** : conversion commerciale inventée, attribution multi-touch, activation analytics, nouveau modèle de données.
@@ -196,8 +198,10 @@
 | P06 | Création éditable | P05 | P07 (surface revue) |
 | P07 | Revue + approbation | P06 | P08 (UI livraison) |
 | P08 | Export + publication off | P07 | P09 (lecture résultats) |
-| P09 | Boucle résultats | P08 | P10 (nav/dashboard) |
-| P10 | Simplification UX | P01–P09 | P11 (checklist sécurité) |
+| P09 | Boucle résultats (reportée, voir note P09) | P08 | P10 (nav/dashboard) |
+| P09A | Production vidéo multiscène (mission 2026-11-21) | P08 | P09B (contrats audio) |
+| P09B | Audio, sous-titres et voix off (mission 2026-11-21) | P09A | P10 (surfaces UX) |
+| P10 | Simplification UX | P01–P09B | P11 (checklist sécurité) |
 | P11 | Durcissement / P12 | P01–P10 | — |
 
 Chaque lot laisse l'application fonctionnelle et se termine par un commit unique réversible (`git revert` ; migration additive laissée en place, inerte).
@@ -225,6 +229,7 @@ Chaque lot laisse l'application fonctionnelle et se termine par un commit unique
 | P07 | **BUILD_UNVERIFIED** | `feat(p07)` du 2026-11-20 | Aucun test complet. ADR-0038 ; contrat `imageEditRequest` (source, masque, prompt, ratios 1:1/4:5/9:16/16:9, préservation du sujet, droits) ; outil `media.image.edit@1` (broker P05, plafond 8 ¢, approbation humaine, non proposable par l’agent) ; adaptateur réel Gemini Image via Vertex (ADC, inlineData, repli sans imageConfig sur 400, issues ambiguës → UNKNOWN) ; sorties vérifiées et stockées en versions immuables ; routes image-edits + apply (nouvelle révision Studio) ; UI comparaison originale/éditée. **NOT_RUN** : appel fournisseur réel (aucun credential), build/typecheck/tests. |
 | P06 | **BUILD_UNVERIFIED** | `feat(p06)` du 2026-11-20 | Aucun test complet. Service `services/python-tools/` (FastAPI + Pydantic, Python 3.12, `uv.lock` réel, Dockerfile non-root) ; registre `image.analyze@1` (READ auto) et `image.segment@1` (GENERATE, approbation humaine) ; client/adaptateur TS `infrastructure/python/` avec jeton, délais, vérification SHA-256 des sorties et stockage via `AssetUseCases.upload` ; Compose interne sans port publié (rootfs read-only, limites mémoire/CPU/PID). Smoke local Python : **16/16 PASS** (santé, jeton, analyse réelle, refus d'empreinte altérée, détourage PNG transparent + masque). **NOT_RUN** : build/run Docker, Compose, tests TS, typecheck. |
 | P05 | **BUILD_UNVERIFIED** | `feat(p05)` du 2026-11-20 | Aucun test exécuté. ADR-0036 accepté ; migration additive `20261121130000_agentic_tool_proposals` (`params`, `result`, `agentTurnId`, `step`) ; registre v2 (action/scope/approval/schéma Zod) + outils lisibles avant révision (`project.summary@1`, `assets.list@1`, `assets.inspect@1`, `creative.direction@1`) ; tour d'assistant `agent` (≤4 recommandations, revalidation serveur, digest des paramètres, plafond de 6 étapes) ; broker : périmètres sans révision, échecs déterministes `FAILED` à coût nul, résultat structuré plafonné ; API `POST /api/projects/:id/execution/agent` et `GET /api/projects/:id/execution` ; UI `ProjectExecutionStatus` (autorisation, annulation, résultat, issue incertaine). Limites : aucun appel fournisseur réel ; outils Python P06 attendus sur ce contrat. |
+| P09A | **BUILD_UNVERIFIED** | `feat(p09a)` du 2026-11-21 | Aucun test complet. Mission vidéo : ADR-0040 ; type `landscape` additif + `isVideoOutput` ; `Video` ouvre l'atelier ; `clip.fit/focusY` ; aperçu vidéo borné (20 s) ; progression/annulation de rendu (migration additive `20261122100000_studio_render_progress`) ; journal `StudioEvent` alimenté ; timeline, régénération ciblée Runway, preset paysage. Limites : tests/build/typecheck/E2E NOT_RUN (P12) ; client Prisma à régénérer ; Runway désactivé et NON VÉRIFIÉ. |
 | P04 | **BUILD_UNVERIFIED** | `feat(p04)` du 2026-11-20 | Aucun test exécuté. ADR-0035 accepté (directions = brouillons `CreativeRevision`, aucune entité) ; migration additive `20261121110000_creative_direction_metadata` (`label`, `origin`, `provenance` JSONB) ; service `CreativeDirections` (génération depuis brainstorming + ressources confirmées, affinage, alternatives, combinaison) ; API `GET/POST /api/projects/:id/creative/directions` et décision de direction auditée ; UI `ArtDirections` (comparaison, aperçu réel Sharp, retenir/écarter, reprise éditeur). Limites : le choix définitif (`Project.selectedCreativeVersion`) et l'approbation exacte restent P05/P07. |
 
 *Disclaimer : aucun test n'a été exécuté en P00–P04 ; les statuts décrivent la présence de code à HEAD `f5d515b`, jamais une certification.*

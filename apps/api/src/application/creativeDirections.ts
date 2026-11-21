@@ -1,5 +1,5 @@
 import {
-  composeGuide, creativeSpec, outputSize, productionFormats, readableInk,
+  composeGuide, creativeSpec, isVideoOutput, outputSize, productionFormats, readableInk,
   type CreativeDirectionInput, type CreativeSpec, type OutputKind, type ProductionFormat
 } from '@vululu/contracts';
 import { HttpError } from '../errors';
@@ -89,7 +89,7 @@ function composeDraft(inputs: DirectionInputs, options: ComposeOptions): Directi
   const delivery = deliveryFor(inputs.project);
   const photos = inputs.assets.filter((asset) => asset.kind === 'image').map((asset) => asset.versionId);
   const logo = inputs.assets.find((asset) => asset.kind === 'logo')?.versionId;
-  const clip = delivery.kind === 'short' ? inputs.assets.find((asset) => asset.kind === 'video')?.versionId : undefined;
+  const clip = isVideoOutput(delivery.kind) ? inputs.assets.find((asset) => asset.kind === 'video')?.versionId : undefined;
   const brand = palette(inputs.brand, options.paletteVariant);
   let spec: CreativeSpec;
   if (!photos.length && !clip) {

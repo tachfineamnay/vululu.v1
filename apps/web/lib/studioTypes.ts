@@ -12,7 +12,7 @@ export type StudioSource = {
   metadata?: { width?: number; height?: number; duration?: number };
 };
 
-export type StudioRenderState = { revision: number; state: string; reason: string | null };
+export type StudioRenderState = { revision: number; state: string; reason: string | null; progress: number };
 export type StudioVersion = { version: number; approvedAt: string | null };
 export type StudioRevision = StudioVersion & {
   spec: CreativeSpec;

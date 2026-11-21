@@ -902,6 +902,8 @@ model StudioRender {
  source CreativeRevision @relation(fields:[projectId,revision],references:[projectId,version],onDelete:Cascade)
  state String
  reason String?
+ progress Int @default(0)
+ cancelRequested Boolean @default(false)
  createdAt DateTime @default(now())
  @@index([projectId,createdAt])
 }

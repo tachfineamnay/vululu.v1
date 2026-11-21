@@ -8,7 +8,7 @@
  * additive du contrat créatif P08 ; aucune donnée n’est simulée dans ce panneau.
  */
 
-import { studioExportExtension } from '@vululu/contracts';
+import { isVideoOutput, studioExportExtension } from '@vululu/contracts';
 import type { StudioInspectorProps } from '../lib/studioComponentTypes';
 import {
   MIN_LAYER_SIZE,
@@ -147,7 +147,8 @@ export function StudioInspector({
   );
   const videoSources = sources.filter((source) => source.mimeType === 'video/mp4');
   const timedExport = studioExportExtension(spec.delivery?.kind) !== 'png';
-  const shortVideo = spec.delivery?.kind === 'short';
+  // Toute sortie vidéo (courte ou paysage) accepte clip, transitions et cadrage de clip.
+  const videoOutput = isVideoOutput(spec.delivery?.kind);
   const totalSeconds = spec.scenes.reduce((total, item) => total + item.seconds, 0);
   const imageLayerSelected = Boolean(active && isImageLayer(active));
 
@@ -219,6 +220,16 @@ export function StudioInspector({
   function changeClipStart(value: number) {
     if (!scene?.clip) return;
     changeScene({ clip: { ...scene.clip, start: clamp(value, 0, 600) } });
+  }
+
+  function changeClipFit(fit: 'cover' | 'contain') {
+    if (!scene?.clip) return;
+    changeScene({ clip: { ...scene.clip, fit } });
+  }
+
+  function changeClipFocusY(value: number) {
+    if (!scene?.clip) return;
+    changeScene({ clip: { ...scene.clip, focusY: clamp(value, 0, 1) } });
   }
 
   function insertSource(source: StudioSource) {
@@ -822,7 +833,7 @@ export function StudioInspector({
             <p className="hint">
               Durée totale : {formatDecimal(totalSeconds, 1)} s · maximum 180 s sur l’ensemble des scènes.
             </p>
-            {shortVideo ? (
+            {videoOutput ? (
               <label className="label">
                 Clip de la bibliothèque
                 <select className="input" value={scene.clip?.versionId ?? ''} onChange={(event) => changeClipVersion(event.target.value)}>
@@ -840,17 +851,51 @@ export function StudioInspector({
               </label>
             ) : null}
             {scene.clip ? (
-              <NumberField
-                id="inspector-clip-start"
-                label="Début du clip (secondes, 0 à 600)"
-                value={scene.clip.start}
-                min={0}
-                max={600}
-                step={0.5}
-                onChange={changeClipStart}
-              />
+              <>
+                <NumberField
+                  id="inspector-clip-start"
+                  label="Début du clip (secondes, 0 à 600)"
+                  value={scene.clip.start}
+                  min={0}
+                  max={600}
+                  step={0.5}
+                  onChange={changeClipStart}
+                />
+                <label className="label">
+                  Cadrage du clip
+                  <select
+                    className="input"
+                    value={scene.clip.fit ?? 'cover'}
+                    onChange={(event) => changeClipFit(event.target.value as 'cover' | 'contain')}
+                  >
+                    <option value="cover">Remplir</option>
+                    <option value="contain">Contenir</option>
+                  </select>
+                </label>
+                <label className="label">
+                  Point de mire vertical du clip (0 = haut, 1 = bas)
+                  <input
+                    className="input"
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={scene.clip.focusY ?? 0.5}
+                    aria-describedby="inspector-clip-focus-hint"
+                    onChange={(event) => changeClipFocusY(Number(event.target.value))}
+                  />
+                </label>
+                <p className="hint" id="inspector-clip-focus-hint">
+                  Cadrage appliqué par le rendu serveur : « remplir » recadre le clip dans le cadre, « contenir »
+                  l’insère en entier. Le point de mire déplace le recadrage vertical. Valeur actuelle :{' '}
+                  {formatDecimal(scene.clip.focusY ?? 0.5)}.
+                </p>
+                <button type="button" className="btn btn-ghost btn-small" onClick={() => changeClipFocusY(0.5)}>
+                  Recentrer le point de mire
+                </button>
+              </>
             ) : null}
-            {shortVideo ? (
+            {videoOutput ? (
               <label className="label">
                 Transition de scène
                 <select
@@ -870,7 +915,7 @@ export function StudioInspector({
                 </select>
               </label>
             ) : (
-              <p className="hint">Clip, début de clip et transition sont réservés au format vidéo courte.</p>
+              <p className="hint">Clip, cadrage du clip et transition sont réservés aux sorties vidéo.</p>
             )}
           </section>
         </fieldset>

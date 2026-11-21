@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { prisma } from '@vululu/db';
 import { mediaApprovalDigest } from './approval';
 import { verifyOutput } from './verify';
-import { creativeSpec, mediaRequest, type CreativeLayer, type MediaRequest } from '@vululu/contracts';
+import { creativeSpec, isVideoOutput, mediaRequest, type CreativeLayer, type MediaRequest } from '@vululu/contracts';
 import { HttpError } from '../../errors';
 import { assets, creativeStudio } from '../../application/container';
 import { cancel, proposeTx } from '../execution/broker';
@@ -22,8 +22,11 @@ async function context(user: string, projectId: string, r: MediaRequest) {
   const spec = creativeSpec.parse(rev.spec),
     scene = spec.scenes.find((v) => v.key === r.sceneKey);
   if (!scene) return fail('media_scene_missing', 404);
-  if (r.kind === 'video' && (spec.delivery?.kind !== 'short' || scene.seconds > r.seconds))
+  if (r.kind === 'video' && (!isVideoOutput(spec.delivery?.kind) || scene.seconds > r.seconds))
     return fail('media_short_scene_required');
+  // Le fournisseur n'accepte que 1280:720 ou 720:1280 : le ratio doit suivre l'orientation du cadre.
+  if (r.kind === 'video' && r.size !== (spec.width / spec.height >= 1.4 ? '1280:720' : '720:1280'))
+    return fail('media_ratio_mismatch');
   if (rev.project.usage !== 'organic') return fail('media_rights_review_required');
   return rev.project.contextId;
 }

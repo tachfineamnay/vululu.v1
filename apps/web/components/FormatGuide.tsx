@@ -6,6 +6,7 @@ import {
   productionCapability,
   outputKind,
   platformSchema,
+  isVideoOutput,
   type CreativeSpec,
   type OutputKind,
   type Platform,
@@ -119,7 +120,7 @@ export function FormatGuide({
           ))}
       </fieldset>
       {select('Logo', 'logo', logo, mark)}
-      {kind === 'short' && (
+      {isVideoOutput(kind) && (
         <>
           {select('Clip d’ouverture', 'video', clip, movie)}
           {select('Piste audio autorisée', 'audio', audio, sound)}
@@ -140,7 +141,7 @@ export function FormatGuide({
                 kind,
                 platform,
                 calendar: item ? { itemId: item.id, version: item.version } : undefined,
-                ...(kind === 'short'
+                ...(isVideoOutput(kind)
                   ? {
                       transition: dip ? 'dip' : 'cut',
                       audio: audio ? { versionId: audio, gain: 0.8 } : undefined

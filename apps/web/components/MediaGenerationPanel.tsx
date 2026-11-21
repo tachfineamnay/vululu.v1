@@ -27,10 +27,11 @@ function mediaStatus(row: Row) {
     if (row.state === 'MATERIALIZING') return 'Stockage interrompu : vérifier la bibliothèque';
     if (['DRAFT', 'SUBMITTING', 'PENDING'].includes(row.state)) return 'Suivi interrompu : résultat non confirmé';
   }
-  return statuses[row.state] ?? row.state;
+  return mediaStateLabels[row.state] ?? row.state;
 }
-const active = ['QUEUED', 'POLLING', 'CLAIMED'];
-const statuses: Record<string, string> = {
+
+export const mediaActiveStates = ['QUEUED', 'POLLING', 'CLAIMED'];
+export const mediaStateLabels: Record<string, string> = {
   DRAFT: 'En attente', SUBMITTING: 'Envoi en cours', PENDING: 'En cours chez le fournisseur',
   MATERIALIZING: 'Vérification et stockage', READY: 'Disponible dans la bibliothèque', FAILED: 'Échec fournisseur', CANCELLED: 'Annulation signalée',
   UNAVAILABLE: 'Fournisseur indisponible', CREDENTIAL_REJECTED: 'Accès fournisseur refusé',
@@ -45,6 +46,7 @@ export function MediaGenerationPanel({
   sceneKey,
   images,
   short,
+  clipSize,
   run,
   reload
 }: {
@@ -53,6 +55,8 @@ export function MediaGenerationPanel({
   sceneKey: string;
   images: { id: string; name: string }[];
   short: boolean;
+  /** Orientation exigée par le serveur pour un clip : doit suivre le cadre de la scène. */
+  clipSize?: '1280:720' | '720:1280';
   run: (fn: () => Promise<void>) => Promise<void>;
   reload: () => Promise<void>;
 }) {
@@ -66,7 +70,7 @@ export function MediaGenerationPanel({
     [rights, confirm] = useState(false),
     [open, setOpen] = useState(false),
     [refreshError, setRefreshError] = useState(false);
-  const pending = rows.some((row) => active.includes(row.operation.state));
+  const pending = rows.some((row) => mediaActiveStates.includes(row.operation.state));
   useEffect(() => {
     if (!open || !pending) return;
     let stopped = false;
@@ -145,14 +149,21 @@ export function MediaGenerationPanel({
                   ))}
                 </select>
               </label>
-              <label>
-                Format du clip
-                <select value={size} onChange={(e) => resize(e.target.value)}>
-                  {cap.sizes.map((x) => (
-                    <option key={x} value={x}>{x === '1280:720' ? 'Paysage · 16:9' : 'Portrait · 9:16'} ({x})</option>
-                  ))}
-                </select>
-              </label>
+              {clipSize ? (
+                <p className="hint">
+                  Format du clip : {clipSize === '1280:720' ? 'paysage · 16:9' : 'portrait · 9:16'} ({clipSize}) · il
+                  suit l’orientation du cadre de la scène et ne peut pas être choisi librement.
+                </p>
+              ) : (
+                <label>
+                  Format du clip
+                  <select value={size} onChange={(e) => resize(e.target.value)}>
+                    {cap.sizes.map((x) => (
+                      <option key={x} value={x}>{x === '1280:720' ? 'Paysage · 16:9' : 'Portrait · 9:16'} ({x})</option>
+                    ))}
+                  </select>
+                </label>
+              )}
             </>
           )}
           {kind === 'image' && <p>Format carré · PNG. Aucune image de référence.</p>}
@@ -179,7 +190,7 @@ export function MediaGenerationPanel({
                   kind,
                   prompt,
                   rightsConfirmed: rights,
-                  ...(kind === 'video' ? { size, seconds: 5, referenceVersion: ref } : { size: cap.sizes[0] })
+                  ...(kind === 'video' ? { size: clipSize ?? size, seconds: 5, referenceVersion: ref } : { size: cap.sizes[0] })
                 });
                 await refresh();
               })
@@ -213,7 +224,7 @@ export function MediaGenerationPanel({
                 : r.operation.reportedCents + ' centime(s) USD'}
               .
             </p>
-            {r.cancelRequested && active.includes(r.operation.state) && <p>Annulation demandée, non garantie. Le suivi continue.</p>}
+            {r.cancelRequested && mediaActiveStates.includes(r.operation.state) && <p>Annulation demandée, non garantie. Le suivi continue.</p>}
             {r.operation.state === 'PROPOSED' && (
               <button
                 onClick={() =>

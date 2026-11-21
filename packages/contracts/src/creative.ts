@@ -1,14 +1,18 @@
 import { z } from 'zod';
 import { platformSchema } from './channels';
-export const outputKind = z.enum(['square', 'portrait', 'story', 'carousel', 'short']);
+export const outputKind = z.enum(['square', 'portrait', 'story', 'carousel', 'short', 'landscape']);
 export type OutputKind = z.infer<typeof outputKind>;
 export const outputSize: Record<OutputKind, [number, number]> = {
   square: [1080, 1080],
   portrait: [1080, 1350],
   story: [1080, 1920],
   carousel: [1080, 1350],
-  short: [1080, 1920]
+  short: [1080, 1920],
+  /** P09A — vidéo multiscène paysage (LinkedIn notamment) ; même pipeline MP4 que la vidéo courte. */
+  landscape: [1920, 1080]
 };
+/** Sorties vidéo : seules elles acceptent clips, transitions, audio et sous-titres. */
+export const isVideoOutput = (kind?: OutputKind): boolean => kind === 'short' || kind === 'landscape';
 const mediaId = z.string().min(1).max(128);
 const delivery = z.object({
   kind: outputKind,
@@ -66,7 +70,15 @@ export const creativeSpec = z
           transition: z.enum(['cut', 'dip']).optional(),
           seconds: z.number().min(0.5).max(30).multipleOf(0.5),
           clip: z
-            .object({ versionId: mediaId, start: z.number().min(0).max(600), height: unit.min(0.1) })
+            .object({
+              versionId: mediaId,
+              start: z.number().min(0).max(600),
+              height: unit.min(0.1),
+              /** Cadrage : remplir le cadre (cover) ou contenir le clip (contain). Défaut = cover centré. */
+              fit: z.enum(['cover', 'contain']).optional(),
+              /** Point de mire vertical du recadrage, 0 = haut, 0.5 = centre, 1 = bas. */
+              focusY: unit.optional()
+            })
             .optional(),
           layers: z.array(creativeLayer).min(1).max(16)
         })
@@ -82,16 +94,16 @@ export const creativeSpec = z
       const [w, h] = outputSize[s.delivery.kind];
       if (s.width !== w || s.height !== h) invalid('Dimensions incompatibles avec le format.');
       if (
-        s.delivery.kind !== 'short' &&
+        !isVideoOutput(s.delivery.kind) &&
         (s.delivery.audio || s.delivery.transition || s.scenes.some((scene) => scene.clip))
       )
-        invalid('Audio et clips nécessitent une vidéo courte.');
-      if (s.delivery.kind !== 'short' && s.delivery.kind !== 'carousel' && s.scenes.length !== 1)
+        invalid('Audio et clips nécessitent une vidéo.');
+      if (!isVideoOutput(s.delivery.kind) && s.delivery.kind !== 'carousel' && s.scenes.length !== 1)
         invalid('Une seule image par publication.');
-    } else if (s.scenes.some((scene) => scene.clip)) invalid('Sélectionnez le format vidéo courte.');
+    } else if (s.scenes.some((scene) => scene.clip)) invalid('Sélectionnez le format vidéo.');
     for (const scene of s.scenes)
-      if (scene.transition && s.delivery?.kind !== 'short')
-        invalid('Transition réservée au format vidéo courte.');
+      if (scene.transition && !(s.delivery && isVideoOutput(s.delivery.kind)))
+        invalid('Transition réservée à la vidéo.');
     for (const scene of s.scenes)
       for (const l of scene.layers) {
         if (l.type === 'text' && l.minSize && l.minSize > l.size)

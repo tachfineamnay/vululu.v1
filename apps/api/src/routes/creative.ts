@@ -16,6 +16,7 @@ import {
   creativeSpec,
   creativeWrite,
   directionDecisionInput,
+  isVideoOutput,
   studioExportExtension,
 } from '@vululu/contracts';
 import { creativeDirections, creativeStudio as service } from '../application/container';
@@ -23,7 +24,7 @@ import {draftThumbnail} from '@vululu/media';
 import { sendArtifact } from './production';
 import { rateLimitPreHandler, RATE_LIMITS } from '../infrastructure/security/rateLimiter';
 import { HttpError } from '../errors';
-import { queueRender, renderStatus } from '../infrastructure/creative/renderJobs';
+import { cancelRender, queueRender, renderStatus } from '../infrastructure/creative/renderJobs';
 
 export async function creativeRoutes(app: FastifyInstance) {
   const auth = { preHandler: [app.authenticate] };
@@ -216,10 +217,26 @@ export async function creativeRoutes(app: FastifyInstance) {
         return (await prisma.billingControl.findUniqueOrThrow({where:{id:'commercial'}})).enabled ? draftThumbnail(frame) : frame;
       }));
   });
+  // Aperçu vidéo borné (20 s) : même compositeur que le master, aucune révision créée.
+  app.post(base + '/preview/video', renderAuth, async (r, reply) => {
+    const spec = creativeSpec.refine((s) => !s.delivery || isVideoOutput(s.delivery.kind)).parse(r.body);
+    const out = await withSlot(() => service.previewVideo(r.currentUser!.id, id.parse(r.params).id, spec));
+    return reply
+      .header('Cache-Control', 'private, no-store')
+      .header('X-Preview-Seconds', out.seconds.toFixed(2))
+      .header('X-Preview-Bounded', out.bounded ? '1' : '0')
+      .type('video/mp4')
+      .send(out.bytes);
+  });
   app.post(base + '/:version/render', renderAuth, async (r, reply) => {
     const p = revision.parse(r.params);
     const job = await queueRender(r.currentUser!.id, p.id, p.version);
     return reply.code(job.state === 'succeeded' ? 200 : 202).send(job);
+  });
+  // Annulation : immédiate si le job est en file, coopérative (fin de scène) s'il est en cours.
+  app.post(base + '/:version/render/cancel', renderAuth, async (r) => {
+    const p = revision.parse(r.params);
+    return cancelRender(r.currentUser!.id, p.id, p.version);
   });
   app.get(base + '/:version/render', auth, async (r, reply) => {
     const p = revision.parse(r.params);

@@ -1,4 +1,4 @@
-import { outputSize, type CreativeSpec } from '@vululu/contracts';
+import { isVideoOutput, outputSize, type CreativeSpec } from '@vululu/contracts';
 import { clampLayer } from './studioGeometry';
 import type { ChannelPreset, OutputKind, Platform } from './studioTypes';
 
@@ -16,7 +16,9 @@ export const CHANNEL_PRESETS: ChannelPreset[] = [
   { id: 'tt-reel', label: 'TikTok · Vidéo', platform: 'TikTok', kind: 'short', width: 1080, height: 1920, safeArea: 0.08, zones: [{ label: 'En-tête TikTok', top: 0.1 }, { label: 'Légende et navigation', bottom: 0.18 }, { label: 'Boutons latéraux', right: 0.12 }] },
   { id: 'li-square', label: 'LinkedIn · Post carré', platform: 'LinkedIn', kind: 'square', width: 1080, height: 1080, safeArea: 0.06, zones: [{ label: 'Pied de post', bottom: 0.06 }] },
   { id: 'li-portrait', label: 'LinkedIn · Post portrait', platform: 'LinkedIn', kind: 'portrait', width: 1080, height: 1350, safeArea: 0.06, zones: [{ label: 'Pied de post', bottom: 0.06 }] },
-  { id: 'li-carousel', label: 'LinkedIn · Carrousel', platform: 'LinkedIn', kind: 'carousel', width: 1080, height: 1350, safeArea: 0.06, zones: [{ label: 'Pied de post', bottom: 0.06 }] }
+  { id: 'li-carousel', label: 'LinkedIn · Carrousel', platform: 'LinkedIn', kind: 'carousel', width: 1080, height: 1350, safeArea: 0.06, zones: [{ label: 'Pied de post', bottom: 0.06 }] },
+  // P09A — vidéo multiscène paysage : même pipeline MP4 que la vidéo courte, sans retirer clips ni audio.
+  { id: 'li-landscape', label: 'LinkedIn · Vidéo paysage', platform: 'LinkedIn', kind: 'landscape', width: 1920, height: 1080, safeArea: 0.05, zones: [{ label: 'Interface LinkedIn', bottom: 0.08 }] }
 ];
 
 /** Le format du projet sert de valeur par défaut quand aucun contenu de calendrier n'est lié. */
@@ -33,10 +35,11 @@ export function defaultPreset(platform: Platform | string, kind: OutputKind, wid
 
 /**
  * Presets compatibles avec le nombre de scènes courant : une image par publication hors
- * carrousel et vidéo courte (règle déjà appliquée par creativeSpec).
+ * carrousel et vidéo (règle déjà appliquée par creativeSpec).
  */
 export function compatiblePresets(sceneCount: number): ChannelPreset[] {
-  if (sceneCount > 1) return CHANNEL_PRESETS.filter((preset) => preset.kind === 'carousel' || preset.kind === 'short');
+  if (sceneCount > 1)
+    return CHANNEL_PRESETS.filter((preset) => preset.kind === 'carousel' || isVideoOutput(preset.kind));
   return CHANNEL_PRESETS.filter((preset) => preset.kind !== 'carousel');
 }
 
@@ -45,6 +48,7 @@ export type ChannelChange = { spec: CreativeSpec; preset: ChannelPreset; note: s
 /**
  * Applique un preset de canal : dimensions, zone sûre, livraison. Les clips, transitions et
  * pistes audio ne survivent pas à une sortie image ; les scènes au-delà de la première non plus.
+ * Toute sortie vidéo (courte ou paysage) conserve clips, transitions, audio et plusieurs scènes.
  */
 export function applyChannelPreset(spec: CreativeSpec, preset: ChannelPreset): ChannelChange {
   const [width, height] = outputSize[preset.kind];
@@ -52,11 +56,11 @@ export function applyChannelPreset(spec: CreativeSpec, preset: ChannelPreset): C
     throw new Error('Repère de canal incohérent avec les dimensions de sortie.');
   const notes: string[] = [];
   let scenes = spec.scenes;
-  if (preset.kind !== 'carousel' && preset.kind !== 'short' && scenes.length > 1) {
+  if (!isVideoOutput(preset.kind) && preset.kind !== 'carousel' && scenes.length > 1) {
     scenes = scenes.slice(0, 1);
     notes.push('Les pages supplémentaires sont retirées : ce canal n’accepte qu’une image.');
   }
-  const keepVideo = preset.kind === 'short';
+  const keepVideo = isVideoOutput(preset.kind);
   let clamped = 0;
   const next: CreativeSpec = {
     ...spec,
@@ -82,7 +86,7 @@ export function applyChannelPreset(spec: CreativeSpec, preset: ChannelPreset): C
     })
   };
   if (!keepVideo && (spec.delivery?.audio || spec.scenes.some((scene) => scene.clip)))
-    notes.push('Clip et piste audio retirés : ils concernent uniquement la vidéo courte.');
+    notes.push('Clip et piste audio retirés : ils concernent uniquement les sorties vidéo.');
   if (clamped) notes.push(clamped + ' calque(s) de texte replacé(s) dans la nouvelle marge sûre.');
   return { spec: next, preset, note: notes.join(' ') };
 }
