@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { content, nextStages, stages, type Content } from '@vululu/contracts';
 import { checkEdit } from '../apps/api/src/application/calendarPolicy';
 import { dayKey, period, instants } from '../apps/web/app/calendar/dates';
-import { suggestions } from '../apps/web/app/calendar/suggestions';
+import { AUDIENCE_UNSPECIFIED, suggestions } from '../apps/web/app/calendar/suggestions';
 
 const idea: Content = {
   title: 'Cours',
@@ -63,7 +63,10 @@ describe('editorial rules', () => {
       suggestions(new Date(2030, 3, 1), { id: 'o', contextId: 'c', name: 'Initiation' }, context, []);
     expect(build()).toEqual(build());
     expect(build().map((x) => dayKey(new Date(x.plannedAt)))).toEqual(['2030-04-01', '2030-04-03', '2030-04-05']);
-    expect(build().every((x) => x.title.includes('Initiation') && !x.audience && x.offerId === 'o')).toBe(true);
+    expect(build().every((x) => x.title.includes('Initiation') && x.audience === AUDIENCE_UNSPECIFIED && x.offerId === 'o')).toBe(true);
+    expect(build().every((x) => !x.audience.includes('Personnes intéressées'))).toBe(true);
+    const known = suggestions(new Date(2030, 3, 1), { id: 'o', contextId: 'c', name: 'Initiation' }, { ...context, audience: 'Artisans locaux' }, []);
+    expect(known.every((x) => x.audience === 'Artisans locaux')).toBe(true);
   });
 });
 

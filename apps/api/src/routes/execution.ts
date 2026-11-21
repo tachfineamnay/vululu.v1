@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '@vululu/db';
 import { approve, cancel, propose, resolveIncident } from '../infrastructure/execution/broker';
-import { tools, toolSchema } from '../infrastructure/execution/registry';
+import { tools, toolSchema, catalogForAccount } from '../infrastructure/execution/registry';
 import { rateLimitPreHandler } from '../infrastructure/security/rateLimiter';
 import {demoDisabled} from '../releaseMode';
 import { HttpError } from '../errors';
@@ -30,7 +30,13 @@ export async function executionRoutes(app: FastifyInstance) {
       }
     })
   );
-  app.get('/api/execution/tools', auth, () => Object.fromEntries(Object.entries(tools).filter(([k])=>!demoDisabled()||!k.startsWith('sandbox.'))));
+  app.get('/api/execution/tools', auth, async (r) => {
+    const account = await prisma.executionAccount.findUnique({
+      where: { userId: r.currentUser!.id },
+      select: { enabled: true, tools: true }
+    });
+    return catalogForAccount(account, { demoDisabled: demoDisabled() });
+  });
   app.put('/api/admin/execution/accounts/:account', admin, async (r) => {
     const { account } = z.object({ account: z.string().min(1).max(128) }).parse(r.params);
     const data = z

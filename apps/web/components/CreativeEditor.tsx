@@ -709,11 +709,19 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
                 {view.manifest ? (
                   <>
                     {view.spec.delivery && view.spec.delivery.kind !== 'short' ? (
-                      <img
-                        alt="Export rendu"
-                        style={{ maxWidth: '100%', maxHeight: 440 }}
-                        src={`${base}/${view.version}/scenes/${scene.key}`}
-                      />
+                      <>
+                        <img
+                          alt="Export rendu"
+                          style={{ maxWidth: '100%', maxHeight: 440 }}
+                          src={`${base}/${view.version}/scenes/${scene.key}`}
+                        />
+                        <a
+                          href={`${base}/${view.version}/scenes/${scene.key}`}
+                          download={`v${view.version}-${scene.key}.png`}
+                        >
+                          {t('Exporter la scène', 'Export scene')} {index + 1}
+                        </a>
+                      </>
                     ) : (
                       <video
                         controls

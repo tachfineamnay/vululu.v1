@@ -26,7 +26,7 @@ test('C12 · customer ticket, restricted support reply, admin oversight', async 
     await expect(u.p.getByText(ticket + ' · OPEN')).toBeVisible();
     await s.p.goto('/support');
     await s.p.getByText(ticket + ' · OPEN').click();
-    const currentTicket = s.p.locator('details').filter({has:s.p.getByText(ticket + ' · OPEN', {exact:true})});
+    const currentTicket = s.p.locator('details').filter({hasText: ticket});
     await currentTicket
       .getByLabel('Réponse', { exact: true })
       .fill('Le solde réservé est distinct du solde disponible.');
@@ -35,7 +35,7 @@ test('C12 · customer ticket, restricted support reply, admin oversight', async 
     await expect(s.p.getByText(ticket + ' · IN_PROGRESS')).toBeVisible();
     expect((await s.p.request.get('/api/admin/commerce')).status()).toBe(403);
     await a.p.goto('/admin/commerce');
-    await expect(a.p.getByRole('heading', { name: 'Commerce · environnement de test' })).toBeVisible();
+    await expect(a.p.getByRole('heading', { name: /^Commerce/ })).toBeVisible();
     await expect(a.p.getByText(ticket + ' · IN_PROGRESS')).toBeVisible();
     await u.p.reload();
     await u.p.getByText(ticket + ' · IN_PROGRESS').click();

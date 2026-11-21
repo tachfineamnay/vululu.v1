@@ -31,8 +31,12 @@ test('Mes projets : idée, références, destination, sauvegarde et reprise du b
   await expect(page.getByTestId('project-objective')).toHaveValue(idea);
   await page.getByTestId('project-next').click(); await page.getByTestId('project-next').click();
   await page.getByTestId('project-platform').selectOption('LinkedIn');
-  await expect(page.getByText('Cadre carré', { exact: true })).toBeVisible();
-  await expect(page.getByTestId('project-format').locator('option[value="Affiche"]')).toHaveJSProperty('disabled', true);
+  await expect(page.getByText(/^Export : /)).toBeVisible();
+  await expect(page.getByTestId('project-format').locator('option')).toHaveText([
+    'Post',
+    'Carrousel',
+    'Vidéo multiscène'
+  ]);
   await page.reload();
   await expect(page.getByTestId('project-platform')).toHaveValue('LinkedIn');
   for (const width of [1440, 1024, 768, 390, 320]) {

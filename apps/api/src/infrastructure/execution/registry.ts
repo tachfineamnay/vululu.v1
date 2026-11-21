@@ -22,3 +22,23 @@ export interface EnginePort {
     signal: AbortSignal
   ): Promise<{ costCents: number } | { pendingMedia: true }>;
 }
+
+
+/**
+ * Catalogue réellement proposable à un compte d'exécution.
+ *
+ * Un outil n'est exposé que si le compte est actif et que sa politique de
+ * périmètre l'autorise : le catalogue ne doit jamais proposer une opération que
+ * `propose()` refusera ensuite avec 403 `tool_disabled`.
+ */
+export function catalogForAccount(
+  account: { enabled: boolean; tools: readonly string[] } | null,
+  options: { demoDisabled: boolean }
+): Record<string, (typeof tools)[Tool]> {
+  const permitted = new Set(account && account.enabled ? account.tools : []);
+  return Object.fromEntries(
+    (Object.entries(tools) as [Tool, (typeof tools)[Tool]][]).filter(
+      ([key]) => permitted.has(key) && (!options.demoDisabled || !key.startsWith('sandbox.'))
+    )
+  );
+}

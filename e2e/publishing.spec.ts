@@ -81,8 +81,17 @@ test('Calendrier : aperçu approuvé et téléchargement manuel sans publication
       ]
     }
   });
-  const m = await post(base + '/1/render', {});
-  await post(base + '/1/approve', { checksum: m.approvalSha256 });
+ await post(base + '/1/render', {});
+  let revision: { manifest?: { approvalSha256?: string; master: { sha256: string } } } = {};
+  for (let attempt = 0; attempt < 60; attempt++) {
+    revision = await (await page.request.get(base + '/1')).json();
+    if (revision.manifest) break;
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  expect(revision.manifest, 'rendu du master non terminé').toBeTruthy();
+  await post(base + '/1/approve', {
+    checksum: revision.manifest!.approvalSha256 ?? revision.manifest!.master.sha256
+  });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/calendar');
   await page.getByRole('button', { name: title, exact: true }).click();

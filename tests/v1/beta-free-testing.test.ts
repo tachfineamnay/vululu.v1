@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
-import type { AccountMail } from '../apps/api/src/infrastructure/email/accountMail';
-import type { EnginePort } from '../apps/api/src/infrastructure/execution/registry';
+import type { AccountMail } from '../../apps/api/src/infrastructure/email/accountMail';
+import type { EnginePort } from '../../apps/api/src/infrastructure/execution/registry';
 
 /**
  * BETA01 — bêta gratuite de bout en bout sur PostgreSQL jetable.
@@ -36,14 +36,14 @@ const sink: AccountMail[] = [];
 const userIds: string[] = [];
 const productIds: string[] = [];
 
-type Server = Awaited<ReturnType<typeof import('../apps/api/src/server').buildServer>>;
+type Server = Awaited<ReturnType<typeof import('../../apps/api/src/server').buildServer>>;
 type Db = typeof import('@vululu/db')['prisma'];
 
 let app: Server;
 let db: Db;
-let service: typeof import('../apps/api/src/infrastructure/billing/service');
-let broker: typeof import('../apps/api/src/infrastructure/execution/broker');
-let freeze: typeof import('../apps/api/src/infrastructure/beta/freeze');
+let service: typeof import('../../apps/api/src/infrastructure/billing/service');
+let broker: typeof import('../../apps/api/src/infrastructure/execution/broker');
+let freeze: typeof import('../../apps/api/src/infrastructure/beta/freeze');
 
 type Session = { id: string; headers: Record<string, string> };
 
@@ -91,11 +91,11 @@ let projectId: string;
 
 beforeAll(async () => {
   db = (await import('@vululu/db')).prisma;
-  service = await import('../apps/api/src/infrastructure/billing/service');
-  broker = await import('../apps/api/src/infrastructure/execution/broker');
-  freeze = await import('../apps/api/src/infrastructure/beta/freeze');
+  service = await import('../../apps/api/src/infrastructure/billing/service');
+  broker = await import('../../apps/api/src/infrastructure/execution/broker');
+  freeze = await import('../../apps/api/src/infrastructure/beta/freeze');
   app = await (
-    await import('../apps/api/src/server')
+    await import('../../apps/api/src/server')
   ).buildServer({
     accountMail: {
       async send(message) {
@@ -114,7 +114,8 @@ afterAll(async () => {
   await db.billingUse.deleteMany({ where: orders });
   await db.billingOrder.deleteMany({ where: { userId: { in: userIds } } });
   await db.billingProduct.deleteMany({ where: { id: { in: productIds } } });
-  await db.studioRender.deleteMany({ where: { project: { userId: { in: userIds } } } });
+  const ownedProjects = await db.project.findMany({ where: { userId: { in: userIds } }, select: { id: true } });
+  await db.studioRender.deleteMany({ where: { projectId: { in: ownedProjects.map((project: { id: string }) => project.id) } } });
   await db.executionOperation.deleteMany({ where: { accountId: { in: userIds } } });
   await db.executionAccount.deleteMany({ where: { userId: { in: userIds } } });
   await db.serviceTicket.deleteMany({ where: { userId: { in: userIds } } });
@@ -134,7 +135,9 @@ describe('BETA01 — free beta over HTTP and PostgreSQL (no payment, no external
       url: '/api/auth/verify-email',
       payload: { token, password, name: 'Bêta Testeuse' },
     });
-    expect(verified.statusCode).toBe(202);
+    // F01 : la vérification claim le jeton et crée le compte immédiatement (200),
+    // contrairement à l'envoi de lien qui est accepté en 202.
+    expect(verified.statusCode).toBe(200);
     betaUser = await loginAs(address);
     userIds.push(betaUser.id);
     expect(betaUser.id).toBeTruthy();
