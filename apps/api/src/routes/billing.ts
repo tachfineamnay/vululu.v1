@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type Stripe from 'stripe';
 import { z } from 'zod';
 import { prisma } from '@vululu/db';
@@ -27,6 +27,8 @@ import {
 import { activationPhrase, billingConfig, requestedBillingMode } from '../infrastructure/billing/config';
 import { betaPaymentsFrozen } from '../betaMode';
 import { rateLimitPreHandler } from '../infrastructure/security/rateLimiter';
+import { HttpError } from '../errors';
+import { recordAuditEvent } from '../security/audit';
 const key = z.string().min(1).max(160),
   message = z.string().trim().min(2).max(3000),
   evidence = z.string().trim().min(4).max(160),
@@ -62,9 +64,23 @@ export async function billingRoutes(app: FastifyInstance, { stripe }: { stripe?:
     { name: 'commercial', limit: 60, windowSeconds: 60, failClosed: true },
     (r) => 'commerce:' + r.currentUser!.id,
   );
+  // P11-E — file d'assistance partagée : le personnel support et un super-administrateur
+  // peuvent la consulter et répondre. Tout autre rôle est refusé et audité.
+  const supportGate = async (request: FastifyRequest) => {
+    const role = request.currentUser?.role;
+    if (role === 'support' || role === 'super_admin') return;
+    await recordAuditEvent({
+      actorId: request.currentUser?.id ?? null,
+      action: 'rbac.denied',
+      targetType: 'role',
+      targetId: 'support',
+      metadata: { method: request.method, path: request.url, actualRole: role ?? null }
+    });
+    throw new HttpError(403, 'forbidden', 'Acces refuse.');
+  };
   const auth = { preHandler: [app.authenticate, rate] },
     admin = { preHandler: [app.requireSuperAdmin, rate] },
-    support = { preHandler: [app.requireRole('support'), rate] },
+    support = { preHandler: [app.authenticate, supportGate, rate] },
     sensitive = {
       preHandler: [
         app.authenticate,
@@ -99,18 +115,48 @@ export async function billingRoutes(app: FastifyInstance, { stripe }: { stripe?:
     const b = update.parse(r.body);
     return replyTicket(r.currentUser!.id, id(r.params), 'customer', b.status, b.expected, b.message);
   });
-  app.get('/api/support/cases', support, async (r) =>
-    prisma.$transaction(async (tx) => {
+  const supportQuery = z.object({
+    kind: z.enum(['SUPPORT', 'BETA_FEEDBACK']).optional(),
+    status: status.optional(),
+    q: z.string().trim().max(120).optional(),
+  });
+  app.get('/api/support/cases', support, async (r) => {
+    const filters = supportQuery.parse(r.query);
+    return prisma.$transaction(async (tx) => {
       await audit(tx, r.currentUser!.id, 'support.queue_read', 'support');
-      return tx.serviceTicket.findMany({
+      const tickets = await tx.serviceTicket.findMany({
         // BETA01 : les retours de bêta arrivent dans la même file d'assistance.
-        where: { kind: { in: ['SUPPORT', 'BETA_FEEDBACK'] } },
+        where: {
+          kind: filters.kind ?? { in: ['SUPPORT', 'BETA_FEEDBACK'] },
+          ...(filters.status ? { status: filters.status } : {}),
+          ...(filters.q
+            ? {
+                OR: [
+                  { subject: { contains: filters.q, mode: 'insensitive' as const } },
+                  { user: { email: { contains: filters.q, mode: 'insensitive' as const } } },
+                ],
+              }
+            : {}),
+        },
         orderBy: { updatedAt: 'desc' },
         take: 100,
-        include: { entries: { orderBy: { createdAt: 'asc' } } },
+        include: {
+          entries: { orderBy: { createdAt: 'asc' } },
+          // Contexte de compte nécessaire au traitement support (aucun autre rôle n'y accède).
+          user: { select: { email: true, name: true, status: true } },
+        },
       });
-    }),
-  );
+      return tickets.map((ticket) => ({
+        ...ticket,
+        entriesCount: ticket.entries.length,
+        lastEntryRole: ticket.entries.length > 0 ? ticket.entries[ticket.entries.length - 1].role : null,
+        lastEntryAt:
+          ticket.entries.length > 0
+            ? ticket.entries[ticket.entries.length - 1].createdAt.toISOString()
+            : null,
+      }));
+    });
+  });
   app.post('/api/support/cases/:id', support, (r) => {
     const b = update.parse(r.body);
     return replyTicket(r.currentUser!.id, id(r.params), 'support', b.status, b.expected, b.message);
