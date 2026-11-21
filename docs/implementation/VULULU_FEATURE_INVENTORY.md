@@ -296,4 +296,15 @@ Implémenté depuis l'inventaire (commit P09B, `BUILD_UNVERIFIED`, aucun test co
 
 Limites P09B : aucun test, build, lint ni typecheck exécuté ; fournisseurs audio désactivés et appels NON VÉRIFIÉS ; horodatages de transcription estimés (pas mot à mot) ; le rendu vidéo avec sous-titres exige un FFmpeg avec libass (échec explicite sinon) ; le service Python doit être démarré pour l'analyse ; aucun clonage de voix.
 
-> **Rappel final** : inventaire établi par lecture seule au HEAD `f5d515b`, mis à jour par P01 puis P02–P09B. Aucune commande de test, de build ou de fournisseur n'a été exécutée pour P09A/P09B ; tout statut est une lecture de code, jamais une certification.
+## 13. Mise à jour P10 — publication, calendrier et résultats marketing (2026-11-21)
+
+Implémenté depuis l'inventaire (commit P10, `BUILD_UNVERIFIED`, aucun test complet) :
+
+- **Hashtags éditables** : `calendar.variant.hashtags` (≤ 10, format `#tag`, unicité insensible à la casse, défaut `[]`) — additif, inclus dans le digest éditorial et dans la légende publiée. Les contenus existants parsent sans migration.
+- **Publication** : la légende publiée inclut désormais légende + hashtags + CTA ; le paquet manuel hérite du même texte. Nouvelle route `GET /api/publishing/:id` : demande exacte, compte/plateforme (y compris expiré/révoqué), état, reçu réseau, horodatage, journal `PublicationEvent` et opérations de soumission/annulation pour la traçabilité. La validation existante (`preview`) reste l'autorité : révision approuvée + version de calendrier compatible + statut éditorial + longueur de légende + capacité directe de la plateforme.
+- **Résultats** : `GET /api/results` expose en plus les contenus créés/approuvés/programmés/publiés (par état), les états de `PublicationRequest` (dont `publishedConfirmed` = `PUBLISHED` **avec reçu réseau**), les sources et l'instant d'observation, les campagnes agrégées, les créations approuvées réutilisables et des suggestions déterministes dérivées uniquement des données observées. Aucune mesure réseau inventée : les métriques restent `unavailable` sans `POSTIZ_ANALYTICS_ENABLED` et source.
+- **Web** : édition des hashtags dans le calendrier, panneau de publication complété (validation, confirmation compte/contenu/heure, autorisation humaine, états, reçu, annulation, conseils de reconnexion, reprogrammation sûre) et rapport résultats observé (compteurs, campagnes, créations réutilisables, suggestions, états « non disponible »).
+
+Limites P10 : aucun test/build/typecheck/E2E ; aucune publication réelle (`POSTIZ_PUBLISH_ENABLED` off, `direct_disabled`) ; TikTok/vidéos non programmables en direct (capacités existantes) → paquet manuel ; les métriques restent dépendantes de Postiz analytics ; la reprogrammation se fait par annulation + édition de l'heure (nouvelle version) + nouvelle préparation.
+
+> **Rappel final** : inventaire établi par lecture seule au HEAD `f5d515b`, mis à jour par P01 puis P02–P10. Aucune commande de test, de build ou de fournisseur n'a été exécutée pour P09A/P09B/P10 ; tout statut est une lecture de code, jamais une certification.

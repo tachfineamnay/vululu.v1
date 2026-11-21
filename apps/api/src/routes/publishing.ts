@@ -193,6 +193,29 @@ export async function publishingRoutes(app: FastifyInstance) {
       }))
     };
   });
+  // P10 — détail d'une demande : compte exact, états d'exécution, reçu distant et journal.
+  app.get('/api/publishing/:id', auth, async (r) => {
+    const owner = r.currentUser!.id,
+      uid = id(r.params);
+    const row = await prisma.publicationRequest.findFirst({
+      where: { id: uid, connection: { ownerId: owner }, creative: { project: { userId: owner } } },
+      include: {
+        connection: { select: { platform: true, channel: true, displayName: true, revoked: true, expiresAt: true } },
+        events: { orderBy: { createdAt: 'desc' }, take: 10, select: { eventId: true, createdAt: true } }
+      }
+    });
+    if (!row) return problem(404, 'publication_not_found');
+    const ops = await prisma.executionOperation.findMany({
+      where: { accountId: owner, key: { in: [row.submitKey, row.cancelKey] } },
+      select: { id: true, key: true, state: true, digest: true, maxCents: true, reportedCents: true }
+    });
+    const { submitKey, cancelKey, ...rest } = row;
+    return {
+      ...rest,
+      submission: ops.find((op) => op.key === submitKey) ?? null,
+      cancellation: ops.find((op) => op.key === cancelKey) ?? null
+    };
+  });
   const params = z.object({ id: z.uuid(), rev: z.coerce.number().int().positive() });
   const target = (q: unknown) => z.object({ target: publishingPlatform.optional() }).parse(q).target;
   app.get(base + '/:rev/preview', auth, async (r) => {

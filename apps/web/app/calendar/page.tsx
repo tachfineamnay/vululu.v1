@@ -103,7 +103,7 @@ export default function CalendarPage() {
           audience: context?.audience || `Personnes intéressées par ${offer.name}`, objective: idea.idea,
           projectId: matches ? project.id : null, campaignId: project.campaignId ?? null,
           status: 'IDEA', archived: false, plannedAt: date.toISOString(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          variants: [{ platform: idea.platform, format: matches ? project.format as ProjectFormat : availableFormats[idea.platform][0], caption: idea.caption, cta: idea.cta.slice(0, 240) }] });
+          variants: [{ platform: idea.platform, format: matches ? project.format as ProjectFormat : availableFormats[idea.platform][0], caption: idea.caption, cta: idea.cta.slice(0, 240), hashtags: [] }] });
         say('Idée reprise du plan approuvé. Relisez et enregistrez ce contenu.');
       }).catch((error) => { if (active) fail(message(error)); });
     return () => { active = false; };
@@ -161,7 +161,7 @@ export default function CalendarPage() {
         title: '',
         objective: '',
         plannedAt: new Date(dayKey(day) + 'T10:00').toISOString(),
-        variants: [{ platform: 'Instagram', format: 'Affiche', caption: '', cta: '' }]
+        variants: [{ platform: 'Instagram', format: 'Affiche', caption: '', cta: '', hashtags: [] }]
       });
   }
   async function confirm(e: FormEvent) {
@@ -416,6 +416,11 @@ export default function CalendarPage() {
                                 {item.title}
                               </button>
                               <small>{item.variants.map((v) => v.platform).join(' · ')}</small>
+                              {item.variants.some((v) => (v.hashtags ?? []).length) && (
+                                <small className="cal-item-tags">
+                                  {item.variants.flatMap((v) => v.hashtags ?? []).join(' ')}
+                                </small>
+                              )}
                               <button
                                 className="text-link"
                                 onClick={() => make({ ...item, title: ('Copie · ' + item.title).slice(0, 160) })}

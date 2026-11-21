@@ -84,6 +84,96 @@ export async function report(userId: string, now = new Date()) {
       },
     },
   });
+  // P10 — activité observée : contenus, programmations, publications confirmées et créations
+  // approuvées. Aucune mesure réseau n'est inventée ni déduite d'une simple soumission.
+  const [contentStates, requestStates, creatives, campaignRows, campaignContent] = await Promise.all([
+    prisma.contentItem.groupBy({ by: ['status'], where: { userId, archived: false }, _count: { _all: true } }),
+    prisma.publicationRequest.groupBy({
+      by: ['state'],
+      where: { connection: { ownerId: userId }, creative: { project: { userId } } },
+      _count: { _all: true }
+    }),
+    prisma.creativeRevision.findMany({
+      where: { project: { userId }, approvedAt: { not: null }, manifest: { not: Prisma.DbNull } },
+      orderBy: [{ approvedAt: 'desc' }, { projectId: 'asc' }, { version: 'desc' }],
+      take: 20,
+      select: {
+        projectId: true,
+        version: true,
+        approvedAt: true,
+        project: { select: { title: true, campaignId: true, campaign: { select: { name: true } } } }
+      }
+    }),
+    prisma.campaign.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      select: { id: true, name: true, _count: { select: { projects: true } } }
+    }),
+    prisma.contentItem.groupBy({ by: ['campaignId', 'status'], where: { userId }, _count: { _all: true } })
+  ]);
+  const stateCount = (rows: { status?: string | null; state?: string | null; _count: { _all: number } }[], key: string) =>
+    rows.find((row) => (row.status ?? row.state) === key)?._count._all ?? 0;
+  const confirmedPublications = await prisma.publicationRequest.count({
+    where: {
+      state: 'PUBLISHED',
+      networkReceipt: { not: null },
+      connection: { ownerId: userId },
+      creative: { project: { userId } }
+    }
+  });
+  const content = {
+    created: contentStates.reduce((sum, row) => sum + row._count._all, 0),
+    draft: stateCount(contentStates, 'IDEA') + stateCount(contentStates, 'DRAFT'),
+    approved: stateCount(contentStates, 'APPROVED'),
+    scheduled: stateCount(contentStates, 'SCHEDULED'),
+    published: stateCount(contentStates, 'PUBLISHED'),
+    failed: stateCount(contentStates, 'FAILED'),
+    states: Object.fromEntries(contentStates.map((row) => [row.status, row._count._all])),
+    publications: {
+      prepared: stateCount(requestStates, 'PREPARED'),
+      sending: stateCount(requestStates, 'SENDING'),
+      submitted: stateCount(requestStates, 'SUBMITTED'),
+      published: stateCount(requestStates, 'PUBLISHED'),
+      publishedConfirmed: confirmedPublications,
+      failed: stateCount(requestStates, 'FAILED'),
+      unknown: stateCount(requestStates, 'UNKNOWN'),
+      cancelled: stateCount(requestStates, 'CANCELLED'),
+      states: Object.fromEntries(requestStates.map((row) => [row.state, row._count._all]))
+    },
+    sources: {
+      content: 'ContentItem',
+      publications: 'PublicationRequest',
+      metrics: 'Postiz · LinkedIn',
+      metricsEnabled: process.env.POSTIZ_ANALYTICS_ENABLED === '1',
+      observedAt: now.toISOString()
+    }
+  };
+  const campaignSummaries = campaignRows.map((campaign) => {
+    const states = campaignContent.filter((row) => row.campaignId === campaign.id);
+    return {
+      id: campaign.id,
+      name: campaign.name,
+      projects: campaign._count.projects,
+      content: states.reduce((sum, row) => sum + row._count._all, 0),
+      approved: stateCount(states, 'APPROVED'),
+      scheduled: stateCount(states, 'SCHEDULED'),
+      published: stateCount(states, 'PUBLISHED')
+    };
+  });
+  const suggestions: string[] = [];
+  if (!content.publications.publishedConfirmed)
+    suggestions.push('Aucune publication confirmée par le réseau pour l’instant : préparez un lot manuel ou une programmation, puis vérifiez le tableau de publication.');
+  else
+    suggestions.push(content.publications.publishedConfirmed + ' publication(s) confirmée(s) : consultez les mesures disponibles (source et date affichées) avant toute conclusion.');
+  if (content.approved > content.scheduled)
+    suggestions.push((content.approved - content.scheduled) + ' contenu(s) approuvé(s) ne sont pas encore programmés : ouvrez le calendrier pour les planifier.');
+  if (content.publications.unknown || content.publications.sending)
+    suggestions.push('Des envois sont en cours ou en état incertain : vérifiez le tableau de publication avant de relancer quoi que ce soit.');
+  if (content.failed)
+    suggestions.push(content.failed + ' contenu(s) en échec : corrigez la cause affichée puis relancez la préparation.');
+  if (!creatives.length)
+    suggestions.push('Aucune création approuvée : terminez une direction artistique et approuvez une version exacte avant de publier.');
   return {
     usage: {
       ...usage,
@@ -94,6 +184,17 @@ export async function report(userId: string, now = new Date()) {
           ? null
           : Math.round((cost.cents / usage.usable) * 100) / 100,
     },
+    content,
+    campaigns: campaignSummaries,
+    creatives: creatives.map((row) => ({
+      projectId: row.projectId,
+      projectTitle: row.project.title,
+      version: row.version,
+      approvedAt: row.approvedAt,
+      campaignId: row.project.campaignId,
+      campaignName: row.project.campaign?.name ?? null
+    })),
+    suggestions,
     publications: publications.map(({ measure: m, connection, ...p }) => ({
       ...p,
       observation:

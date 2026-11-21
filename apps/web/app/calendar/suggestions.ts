@@ -39,7 +39,8 @@ export function suggestions(
           platform,
           format,
           caption,
-          cta: ['Découvrez l’offre', 'Posez votre question', 'Contactez-nous'][i]
+          cta: ['Découvrez l’offre', 'Posez votre question', 'Contactez-nous'][i],
+          hashtags: []
         }
       ]
     };
