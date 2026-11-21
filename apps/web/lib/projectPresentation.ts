@@ -55,10 +55,19 @@ export const campaignJourneyKeys: CampaignJourneyKey[] = [
   'selection', 'creation', 'review', 'approval', 'delivery', 'results'
 ];
 
-/** États dérivés du brouillon ou du projet : aucune étape future n'est présentée comme faite. */
+/**
+ * États dérivés du brouillon ou du projet : aucune étape future n'est présentée comme faite.
+ * P12-09 — les étapes après les directions ne sont « faites » que sur un fait serveur persisté
+ * (direction choisie, master rendu, version approuvée, livraison transférée, résultats publiés).
+ */
 export function campaignJourneyStates(input: {
   objectiveDone: boolean; channelDone: boolean; formatDone: boolean;
   assetsState: CampaignJourneyState; directionsCount?: number;
+  selectionVersion?: number | null;
+  rendered?: boolean;
+  approved?: boolean;
+  delivered?: boolean;
+  results?: boolean;
 }): Record<CampaignJourneyKey, CampaignJourneyState> {
   const states: Record<CampaignJourneyKey, CampaignJourneyState> = {
     objective: 'upcoming', channel: 'upcoming', format: 'upcoming', assets: 'upcoming',
@@ -79,7 +88,21 @@ export function campaignJourneyStates(input: {
       states.selection = 'current';
     } else {
       states.brainstorm = 'current';
+      return states;
     }
+    if (!input.selectionVersion) return states;
+    states.selection = 'done';
+    states.creation = 'current';
+    if (!input.rendered) return states;
+    states.creation = 'done';
+    states.review = 'current';
+    if (!input.approved) return states;
+    states.review = 'done';
+    states.approval = 'done';
+    states.delivery = 'current';
+    if (!input.delivered) return states;
+    states.delivery = 'done';
+    states.results = input.results ? 'done' : 'current';
   }
   return states;
 }

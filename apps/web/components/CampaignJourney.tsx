@@ -40,10 +40,18 @@ type Props = {
   campaignName?: string | null;
   projectId?: string;
   variant: 'entry' | 'project';
+  /** P12-09 — faits persistés qui rendent les étapes suivantes honnêtes. */
+  selectionVersion?: number | null;
+  rendered?: boolean;
+  approved?: boolean;
+  delivered?: boolean;
+  results?: boolean;
+  /** Cible de chaque étape : un lien réel, jamais un libellé mort. */
+  hrefs?: Partial<Record<CampaignJourneyKey, string>>;
 };
 
 /** Carte de parcours commune à l'entrée de campagne et au projet. Elle ne déclenche aucune action. */
-export default function CampaignJourney({ objectiveDone, channelDone, formatDone, assetsActive, assetsConfirmed, directionsCount, assetsHref, assetsHint, identityName, campaignId, campaignName, projectId, variant }: Props) {
+export default function CampaignJourney({ objectiveDone, channelDone, formatDone, assetsActive, assetsConfirmed, directionsCount, assetsHref, assetsHint, identityName, campaignId, campaignName, projectId, variant, selectionVersion, rendered, approved, delivered, results, hrefs }: Props) {
   const { t } = useWorkspace();
   const [campaign, setCampaign] = useState<{ name: string } | null>(campaignName ? { name: campaignName } : null);
   const [campaignFailed, setCampaignFailed] = useState(false);
@@ -53,7 +61,10 @@ export default function CampaignJourney({ objectiveDone, channelDone, formatDone
   const assetsState: CampaignJourneyState = variant === 'project'
     ? (assetsConfirmed ? 'done' : 'current')
     : (assetsActive ? 'current' : 'upcoming');
-  const states = campaignJourneyStates({ objectiveDone, channelDone, formatDone, assetsState, directionsCount });
+  const states = campaignJourneyStates({
+    objectiveDone, channelDone, formatDone, assetsState, directionsCount,
+    selectionVersion, rendered, approved, delivered, results
+  });
 
   useEffect(() => {
     if (!campaignId || campaignName) return;
@@ -86,9 +97,14 @@ export default function CampaignJourney({ objectiveDone, channelDone, formatDone
     <ol className="campaign-journey-steps" aria-label={t('Étapes de la campagne', 'Campaign steps')}>
       {campaignJourneyKeys.map((key, index) => {
         const state = states[key];
-        return <li key={key} data-state={state} aria-current={state === 'current' ? 'step' : undefined}>
+        const href = hrefs?.[key] ?? (key === 'assets' ? assetsHref : undefined);
+        // P12-09 — chaque étape ouvre la section réelle correspondante (ancre ou route) ; sans
+        // cible, l'étape reste un texte d'état et n'invente pas de navigation.
+        return <li key={key} data-state={state} data-step={key} aria-current={state === 'current' ? 'step' : undefined}>
           <span className="campaign-journey-number" aria-hidden="true">{index + 1}</span>
-          <span>{t(labels[key][0], labels[key][1])}</span>
+          {href
+            ? <Link className="text-link" href={href} data-testid={'journey-step-' + key}>{t(labels[key][0], labels[key][1])}</Link>
+            : <span data-testid={'journey-step-' + key}>{t(labels[key][0], labels[key][1])}</span>}
           <span className="sr-only"> — {t(stateLabels[state][0], stateLabels[state][1])}</span>
         </li>;
       })}
@@ -100,6 +116,6 @@ export default function CampaignJourney({ objectiveDone, channelDone, formatDone
       <p><strong>{variant === 'entry' ? t('Après l’enregistrement', 'After saving') : t('Prochaine étape', 'Next step')}</strong> {assetsHint ?? t('Ajoutez ou choisissez les photos, le logo et les références de votre client.', 'Add or choose your client’s photos, logo and references.')}</p>
       {assetsHref ? <Link className="text-link" href={assetsHref}>{t('Préparer mes ressources', 'Prepare my assets')}</Link> : null}
     </div>
-    <p className="hint">{t('Les étapes suivantes de ce parcours seront activées progressivement ; les outils déjà disponibles restent accessibles sans passer par cette carte.', 'The following journey steps will be enabled progressively; already available tools remain accessible without this card.')}</p>
+    <p className="hint">{t('Les étapes franchies restent enregistrées côté serveur (direction choisie, rendu, approbation, livraison) : après rafraîchissement ou reconnexion, ce parcours reprend au même point. Une étape non atteinte s’affiche « à venir ».', 'Completed steps stay recorded server-side (chosen direction, render, approval, delivery): after a refresh or a new login this journey resumes at the same point. A step not reached shows as “upcoming”.')}</p>
   </section>;
 }

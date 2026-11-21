@@ -454,6 +454,21 @@ export default function ProjectStudio({ id }: { id: string }) {
           assetsActive={true}
           assetsConfirmed={!!assetDecision?.confirmed}
           directionsCount={directionsCount}
+          selectionVersion={chosenDirection}
+          rendered={!!bundle.master}
+          approved={!!live.state?.revisions[0]?.approvedAt}
+          delivered={bundle.project.status === 'transferred'}
+          results={false}
+          hrefs={{
+            brainstorm: '#brainstorm-heading',
+            directions: '#art-directions-heading',
+            selection: '#art-directions-heading',
+            creation: '#composition-heading',
+            review: '#preview-heading',
+            approval: '#preview-heading',
+            delivery: '#preview-heading',
+            results: '/results?project=' + encodeURIComponent(bundle.project.id)
+          }}
           assetsHref={'/assets?context=' + encodeURIComponent(bundle.context.id) + '&project=' + encodeURIComponent(bundle.project.id)}
           assetsHint={assetDecision?.confirmed
             ? t('Ressources confirmées. Toute modification de la sélection demandera une reconfirmation avant le brainstorming.', 'Assets confirmed. Any change to the selection will require confirmation again before brainstorming.')
