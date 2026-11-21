@@ -70,6 +70,7 @@ class FakeMedia implements MediaRendererPort {
       expectedDurationSeconds: input.sceneDurationsSeconds.reduce((total, value) => total + value, 0),
       videoCodec: 'h264',
       audioCodec: 'aac',
+      audioDuration: 0,
       width: 1080,
       height: 1920
     };

@@ -116,6 +116,9 @@ export function ProjectAssistant({ projectId, contextId, creativeHead, preferred
   }
   function follow(turn: Turn) {
     const request = turn.request;
+    // Le formulaire ne compose que des demandes marketing ou créatives : un tour
+    // brainstorming ou agent n'a pas de cible de scène et ne doit pas écraser la saisie.
+    if (request.kind !== 'marketing' && request.kind !== 'creative') return;
     setKind(request.kind); setParent(turn.id); setPrompt('');
     if (request.kind === 'marketing') { setOffer(request.offerId); setWeek(request.week); setRegulated(request.regulated); }
     else setScene(request.scope.target.sceneKey);
@@ -264,7 +267,7 @@ export function ProjectAssistant({ projectId, contextId, creativeHead, preferred
             <button type="button" className="btn btn-primary" disabled={busy || !facts} onClick={() => apply(result.preview!)}>{t('Confirmer et appliquer', 'Confirm and apply')}</button>
           </> : <p className="hint">{t('Actualisez la composition et préparez une nouvelle proposition pour appliquer un changement.', 'Refresh the composition and prepare a fresh suggestion before applying.')}</p>}
         </>}
-        <button type="button" className="btn btn-secondary" onClick={() => follow(selected)}>{t('Poursuivre cette demande', 'Continue this request')}</button>
+        {(selected.request.kind === 'marketing' || selected.request.kind === 'creative') && <button type="button" className="btn btn-secondary" onClick={() => follow(selected)}>{t('Poursuivre cette demande', 'Continue this request')}</button>}
       </section>}
       {error && <p className="error" role="alert">{error}</p>}{note && <p role="status">{note}</p>}
     </div>}

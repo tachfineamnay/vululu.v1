@@ -133,10 +133,22 @@ export function audioConfiguration() {
   return { transcribe: availability('transcribe'), tts: availability('tts') };
 }
 
+/** Description d'une capacité audio : configuration serveur, jamais un appel fournisseur vérifié. */
+export type AudioCapability = {
+  provider: string;
+  model: string;
+  availability: 'configured' | 'disabled' | 'missing_credential';
+  reason: string | null;
+  languages: AudioLanguage[];
+  maxCents: number;
+  estimatedCents: number;
+  providerCallVerified: boolean;
+};
+
 /** Capacités réelles, sans sonde payante : la disponibilité décrit la configuration. */
-export function audioCapabilities() {
+export function audioCapabilities(): { transcription: AudioCapability; tts: AudioCapability & { voices: string[] } } {
   const configuration = audioConfiguration();
-  const describe = (kind: 'transcribe' | 'tts') => {
+  const describe = (kind: 'transcribe' | 'tts'): AudioCapability => {
     const state = configuration[kind];
     const configured = 'config' in state ? state.config : null;
     return {

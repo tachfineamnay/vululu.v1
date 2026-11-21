@@ -195,6 +195,8 @@ export type MasterRenderResult = {
   expectedDurationSeconds: number;
   videoCodec: string;
   audioCodec: string;
+  /** Durée de la piste audio réelle du master (0 si le master est muet ou non sondé). */
+  audioDuration: number;
   width: number;
   height: number;
 };
@@ -919,6 +921,8 @@ export type RenderedMaster = {
   expectedDurationSeconds: number;
   videoCodec: string;
   audioCodec: string;
+  /** Durée de la piste audio réelle du master (0 si le master est muet ou non sondé). */
+  audioDuration: number;
   width: number;
   height: number;
 };

@@ -122,7 +122,8 @@ export class GeminiImageProvider implements ImageEditProvider {
       contents: [{ role: 'user', parts: [{ text: instruction }, ...imageParts] }],
       generationConfig: { responseModalities: ['IMAGE'] }
     });
-    let token: string | null = null;
+    // Le fournisseur d'identifiants renvoie string | null | undefined : undefined vaut absence de jeton.
+    let token: string | null | undefined;
     try { token = await this.deps.token(); }
     catch { throw new ImageProviderUnavailable('image_provider_missing_credential', 'Identifiants Google Cloud indisponibles.'); }
     if (!token) throw new ImageProviderUnavailable('image_provider_missing_credential', 'Identifiants Google Cloud indisponibles.');
@@ -196,8 +197,25 @@ export function selectImageProvider(): ProviderSelection {
   return { provider: new GeminiImageProvider(configuration.config) };
 }
 
+/** Description d'un fournisseur d'image listé : configuration serveur, jamais un appel fournisseur vérifié. */
+export type ImageProviderCapability = {
+  provider: string;
+  model: string;
+  availability: 'configured' | 'disabled' | 'missing_credential';
+  reason: string | null;
+  operations: ImageEditOperation[];
+  aspectRatios: string[];
+  requiresSource: boolean;
+  maxCents: number;
+  estimatedCents: number;
+  supportsMaskPrompt: boolean;
+  providerCallVerified: boolean;
+};
+/** Entrée Replicate du Studio, hors du studio d'édition : sa disponibilité a son propre état. */
+export type SceneImageProviderCapability = Omit<ImageProviderCapability, 'availability'> & { availability: 'scene-flow-only' };
+
 /** Capacités réelles, sans sonde payante : la disponibilité décrit la configuration, pas un essai fournisseur. */
-export function imageProviderCapabilities() {
+export function imageProviderCapabilities(): [ImageProviderCapability, SceneImageProviderCapability] {
   const configuration = geminiImageConfiguration();
   const gemini = 'config' in configuration ? configuration.config : null;
   return [

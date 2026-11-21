@@ -17,7 +17,7 @@ export type ToolDefinition = {
   /** false = l'agent ne peut pas proposer cet outil lui-même (action réservée à l'utilisateur). */
   agentProposable?: boolean;
 };
-export const tools = {
+const toolCatalog = {
   'media.image@1': { provider: caps.image.provider, action: 'GENERATE', maxCents: caps.image.maxCents, scope: 'revision', approval: 'human', description: 'Générer une image externe (fournisseur, budget requis).' },
   'media.video@1': { provider: caps.video.provider, action: 'GENERATE', maxCents: caps.video.maxCents, scope: 'revision', approval: 'human', description: 'Générer une vidéo externe (fournisseur, budget requis).' },
   'assistant.draft@1': { provider: 'vertex-gemini@1', action: 'GENERATE', maxCents: 8, scope: 'revision', approval: 'human', description: 'Rédiger un brouillon d’assistant (Vertex, budget requis).' },
@@ -43,10 +43,18 @@ export const tools = {
   'audio.transcribe@1': { provider: 'gemini-audio@1', action: 'GENERATE', maxCents: 8, scope: 'revision', approval: 'human', agentProposable: false, description: 'Transcrire une piste audio confirmée en segments horodatés (Vertex Gemini, budget requis) ; nouvelle révision de sous-titres, jamais d’écrasement.', params: audioTranscribeRequest },
   'audio.tts@1': { provider: 'gemini-tts@1', action: 'GENERATE', maxCents: 12, scope: 'revision', approval: 'human', agentProposable: false, description: 'Générer une voix off (Vertex Gemini TTS) depuis un texte fourni ; nouveau fichier audio immuable, aucune voix clonée.', params: audioTtsRequest }
 } as const satisfies Record<string, ToolDefinition>;
-export type Tool = keyof typeof tools;
+export type Tool = keyof typeof toolCatalog;
+/**
+ * Catalogue exposé aux routes et au broker : les valeurs sont typées ToolDefinition afin que
+ * les champs optionnels (params, agentProposable) restent lisibles sans cast. Les clés
+ * littérales restent portées par Tool ; l'objet lui-même reste figé par as const.
+ */
+export const tools: Record<Tool, ToolDefinition> = toolCatalog;
 export const toolSchema = z.enum(Object.keys(tools) as [Tool, ...Tool[]]);
 /** Sous-ensemble que l'agent peut recommander : schéma de paramètres déclaré, aucun secret, aucun réseau arbitraire. */
-export const agentTools = Object.fromEntries(Object.entries(tools).filter(([, definition]) => definition.params !== undefined && definition.agentProposable !== false)) as unknown as Record<string, ToolDefinition>;
+export const agentTools: Record<string, ToolDefinition> = Object.fromEntries(
+  Object.entries(tools).filter(([, definition]) => definition.params !== undefined && definition.agentProposable !== false)
+);
 export function agentCatalog() {
   return Object.entries(agentTools).map(([tool, definition]) => ({
     tool, action: definition.action, scope: definition.scope, approval: definition.approval,

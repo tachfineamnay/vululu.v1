@@ -73,7 +73,8 @@ abstract class GeminiAudioBase {
   ) {}
 
   protected async generate(body: unknown, signal: AbortSignal): Promise<z.infer<typeof envelopeSchema>> {
-    let token: string | null = null;
+    // Le fournisseur d'identifiants renvoie string | null | undefined : undefined vaut absence de jeton.
+    let token: string | null | undefined;
     try { token = await this.deps.token(); }
     catch { throw new AudioProviderUnavailable('audio_provider_missing_credential', 'Identifiants Google Cloud indisponibles.'); }
     if (!token) throw new AudioProviderUnavailable('audio_provider_missing_credential', 'Identifiants Google Cloud indisponibles.');

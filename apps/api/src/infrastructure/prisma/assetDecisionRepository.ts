@@ -1,8 +1,9 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { prisma } from '@vululu/db';
 import {
-  ApplicationError, type AssetDecisionRepository, type AssetDecisionRow, type AssetDecisionSnapshot, type PublicationUsage
+  ApplicationError, type AssetDecisionRepository, type AssetDecisionRow, type AssetDecisionSnapshot
 } from '@vululu/application';
+import type { PublicationUsage } from '@vululu/domain';
 
 type Db = Prisma.TransactionClient;
 
