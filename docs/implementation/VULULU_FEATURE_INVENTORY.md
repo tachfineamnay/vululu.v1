@@ -342,4 +342,16 @@ Implémenté depuis l'inventaire (commit P11-C, BUILD_UNVERIFIED, **ADR-0044**) 
 
 Limites P11-C : aucun test/build/E2E ; vérification Python à la demande seulement ; annulation limitée aux opérations non envoyées ; pas de relance admin d'une opération terminée ; durée d'opération outillée non stockée.
 
-> **Rappel final** : inventaire établi par lecture seule au HEAD f5d515b, mis à jour par P01 puis P02–P11C. Aucune commande de test, de build ou de fournisseur n'a été exécutée pour P09A/P09B/P10/P11A ; tout statut est une lecture de code, jamais une certification.
+## 17. Mise à jour P11-D — coûts et budgets d'exécution (2026-11-21)
+
+Implémenté depuis l'inventaire (commit P11-D, BUILD_UNVERIFIED, **ADR-0045**) :
+
+- **Budgets** : GET /api/admin/costs/execution — plafond, réservé, consommé, restant, utilisation, alertes (incertain/épuisé/critique/vigilance), cumuls, par compte d'exécution.
+- **Coûts** : agrégats par outil et fournisseur (plafond cumulé, confirmé, incertain), distinction estimation/réservation/confirmé/incertain/libéré, opérations à coût incertain avec lien audit et résolution existante (coût constaté + preuve).
+- **Fournisseurs** : disponibilité calculée réutilisée (module partagé) et plafonds d'outils ; jamais de sonde payante.
+- **Commercial** : bêta gratuite, gel des paiements, contrôle commercial, Stripe live/checkout exposés en lecture ; aucune activation ni modification d'offre.
+- **UI** : page Couts enrichie (budgets, coûts par outil/fournisseur, incertains, mode commercial) ; journal CostEvent conservé et clairement étiqueté MOCK.
+
+Limites P11-D : aucun test/build/E2E ; agrégation bornée ; aucun écriture financière ; résolution d'incident manuelle ; CostEvent = routage MOCK.
+
+> **Rappel final** : inventaire établi par lecture seule au HEAD f5d515b, mis à jour par P01 puis P02–P11D. Aucune commande de test, de build ou de fournisseur n'a été exécutée pour P09A/P09B/P10/P11A ; tout statut est une lecture de code, jamais une certification.

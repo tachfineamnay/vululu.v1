@@ -463,6 +463,97 @@ export type AdminPythonStatus = {
   capabilitiesError?: string | null;
 };
 
+/** P11-D — budgets et coûts d'exécution par compte. */
+export type AdminExecutionBudgetAlert = 'ok' | 'warning' | 'critical' | 'exhausted' | 'unknown';
+
+export type AdminExecutionBudget = {
+  userId: string;
+  email: string;
+  name: string;
+  status: AdminUserStatus;
+  enabled: boolean;
+  limitCents: number;
+  reservedCents: number;
+  spentCents: number;
+  remainingCents: number;
+  percentUsed: number | null;
+  toolsCount: number;
+  uncertainOperations: number;
+  alert: AdminExecutionBudgetAlert;
+};
+
+export type AdminExecutionCostTool = {
+  tool: string;
+  provider: string;
+  operations: number;
+  maxCents: number;
+  confirmedCents: number;
+  uncertainCents: number;
+};
+
+export type AdminExecutionCostProvider = {
+  provider: string;
+  tools: number;
+  operations: number;
+  maxCents: number;
+  confirmedCents: number;
+  uncertainCents: number;
+  availability: AdminToolAvailability;
+  availabilityReason: string | null;
+};
+
+export type AdminExecutionUncertainCost = {
+  id: string;
+  tool: string;
+  provider: string;
+  state: string;
+  costState: string;
+  maxCents: number;
+  correlationId: string;
+  createdAt: string;
+  ageMs: number;
+  accountId: string;
+  ownerEmail: string | null;
+  projectTitle: string;
+};
+
+export type AdminCostsExecution = {
+  generatedAt: string;
+  commercial: {
+    betaMode: boolean;
+    mode: string;
+    paymentsFrozen: boolean;
+    checkout: string;
+    billingControlEnabled: boolean;
+    billingControlMode: string | null;
+    stripeLiveMode: boolean;
+    stripeCheckoutEnabled: boolean;
+  };
+  summary: {
+    estimatedCents: number;
+    reservedCents: number;
+    confirmedCents: number;
+    uncertainCents: number;
+    releasedCents: number;
+    maxExposureCents: number;
+    byCostState: Record<string, number>;
+  };
+  budgetTotals: {
+    accounts: number;
+    enabledAccounts: number;
+    limitCents: number;
+    reservedCents: number;
+    spentCents: number;
+    remainingCents: number;
+  };
+  budgets: AdminExecutionBudget[];
+  byTool: AdminExecutionCostTool[];
+  byProvider: AdminExecutionCostProvider[];
+  uncertain: AdminExecutionUncertainCost[];
+  ledger: { events: number; cents: number; providers: Array<{ provider: string; events: number; cents: number }> };
+  reconciliation: { route: string; requiresCents: boolean; requiresEvidence: boolean };
+};
+
 export type AdminAuditQuery = {
   page: number;
   pageSize: number;
@@ -688,6 +779,8 @@ export const adminApi = {
     ),
 
   opsPython: () => api<AdminPythonStatus>('/api/admin/ops/python'),
+
+  executionCosts: () => api<AdminCostsExecution>('/api/admin/costs/execution'),
 
   opsHealth: () => api<OpsHealth>('/api/ops/health'),
 
