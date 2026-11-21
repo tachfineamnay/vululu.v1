@@ -63,6 +63,7 @@ Chaque décision suit [template.md](template.md) :
 | [0047](0047-resultats-outils-volumineux-hors-base.md) | Résultats d'outils volumineux stockés hors base, référence bornée et résolution transparente | Acceptée pour la mission P12-02 | 2026-11-21 |
 | [0048](0048-isolation-python-tools.md) | Isolation process-level et réseau privé du service python-tools | Acceptée pour la mission P12-03 | 2026-11-21 |
 | [0049](0049-selected-creative-direction.md) | Pointeur de direction artistique retenue et continuité du Studio | Acceptée pour la mission P12-05 | 2026-11-21 |
+| [0050](0050-agent-proposal-authority.md) | Autorité serveur sur les propositions d'outils de l'agent | Acceptée pour la mission P12-06 | 2026-11-21 |
 
 ## Décisions encore ouvertes
 

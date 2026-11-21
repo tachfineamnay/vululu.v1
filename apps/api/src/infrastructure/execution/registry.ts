@@ -4,6 +4,7 @@ import { caps } from '../mediaGeneration/providers';
 import { audioTranscribeRequest, audioTtsRequest, creativeDirectionInput, imageEditRequest } from '@vululu/contracts';
 
 import type { CostBasis } from './costBasis';
+import type { ProposalToolPolicy } from '../../application/agentProposalPolicy';
 
 export type ToolScope = 'project' | 'revision' | 'assets';
 export type ToolApproval = 'auto' | 'human';
@@ -53,9 +54,23 @@ export type Tool = keyof typeof toolCatalog;
  */
 export const tools: Record<Tool, ToolDefinition> = toolCatalog;
 export const toolSchema = z.enum(Object.keys(tools) as [Tool, ...Tool[]]);
+/** Un outil est proposable si son schéma de paramètres est déclaré et qu'il n'est pas réservé à l'utilisateur. */
+export function isAgentProposable(definition: ToolDefinition | undefined): boolean {
+  return definition !== undefined && definition.params !== undefined && definition.agentProposable !== false;
+}
+/** Vue minimale du registre lue par la politique pure `checkAgentProposal`. */
+export function toolPolicy(tool: string): ProposalToolPolicy | null {
+  if (!Object.prototype.hasOwnProperty.call(tools, tool)) return null;
+  const definition = tools[tool as Tool];
+  return {
+    hasParams: definition.params !== undefined,
+    agentProposable: definition.agentProposable !== false,
+    scope: definition.scope
+  };
+}
 /** Sous-ensemble que l'agent peut recommander : schéma de paramètres déclaré, aucun secret, aucun réseau arbitraire. */
 export const agentTools: Record<string, ToolDefinition> = Object.fromEntries(
-  Object.entries(tools).filter(([, definition]) => definition.params !== undefined && definition.agentProposable !== false)
+  Object.entries(tools).filter(([, definition]) => isAgentProposable(definition))
 );
 export function agentCatalog() {
   return Object.entries(agentTools).map(([tool, definition]) => ({

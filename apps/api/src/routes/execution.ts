@@ -4,7 +4,8 @@ import { prisma } from '@vululu/db';
 import { agentOutput } from '@vululu/contracts';
 import { approve, cancel, propose, resolveIncident } from '../infrastructure/execution/broker';
 import { loadOperationResult, resolveOperationRows } from '../infrastructure/execution/operationResults';
-import { tools, toolSchema, type Tool } from '../infrastructure/execution/registry';
+import { tools, toolSchema, toolPolicy, type Tool } from '../infrastructure/execution/registry';
+import { checkAgentProposal } from '../application/agentProposalPolicy';
 import { rateLimitPreHandler } from '../infrastructure/security/rateLimiter';
 import {demoDisabled} from '../releaseMode';
 import { HttpError } from '../errors';
@@ -114,10 +115,13 @@ export async function executionRoutes(app: FastifyInstance) {
     if (!output.success) throw new HttpError(422, 'agent_output_invalid', 'Recommandation invalide.');
     const recommendation = output.data.tools[body.index];
     if (!recommendation) throw new HttpError(422, 'agent_proposal_missing', 'Recommandation absente à cet index.');
+    // L'agent ne peut recommander qu'un outil du catalogue agent : ni outil réservé à l'utilisateur
+    // (agentProposable: false), ni outil borné à une révision précise (l'agent n'en connaît aucune).
+    const policy = checkAgentProposal(recommendation.tool, toolPolicy(recommendation.tool));
+    if (!policy.ok) throw new HttpError(policy.code === 'agent_scope_unsupported' ? 409 : 403, policy.code, policy.message);
     const definition = tools[recommendation.tool as Tool];
-    if (!definition?.params) throw new HttpError(403, 'tool_not_proposable', 'Outil non proposable par l’agent.');
     // Paramètres revalidés ici, jamais repris tels quels du modèle.
-    const params = definition.params.parse(recommendation.params);
+    const params = definition.params!.parse(recommendation.params);
     return propose(user, projectId,
       { key: turn.id + ':' + body.index, tool: recommendation.tool as Tool, revision: 1 },
       { agentTurnId: turn.id, step: body.index, params });

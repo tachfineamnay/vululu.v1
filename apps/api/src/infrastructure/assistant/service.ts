@@ -11,7 +11,8 @@ import { evaluateAssetDecision, type AssetDecisionSnapshot } from '@vululu/appli
 import { readAssetDecisionRow } from '../prisma/assetDecisionRepository';
 import { receipt, vertexConfig, vertexProfile, vertexProvider, type AssistantProvider, type ModelInput } from './vertex';
 import { minimizeModelData, vettedAgentOutput, vettedBrainstorm, vettedChanges, vettedCopy } from './safety';
-import { agentCatalog, agentTools } from '../execution/registry';
+import { agentCatalog, agentTools, toolPolicy } from '../execution/registry';
+import { checkAgentProposal } from '../../application/agentProposalPolicy';
 
 export const assistantTool = 'assistant.draft@1';
 const unavailable = () => new HttpError(409, 'assistant_unavailable', 'IA indisponible pour ce projet. Utilisez le brouillon hors ligne.');
@@ -291,7 +292,18 @@ export async function generateAssistantClaim(job: { id: string; accountId: strin
       if (br) result = br;
     } else if (input.kind === 'agent') {
       const out = vettedAgentOutput(outcome.output);
-      if (out) result = { ...out, tools: out.tools.filter((tool) => Object.prototype.hasOwnProperty.call(agentTools, tool.tool)) };
+      // P12-06 — une recommandation n'est persistée que si l'outil est dans le catalogue agent ET
+      // que ses paramètres respectent son schéma : une sortie de modèle malformée n'atteint jamais
+      // l'utilisateur (elle retombe sur le repli déterministe, jamais un faux succès).
+      if (out)
+        result = {
+          ...out,
+          tools: out.tools.filter((tool) => {
+            if (!Object.prototype.hasOwnProperty.call(agentTools, tool.tool)) return false;
+            if (!checkAgentProposal(tool.tool, toolPolicy(tool.tool)).ok) return false;
+            return agentTools[tool.tool].params?.safeParse(tool.params).success === true;
+          })
+        };
     } else if (outcome.output !== undefined) {
       try { result = await creativePreview(prisma, job.projectId, input, outcome.output); }
       catch (e) { if (!(e instanceof HttpError || (e instanceof Error && e.name === 'ZodError'))) throw e; }

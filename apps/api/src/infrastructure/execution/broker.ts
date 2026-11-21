@@ -4,7 +4,8 @@ import type { ExecutionOperation as Op, Prisma } from '@prisma/client';
 import { contentChecksum } from '@vululu/domain';
 import { mediaApprovalDigest } from '../mediaGeneration/approval';
 import { HttpError } from '../../errors';
-import { tools, toolSchema, proposal, type EnginePort, type Tool } from './registry';
+import { tools, toolSchema, toolPolicy, proposal, type EnginePort, type Tool } from './registry';
+import { checkAgentProposal } from '../../application/agentProposalPolicy';
 import { settlementFor, type CostBasis } from './costBasis';
 import { storeOperationResult } from './operationResults';
 import { holdTool,checkClaim,finishTool } from '../billing/service';
@@ -117,9 +118,32 @@ export async function proposeTx(tx: Tx, actor: string, projectId: string, input:
     if (!turn) return missing();
     digest = createHash('sha256').update(JSON.stringify([...parts, p.key, turn.inputDigest, tools[p.tool].maxCents])).digest('hex');
   }
-  if (meta?.params !== undefined) {
+  // P12-06 — autorité serveur : une proposition issue de l'agent est vérifiée ici, pas seulement
+  // dans la route. Outil du catalogue agent, paramètres conformes au schéma du registre fermé,
+  // aucune cible de révision, ressource réellement confirmée.
+  let params = meta?.params;
+  if (meta?.agentTurnId !== undefined) {
+    const policy = checkAgentProposal(p.tool, toolPolicy(p.tool));
+    if (!policy.ok) deny(policy.code === 'agent_scope_unsupported' ? 409 : 403, policy.code);
+    if (params === undefined) deny(422, 'agent_params_missing');
+  }
+  if (params !== undefined) {
+    const definition = tools[p.tool];
+    const schema = definition.params;
+    if (!schema) throw new HttpError(403, 'tool_not_proposable', 'tool_not_proposable');
+    const parsed = schema.safeParse(params);
+    if (!parsed.success) deny(422, 'agent_params_invalid');
+    // Valeur validée : c'est elle qui est hachée puis exécutée (aucune divergence digest/params).
+    params = parsed.data;
+    const versionId = (parsed.data as { versionId?: unknown }).versionId;
+    if (definition.scope === 'assets' && typeof versionId === 'string') {
+      const confirmed = await tx.projectAssetSelection.count({
+        where: { projectId, assetVersionId: versionId, project: { userId: actor } }
+      });
+      if (!confirmed) deny(422, 'asset_not_confirmed');
+    }
     digest = createHash('sha256')
-      .update(JSON.stringify([projectId, p.tool, p.revision, p.key, contentChecksum(meta.params)]))
+      .update(JSON.stringify([projectId, p.tool, p.revision, p.key, contentChecksum(params)]))
       .digest('hex');
   }
   // Seuls les outils historiques de scène s'appuient sur une ligne MediaGeneration (P07 utilise meta.params).
@@ -160,7 +184,7 @@ export async function proposeTx(tx: Tx, actor: string, projectId: string, input:
       maxCents: tools[p.tool].maxCents,
       state: 'PROPOSED',
       costState: 'ESTIMATED',
-      ...(meta?.params !== undefined ? { params: JSON.parse(JSON.stringify(meta.params)) as Prisma.InputJsonValue } : {}),
+      ...(params !== undefined ? { params: JSON.parse(JSON.stringify(params)) as Prisma.InputJsonValue } : {}),
       ...(meta?.agentTurnId ? { agentTurnId: meta.agentTurnId } : {}),
       ...(meta?.step !== undefined ? { step: meta.step } : {})
     }
