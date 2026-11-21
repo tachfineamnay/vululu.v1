@@ -35,6 +35,8 @@ export type DirectionDraft = {
   provenance: Record<string, unknown>;
 };
 
+export type DirectionSelection = { selectedVersion: number | null; selectedAt: string | null };
+export type DirectionSelectionResult = { selectedVersion: number; previousVersion: number | null };
 export interface CreativeDirectionRepository {
   inputs(userId: string, projectId: string, brainstormTurnId?: string): Promise<DirectionInputs>;
   revision(userId: string, projectId: string, version: number): Promise<DirectionRevision | null>;
@@ -42,6 +44,10 @@ export interface CreativeDirectionRepository {
   appendDirections(userId: string, projectId: string, expectedVersion: number, drafts: DirectionDraft[], requestId: string): Promise<DirectionRevision[]>;
   decisions(userId: string, projectId: string): Promise<Record<string, DirectionDecision>>;
   recordDecision(userId: string, projectId: string, version: number, decision: DirectionDecision): Promise<void>;
+  /** Pointeur propriétaire vers la direction retenue (null tant qu'aucun choix explicite n'a eu lieu). */
+  selection(userId: string, projectId: string): Promise<DirectionSelection>;
+  /** Sélection transactionnelle : verrou de projet + concurrence optimiste + contrôles d'exploitabilité. */
+  select(userId: string, projectId: string, version: number, expectedSelection: number | null): Promise<DirectionSelectionResult>;
 }
 
 const notFound = () => new HttpError(404, 'creative_not_found', 'Projet, révision ou ressource introuvable.');
@@ -157,8 +163,33 @@ function uniqueLabels(drafts: DirectionDraft[]): DirectionDraft[] {
 export class CreativeDirections {
   constructor(private readonly repository: CreativeDirectionRepository) {}
 
+  /**
+   * État complet des directions : historique (générées, affinées, combinées), décisions et pointeur
+   * de sélection. Le pointeur est la SEULE source de la composition éditable du Studio.
+   */
   async list(userId: string, projectId: string) {
-    return { directions: await this.repository.list(userId, projectId), decisions: await this.repository.decisions(userId, projectId) };
+    const [directions, decisions, selection] = await Promise.all([
+      this.repository.list(userId, projectId),
+      this.repository.decisions(userId, projectId),
+      this.repository.selection(userId, projectId)
+    ]);
+    return {
+      directions,
+      decisions,
+      selectedVersion: selection.selectedVersion,
+      selectedAt: selection.selectedAt
+    };
+  }
+
+  /** Choix explicite d'une direction : jamais implicite, jamais la plus récente par défaut. */
+  async select(userId: string, projectId: string, input: { version: number; expectedSelection: number | null }) {
+    const result = await this.repository.select(userId, projectId, input.version, input.expectedSelection);
+    return { ...(await this.list(userId, projectId)), ...result };
+  }
+
+  /** Sélection courante, pour les garde-fous d'édition (Studio) et le rendu. */
+  async selection(userId: string, projectId: string) {
+    return this.repository.selection(userId, projectId);
   }
 
   /** Convertit le brainstorming (pistes) et les ressources confirmées en directions versionnées. */

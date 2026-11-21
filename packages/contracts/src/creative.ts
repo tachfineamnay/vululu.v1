@@ -152,3 +152,13 @@ export const creativeDirectionInput = z.strictObject({
 export type CreativeDirectionInput = z.infer<typeof creativeDirectionInput>;
 export const directionDecisionInput = z.strictObject({ decision: z.enum(['retained', 'rejected']) });
 export type DirectionDecision = z.infer<typeof directionDecisionInput>['decision'];
+/**
+ * P12-05 — sélection explicite d'une direction artistique retenue.
+ * `expectedSelection` porte l'état observé par le client (null = aucune sélection) : une sélection
+ * concurrente échoue en 409 au lieu d'écraser silencieusement le choix d'un autre onglet.
+ */
+export const directionSelectionInput = z.strictObject({
+  version: z.int().positive(),
+  expectedSelection: z.int().positive().nullable()
+});
+export type DirectionSelectionInput = z.infer<typeof directionSelectionInput>;

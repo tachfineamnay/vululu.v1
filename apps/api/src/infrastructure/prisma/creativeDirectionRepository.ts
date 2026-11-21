@@ -4,8 +4,10 @@ import { assertAssetUsage, type AssetLicense, type PublicationUsage } from '@vul
 import { creativeSpec, type CreativeSpec } from '@vululu/contracts';
 import { HttpError } from '../../errors';
 import type {
-  CreativeDirectionRepository, DirectionDecision, DirectionDraft, DirectionInputs, DirectionRevision
+  CreativeDirectionRepository, DirectionDecision, DirectionDraft, DirectionInputs, DirectionRevision,
+  DirectionSelection, DirectionSelectionResult
 } from '../../application/creativeDirections';
+import { checkDirectionSelection } from '../../application/directionSelection';
 
 const missing = () => new HttpError(404, 'creative_not_found', 'Projet, révision ou ressource introuvable.');
 const conflict = () => new HttpError(409, 'creative_conflict', 'Révision dépassée. Rechargez avant de créer une direction.');
@@ -27,6 +29,39 @@ function sourceIds(spec: CreativeSpec) {
     ]),
     ...(spec.delivery?.audio ? [spec.delivery.audio.versionId] : [])
   ])];
+}
+/** Décision la plus récente par version (retained/rejected) lue depuis le journal d'audit. */
+function decisionMap(rows: Array<{ metadata: Prisma.JsonValue }>): Record<string, DirectionDecision> {
+  const decisions: Record<string, DirectionDecision> = {};
+  for (const row of rows) {
+    const metadata = row.metadata as { version?: unknown; decision?: unknown } | null;
+    if (!metadata || typeof metadata.version !== 'number' || typeof metadata.decision !== 'string') continue;
+    if (decisions[metadata.version]) continue;
+    if (metadata.decision === 'retained' || metadata.decision === 'rejected') decisions[metadata.version] = metadata.decision;
+  }
+  return decisions;
+}
+/** Les sources d'une direction doivent rester disponibles, propriétaires et licites pour être retenues. */
+async function sourcesUsable(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  contextId: string,
+  usage: string,
+  spec: CreativeSpec
+): Promise<boolean> {
+  const ids = sourceIds(spec);
+  if (!ids.length) return true;
+  const rows = await tx.brandAssetVersion.findMany({
+    where: { id: { in: ids }, state: 'ready', asset: { userId, contextId } },
+    select: { id: true, license: true }
+  });
+  if (rows.length !== ids.length) return false;
+  try {
+    for (const row of rows) assertAssetUsage(row.license as AssetLicense, usage as PublicationUsage);
+    return true;
+  } catch {
+    return false;
+  }
 }
 function anglesOf(result: unknown): Array<{ title: string; reasoning: string; premise: string }> {
   if (!result || typeof result !== 'object') return [];
@@ -140,18 +175,79 @@ export class PrismaCreativeDirectionRepository implements CreativeDirectionRepos
   }
 
   async decisions(userId: string, projectId: string): Promise<Record<string, DirectionDecision>> {
-    const rows = await prisma.auditEvent.findMany({
+    return decisionMap(await prisma.auditEvent.findMany({
       where: { action: 'creative.direction_decision', targetType: 'project', targetId: projectId, actorId: userId },
       orderBy: { createdAt: 'desc' }, take: 200, select: { metadata: true }
+    }));
+  }
+
+  async selection(userId: string, projectId: string): Promise<DirectionSelection> {
+    const row = await prisma.project.findFirst({
+      where: { id: projectId, userId },
+      select: { selectedCreativeVersion: true, selectedCreativeAt: true }
     });
-    const decisions: Record<string, DirectionDecision> = {};
-    for (const row of rows) {
-      const metadata = row.metadata as { version?: unknown; decision?: unknown } | null;
-      if (!metadata || typeof metadata.version !== 'number' || typeof metadata.decision !== 'string') continue;
-      if (decisions[metadata.version]) continue;
-      if (metadata.decision === 'retained' || metadata.decision === 'rejected') decisions[metadata.version] = metadata.decision;
-    }
-    return decisions;
+    if (!row) throw missing();
+    return {
+      selectedVersion: row.selectedCreativeVersion,
+      selectedAt: row.selectedCreativeAt ? row.selectedCreativeAt.toISOString() : null
+    };
+  }
+
+  /**
+   * Sélection explicite : verrou de la ligne projet (sérialise les choix concurrents), concurrence
+   * optimiste sur `expectedSelection`, contrôles d'appartenance/exploitabilité/rejet/péremption.
+   * L'historique des directions n'est jamais modifié : seule la ligne projet porte le pointeur.
+   */
+  async select(
+    userId: string,
+    projectId: string,
+    version: number,
+    expectedSelection: number | null
+  ): Promise<DirectionSelectionResult> {
+    return prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<
+        Array<{ selectedCreativeVersion: number | null; assetsConfirmationDigest: string | null; contextId: string; usage: string }>
+      >`SELECT "selectedCreativeVersion", "assetsConfirmationDigest", "contextId", "usage"
+          FROM "Project" WHERE "id" = ${projectId} AND "userId" = ${userId} FOR UPDATE`;
+      if (!locked.length) throw missing();
+      const project = locked[0];
+      const revision = await tx.creativeRevision.findFirst({ where: { projectId, version }, select: revisionSelect });
+      if (!revision) throw missing();
+      const parsed = parseRevision(revision);
+      const decisions = decisionMap(await tx.auditEvent.findMany({
+        where: { action: 'creative.direction_decision', targetType: 'project', targetId: projectId, actorId: userId },
+        orderBy: { createdAt: 'desc' }, take: 200, select: { metadata: true }
+      }));
+      const provenance = (revision.provenance ?? null) as { assetDecisionDigest?: unknown } | null;
+      const directionDigest =
+        provenance && typeof provenance.assetDecisionDigest === 'string' ? provenance.assetDecisionDigest : null;
+      const isDirection = revision.label !== null || revision.origin !== null;
+      const usable = isDirection && (await sourcesUsable(tx, userId, project.contextId, project.usage, parsed.spec));
+      const check = checkDirectionSelection({
+        version,
+        expectedSelection,
+        currentSelection: project.selectedCreativeVersion,
+        decision: decisions[version] ?? null,
+        usable,
+        directionDigest,
+        currentDigest: project.assetsConfirmationDigest
+      });
+      if (!check.ok) throw new HttpError(409, check.code, check.message);
+      await tx.project.update({
+        where: { id: projectId },
+        data: { selectedCreativeVersion: version, selectedCreativeAt: new Date() }
+      });
+      await tx.auditEvent.create({
+        data: {
+          actorId: userId,
+          action: 'creative.direction_selected',
+          targetType: 'project',
+          targetId: projectId,
+          metadata: { version, previous: project.selectedCreativeVersion }
+        }
+      });
+      return { selectedVersion: version, previousVersion: project.selectedCreativeVersion };
+    });
   }
 
   async recordDecision(userId: string, projectId: string, version: number, decision: DirectionDecision): Promise<void> {

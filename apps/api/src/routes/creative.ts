@@ -13,6 +13,7 @@ import {
   creativeApproval,
   creativeAssetApply,
   creativeDirectionInput,
+  directionSelectionInput,
   creativeSpec,
   creativeWrite,
   directionDecisionInput,
@@ -36,8 +37,12 @@ export async function creativeRoutes(app: FastifyInstance) {
     if (scope.target.projectId !== project)
       throw new HttpError(404, 'creative_not_found', 'Projet introuvable.');
     const row = await service.get(user, project, scope.expectedRevision);
-    if ((await service.history(user, project))[0]?.version !== scope.expectedRevision)
-      throw new HttpError(409, 'creative_conflict', 'Rechargez la dernière révision.');
+    // P12-05 — l'édition porte sur la composition courante : la dernière révision OU la direction
+    // explicitement retenue (qui peut être plus ancienne que la tête).
+    const head = (await service.history(user, project))[0]?.version;
+    const selection = (await creativeDirections.selection(user, project)).selectedVersion;
+    if (scope.expectedRevision !== head && scope.expectedRevision !== selection)
+      throw new HttpError(409, 'creative_conflict', 'Rechargez la composition courante.');
     return row;
   };
   app.post(base + '/actions/translate', auth, async (r) => {
@@ -93,6 +98,9 @@ export async function creativeRoutes(app: FastifyInstance) {
     creativeDirections.list(r.currentUser!.id, id.parse(r.params).id));
   app.post(base + '/directions', auth, (r) =>
     creativeDirections.create(r.currentUser!.id, id.parse(r.params).id, creativeDirectionInput.parse(r.body)));
+  // P12-05 — choix explicite de la direction retenue (verrou projet + concurrence optimiste).
+  app.post(base + '/directions/select', auth, (r) =>
+    creativeDirections.select(r.currentUser!.id, id.parse(r.params).id, directionSelectionInput.parse(r.body)));
   app.post(base + '/:version/direction', auth, (r) => {
     const p = revision.parse(r.params);
     const { decision } = directionDecisionInput.parse(r.body);

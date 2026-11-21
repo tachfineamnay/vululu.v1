@@ -11,7 +11,10 @@ type Direction = {
   version: number; label: string | null; origin: Origin | null; provenance: unknown;
   spec: CreativeSpec; createdAt: string; approvedAt: string | null;
 };
-type DirectionsPayload = { directions: Direction[]; decisions: Record<string, Decision>; created?: number[] };
+type DirectionsPayload = {
+  directions: Direction[]; decisions: Record<string, Decision>; created?: number[];
+  selectedVersion: number | null; selectedAt?: string | null;
+};
 type HistoryRow = { version: number; createdAt: string; approvedAt: string | null };
 const originLabels: Record<string, [string, string]> = {
   generated: ['Générée depuis le brainstorming', 'Generated from brainstorming'],
@@ -28,11 +31,15 @@ function firstText(spec: CreativeSpec, role: 'headline' | 'body' | 'cta') {
 }
 
 /** Directions artistiques persistées comme révisions (ADR-0035) : comparables, éditables, jamais approuvées par défaut. */
-export default function ArtDirections({ projectId, onDirections }: { projectId: string; onDirections?: (count: number) => void }) {
+export default function ArtDirections({ projectId, onDirections, onSelected }: {
+  projectId: string; onDirections?: (count: number) => void; onSelected?: (version: number | null) => void;
+}) {
   const { t, locale } = useWorkspace();
   const base = '/api/projects/' + encodeURIComponent(projectId) + '/creative';
   const [directions, setDirections] = useState<Direction[]>([]);
   const [decisions, setDecisions] = useState<Record<string, Decision>>({});
+  /** P12-05 — pointeur serveur : seule source de la composition éditable du Studio. */
+  const [chosen, setChosen] = useState<number | null>(null);
   const [head, setHead] = useState(0);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
@@ -53,11 +60,13 @@ export default function ArtDirections({ projectId, onDirections }: { projectId: 
     ]).then(([payload, history]) => {
       if (!active) return;
       setDirections(payload.directions); setDecisions(payload.decisions);
+      setChosen(payload.selectedVersion ?? null);
       setHead(history[0]?.version ?? 0);
     }).catch(() => { if (active) setFailed(true); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [base, reload]);
   useEffect(() => { onDirections?.(directions.length); }, [directions.length, onDirections]);
+  useEffect(() => { onSelected?.(chosen); }, [chosen, onSelected]);
   useEffect(() => () => { Object.values(previewUrls.current).forEach((url) => URL.revokeObjectURL(url)); }, []);
 
   async function act(key: string, fn: () => Promise<void>) {
@@ -92,7 +101,15 @@ export default function ArtDirections({ projectId, onDirections }: { projectId: 
     return act('decide-' + version, async () => {
       const payload = await postJson<{ decisions: Record<string, Decision> }>(base + '/' + version + '/direction', { decision });
       setDecisions(payload.decisions);
-      setNote(decision === 'retained' ? t('Direction retenue pour la suite (choix provisoire ; le pointeur définitif arrive à l’étape suivante).', 'Direction retained for the next step (provisional; the final pointer comes in the next step).') : t('Direction écartée ; elle reste dans l’historique.', 'Direction rejected; it remains in the history.'));
+      setNote(decision === 'retained' ? t('Direction marquée comme retenue. Utilisez « Choisir cette direction » pour définir la composition du Studio.', 'Direction marked as retained. Use “Choose this direction” to define the Studio composition.') : t('Direction écartée ; elle reste dans l’historique et ne peut plus être choisie.', 'Direction rejected; it remains in the history and can no longer be chosen.'));
+    });
+  }
+  function choose(version: number) {
+    return act('choose-' + version, async () => {
+      const payload = await postJson<DirectionsPayload>(base + '/directions/select', { version, expectedSelection: chosen });
+      setDirections(payload.directions); setDecisions(payload.decisions); setChosen(payload.selectedVersion ?? null);
+      setNote(t('Direction choisie : c’est désormais la composition éditée dans le Studio.', 'Direction chosen: it is now the composition edited in the Studio.'));
+      setTimeout(() => document.getElementById('composition-heading')?.scrollIntoView({ block: 'start' }), 50);
     });
   }
   function revisit(version: number) {
@@ -159,7 +176,10 @@ export default function ArtDirections({ projectId, onDirections }: { projectId: 
               <p className="eyebrow">{t('Version ', 'Version ')}{direction.version} · {t(originLabels[direction.origin ?? 'generated']?.[0] ?? 'Direction', originLabels[direction.origin ?? 'generated']?.[1] ?? 'Direction')}</p>
               <h3>{direction.label ?? t('Sans libellé', 'Untitled')}</h3>
             </div>
-            {decisions[String(direction.version)] ? <span className="pill">{decisions[String(direction.version)] === 'retained' ? t('Retenue', 'Retained') : t('Écartée', 'Rejected')}</span> : null}
+            <div className="actions">
+              {chosen === direction.version ? <span className="pill" data-testid="direction-chosen">{t('Composition du Studio', 'Studio composition')}</span> : null}
+              {decisions[String(direction.version)] ? <span className="pill">{decisions[String(direction.version)] === 'retained' ? t('Retenue', 'Retained') : t('Écartée', 'Rejected')}</span> : null}
+            </div>
           </div>
           <p className="muted small">{specKind(direction.spec)} · {direction.spec.width}×{direction.spec.height} · {direction.spec.scenes.length} {t('scène(s)', 'scene(s)')} · {new Date(direction.createdAt).toLocaleDateString(locale === 'fr' ? 'fr-FR' : 'en-GB')}</p>
           <div className="art-direction-swatches" aria-label={t('Palette', 'Palette')}><span style={{ background: direction.spec.brand.background }} /><span style={{ background: direction.spec.brand.accent }} /></div>
@@ -173,11 +193,12 @@ export default function ArtDirections({ projectId, onDirections }: { projectId: 
             <button type="button" className="btn btn-ghost btn-small" disabled={!!busy || decisions[String(direction.version)] === 'rejected'} onClick={() => void decide(direction.version, 'rejected')}>{t('Écarter', 'Reject')}</button>
             <button type="button" className="btn btn-ghost btn-small" disabled={!!busy} onClick={() => void refine(direction.version)}>{t('Affiner', 'Refine')}</button>
             <button type="button" className={selected.includes(direction.version) ? 'btn btn-secondary btn-small' : 'btn btn-ghost btn-small'} aria-pressed={selected.includes(direction.version)} disabled={!!busy} onClick={() => toggleSelected(direction.version)}>{selected.includes(direction.version) ? t('Sélectionnée pour comparer', 'Selected to compare') : t('Comparer', 'Compare')}</button>
+            <button type="button" className="btn btn-primary btn-small" data-testid={'direction-choose-' + direction.version} disabled={!!busy || chosen === direction.version || decisions[String(direction.version)] === 'rejected'} onClick={() => void choose(direction.version)}>{chosen === direction.version ? t('Direction choisie', 'Chosen direction') : t('Choisir cette direction', 'Choose this direction')}</button>
             <button type="button" className="btn btn-secondary btn-small" disabled={!!busy} onClick={() => void revisit(direction.version)}>{direction.version === head ? t('Ouvrir dans l’éditeur', 'Open in editor') : t('Reprendre dans l’éditeur', 'Restore in editor')}</button>
           </div>
         </article>)}
       </div>
-      <p className="hint">{t('Toute direction reste modifiable ; l’approbation exacte d’une version et la sélection définitive sont des étapes suivantes distinctes.', 'Any direction stays editable; exact version approval and final selection are separate later steps.')}</p>
+      <p className="hint">{t('Une seule direction alimente le Studio : celle que vous choisissez. Changer de choix ne supprime ni les autres directions ni les versions déjà éditées ; éditer la direction choisie crée une nouvelle révision et déplace le pointeur sur celle-ci.', 'Only the direction you choose feeds the Studio. Changing the choice deletes neither the other directions nor the versions already edited; editing the chosen direction creates a new revision and moves the pointer to it.')}</p>
     </>}
   </section>;
 }

@@ -104,6 +104,8 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
   const { preview: videoPreview, refresh: refreshVideoPreview } = useStudioVideoPreview(base, spec, Boolean(open && spec && videoOutput));
   const [draft, setDraft] = useState<CreativeDraft | null>(null);
   const [draftNotice, setDraftNotice] = useState('');
+  /** P12-05 — vrai quand des directions existent mais qu'aucune n'est choisie : aucun chargement implicite. */
+  const [selectionRequired, setSelectionRequired] = useState(false);
   const [draftStored, setDraftStored] = useState(false);
   const selectedVersion = view?.version;
   const hasManifest = !!view?.manifest;
@@ -125,6 +127,8 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
   const past = timeline.head === expected ? timeline.past : versions.slice(1).map((v) => v.version);
   const future = timeline.head === expected ? timeline.future : [];
 
+  // P12-05 — tant qu'aucune direction n'est choisie, l'éditeur refuse d'utiliser la dernière
+  // direction générée : l'utilisateur doit faire un choix explicite.
   useEffect(() => {
     if (!selectedVersion || hasManifest || dirty) return;
     let stopped = false;
@@ -200,8 +204,9 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
       setDraftNotice(`Une copie locale plus ancienne (v${stored.draft.expectedVersion}, ${new Date(stored.draft.savedAt).toLocaleString('fr-FR')}) n'a pas été appliquée : elle ne correspond pas à la révision affichée.`);
   }
   async function load() {
-    const [revs, assets, selectedAssets, linked] = await Promise.all([
+    const [revs, directionsPayload, assets, selectedAssets, linked] = await Promise.all([
       api<Rev[]>(base),
+      api<{ selectedVersion: number | null; directions: unknown[] }>(base + '/directions'),
       api<{ items: { kind: string; versions: (Omit<Source, 'kind'> & { mimeType: string })[] }[] }>(
         '/api/contexts/' + bundle.context.id + '/assets'
       ),
@@ -216,12 +221,23 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
     library(all);
     setConfirmed(selectedAssets.versionIds);
     setVersions(revs);
-    setExpected(revs[0]?.version ?? 0);
-    if (revs.length) {
-      display(await api<Revision>(base + '/' + revs[0].version));
-      checkDraft(revs[0].version);
+    // P12-05 — tant qu'aucune direction n'est choisie, l'éditeur refuse d'utiliser la dernière
+    // direction générée : l'utilisateur doit faire un choix explicite.
+    const hasDirections = Array.isArray(directionsPayload.directions) && directionsPayload.directions.length > 0;
+    if (hasDirections && directionsPayload.selectedVersion === null) {
+      setSelectionRequired(true);
+      focus(0);
       return;
     }
+    setSelectionRequired(false);
+    const chosenVersion = directionsPayload.selectedVersion ?? revs[0]?.version ?? null;
+    if (chosenVersion !== null) {
+      setExpected(chosenVersion);
+      display(await api<Revision>(base + '/' + chosenVersion));
+      checkDraft(chosenVersion);
+      return;
+    }
+    setExpected(revs[0]?.version ?? 0);
     const chosen = all.filter((a) => selectedAssets.versionIds.includes(a.id)),
       photos = chosen.filter((a) => a.kind !== 'logo'),
       logos = chosen.filter((a) => a.kind === 'logo');
@@ -448,6 +464,13 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
       }}
     >
       <summary id="composition-heading">{t("Composition et versions","Composition and versions")}</summary>
+      {selectionRequired && (
+        <section className="context-completeness stack" role="status" data-testid="creative-selection-required">
+          <p><strong>{t("Choisissez une direction artistique", "Choose an art direction")}</strong></p>
+          <p className="hint">{t("Des directions existent mais aucune n’est choisie : le Studio n’utilise jamais la dernière direction générée par défaut. Choisissez celle qui doit devenir la composition éditable.", "Directions exist but none is chosen: the Studio never defaults to the newest generated direction. Choose the one that becomes the editable composition.")}</p>
+          <button type="button" className="btn btn-primary" onClick={() => document.getElementById('art-directions-heading')?.scrollIntoView({ block: 'start' })}>{t("Ouvrir les directions artistiques", "Open art directions")}</button>
+        </section>
+      )}
       {linked && <p className="hint">Composition liée au calendrier · <a href={`/calendar?item=${encodeURIComponent(linked.itemId)}`}>Ouvrir le contenu</a></p>}
       {spec && calendarTarget && sameFormat && (linked?.itemId !== calendarTarget.id || linked.version !== calendarTarget.version) &&
         <button type="button" className="btn btn-secondary" onClick={() => change({ ...spec, delivery: { ...spec.delivery!, calendar: { itemId: calendarTarget.id, version: calendarTarget.version } } })}>

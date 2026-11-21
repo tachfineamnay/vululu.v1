@@ -82,6 +82,8 @@ export default function ProjectStudio({ id }: { id: string }) {
   const [bundle, setBundle] = useState<ProjectBundle | null>(null);
   const [assetDecision, setAssetDecision] = useState<ProjectAssetDecision | null>(null);
   const [directionsCount, setDirectionsCount] = useState(0);
+  // P12-05 — direction choisie : change de clé du Studio pour invalider aperçus/approbations locaux.
+  const [chosenDirection, setChosenDirection] = useState<number | null>(null);
   const demo = demoMode && bundle?.project.format === 'Video';
   const [calendarSource, setCalendarSource] = useState<Destination>();
   const [error, setError] = useState('');
@@ -464,10 +466,10 @@ export default function ProjectStudio({ id }: { id: string }) {
         <ProjectAssetsStep projectId={bundle.project.id} contextId={bundle.context.id} format={bundle.project.format} onDecision={setAssetDecision} />
 
         <StudioDesk bundle={bundle} state={live.state} connection={live.connection} go={focusStudioSection}/>
-        <CreativeEditor bundle={bundle} serverHead={live.state?.revisions[0]?.version} serverRenders={live.state?.renders} calendarSource={calendarSource}/>
+        <CreativeEditor key={'editor-' + (chosenDirection ?? 'none')} bundle={bundle} serverHead={live.state?.revisions[0]?.version} serverRenders={live.state?.renders} calendarSource={calendarSource}/>
         {assetDecision?.confirmed ? <>
           <BrainstormPanel projectId={bundle.project.id} contextId={bundle.context.id} />
-          <ArtDirections projectId={bundle.project.id} onDirections={setDirectionsCount} />
+          <ArtDirections projectId={bundle.project.id} onDirections={setDirectionsCount} onSelected={setChosenDirection} />
           <ProjectExecutionStatus projectId={bundle.project.id} />
           <ImageEditingPanel projectId={bundle.project.id} contextId={bundle.context.id} onApplied={(revision) => { setToast({ id: Date.now(), message: 'Image appliquée à la composition v' + revision + '.', tone: 'success' }); }} />
           <ProjectAssistant key={bundle.project.id} projectId={bundle.project.id} contextId={bundle.context.id} creativeHead={live.state?.revisions[0]?.version} preferredOffer={calendarSource?.offerId} useCta={(cta) => {

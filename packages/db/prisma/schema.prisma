@@ -102,6 +102,9 @@ model Project {
   assetsConfirmedAt       DateTime?
   assetsConfirmationDigest String?
   assetsConfirmation      Json?
+  // P12-05 — pointeur propriétaire vers la direction artistique retenue (révision CreativeRevision).
+  selectedCreativeVersion Int?
+  selectedCreativeAt      DateTime?
   sceneDurationSeconds Int @default(2)
   status      String   @default("draft")
   createdAt   DateTime @default(now())
