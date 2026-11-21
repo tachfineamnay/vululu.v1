@@ -8,7 +8,7 @@ for (const width of [390, 768, 1024, 1440])
     await expect(page.getByRole('heading', { name: 'Creation guide' })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: test.info().outputPath(`guide-en-${width}.png`) });
-    await page.getByRole('link', { name: 'Test release terms' }).click();
+    await page.getByRole('link', { name: 'Information and terms' }).click();
     await expect(page.locator('html')).toHaveAttribute('lang', 'en');
     await page.goto('/activate');
     await page.getByLabel('Invitation code').focus();
