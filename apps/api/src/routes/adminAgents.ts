@@ -4,6 +4,53 @@ import { actorOf, agentConfigs, providerCatalog, providerCredentials, routing } 
 import { ApplicationError } from '@vululu/application';
 import { providerCredentialInputSchema } from '@vululu/contracts';
 import { rateLimitPreHandler, RATE_LIMITS } from '../infrastructure/security/rateLimiter';
+import { tools } from '../infrastructure/execution/registry';
+import { capability } from '../infrastructure/mediaGeneration/providers';
+import { imageProviderCapabilities } from '../infrastructure/imageEditing/providers';
+import { audioCapabilities } from '../infrastructure/audio/providers';
+import { pythonToolsConfig } from '../infrastructure/python/client';
+
+/**
+ * P11-B — disponibilité RÉELLE d'une capacité, lue depuis la configuration serveur.
+ * Aucune sonde payante, aucun jeton : ces valeurs décrivent la configuration, pas un
+ * appel fournisseur vérifié. Un fournisseur désactivé n'est jamais présenté disponible.
+ */
+type CapabilityAvailability = 'configured' | 'disabled' | 'missing_credential' | 'local';
+function availabilityOf(provider: string): { availability: CapabilityAvailability; reason: string | null } {
+  if (provider === 'replicate@1') {
+    const state = capability('image');
+    return { availability: state.availability, reason: null };
+  }
+  if (provider === 'runway@1') {
+    const state = capability('video');
+    return { availability: state.availability, reason: null };
+  }
+  if (provider === 'gemini-image@1') {
+    const state = imageProviderCapabilities()[0];
+    return { availability: state.availability, reason: state.reason };
+  }
+  if (provider === 'gemini-audio@1') {
+    const state = audioCapabilities().transcription;
+    return { availability: state.availability, reason: state.reason };
+  }
+  if (provider === 'gemini-tts@1') {
+    const state = audioCapabilities().tts;
+    return { availability: state.availability, reason: state.reason };
+  }
+  if (provider === 'python-tools@1')
+    return pythonToolsConfig()
+      ? { availability: 'configured', reason: 'Service Python interne configuré ; disponibilité non sondée.' }
+      : { availability: 'missing_credential', reason: 'PYTHON_TOOLS_URL ou PYTHON_TOOLS_TOKEN absent (24 caractères minimum).' };
+  if (provider === 'postiz@1')
+    return process.env.POSTIZ_PUBLISH_ENABLED === '1'
+      ? { availability: 'configured', reason: 'Publication directe activée ; disponibilité non sondée.' }
+      : { availability: 'disabled', reason: 'POSTIZ_PUBLISH_ENABLED n’est pas activé.' };
+  if (provider === 'vertex-gemini@1')
+    return process.env.ASSISTANT_VERTEX_ENABLED === '1' && (process.env.ASSISTANT_VERTEX_PROJECT || '').trim()
+      ? { availability: 'configured', reason: 'Vertex configuré ; appel non sondé.' }
+      : { availability: 'disabled', reason: 'ASSISTANT_VERTEX_ENABLED ou ASSISTANT_VERTEX_PROJECT absent.' };
+  return { availability: 'local', reason: null };
+}
 
 const capabilityRequirementSchema = z.object({
   capabilityKey: z.string().min(1),
@@ -106,6 +153,32 @@ export async function adminAgentRoutes(app: FastifyInstance): Promise<void> {
       input.configVersionId
     );
     return { agent };
+  });
+
+  /**
+   * Catalogue FERMÉ des outils exécutables (registre serveur, aucune définition arbitraire),
+   * avec permissions, restrictions et disponibilité réelle de la capacité sous-jacente.
+   * Les capacités Python (image.analyze/segment, audio.analyze) figurent dans ce même
+   * catalogue ; aucun second registre n'est créé.
+   */
+  app.get('/api/admin/tools', superAdminOnly, async () => {
+    const items = Object.entries(tools).map(([key, definition]) => {
+      const state = availabilityOf(definition.provider);
+      return {
+        key,
+        provider: definition.provider,
+        action: definition.action,
+        scope: definition.scope,
+        approval: definition.approval,
+        maxCents: definition.maxCents,
+        agentProposable: definition.params !== undefined && definition.agentProposable !== false,
+        hasParams: definition.params !== undefined,
+        description: definition.description,
+        availability: state.availability,
+        availabilityReason: state.reason
+      };
+    });
+    return { items };
   });
 
   app.get('/api/admin/providers', superAdminOnly, async (request) => {

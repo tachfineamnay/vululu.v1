@@ -118,7 +118,7 @@
 | Bêta gratuite (paiements gelés serveur) | IMPLEMENTED | `betaMode.ts:25-58`, `infrastructure/beta/freeze.ts:25-61`, `index.ts:8` | Défaut = bêta, irréversible par ce chemin |
 | Facturation Stripe (produits, achats, reçus, crédits, réconciliation) | PROVIDER_DEPENDENT (gelée) | `billing/config.ts:10-33`, `billing/service.ts:151`, `routes/billing.ts:39-55,77-83` | Exige clés + phrase d'activation ; `VULULU_BETA_MODE` ferme la vente |
 | Support / tickets / feedback bêta / effacement | IMPLEMENTED | `billing/support.ts:21-78`, `routes/billing.ts:84-118`, `app/support/page.tsx` | — |
-| Admin (9 pages, utilisateurs, agents, fournisseurs, modèles, routing, audit, coûts, commerce) | IMPLEMENTED | `routes/admin*.ts`, `apps/web/app/admin/**`, `lib/admin.ts` | P11-A : rôles et statut de compte gérables, suspension immédiate, fiche utilisateur et audit ; aucun test exécuté | Secrets fournisseurs chiffrés (`providerCredentialCipher.ts`) |
+| Admin (9 pages, utilisateurs, agents, fournisseurs, modèles, routing, audit, coûts, commerce) | IMPLEMENTED | `routes/admin*.ts`, `apps/web/app/admin/**`, `lib/admin.ts` | P11-A : rôles/statut de compte et suspension ; P11-B : catalogue fermé des outils + disponibilité réelle + politique d'exécution par compte ; aucun test exécuté | Secrets fournisseurs chiffrés (`providerCredentialCipher.ts`) |
 | Ops : ready, santé, métriques Prometheus, snapshot, réconciliation | IMPLEMENTED | `routes/ops.ts:9-46`, `operations/opsMetrics.ts`, `operations/runtimeReconciliation.ts` | Résultats réels NON VÉRIFIÉS |
 | Orchestration durable Hatchet + outbox | PROVIDER_DEPENDENT | `worker/pipeline.ts:50-68`, `durable/outboxDispatcher.ts:20-67`, `durable/hatchetOrchestratorAdapter.ts` | `ORCHESTRATOR_MODE=hatchet` + `HATCHET_CLIENT_*` ; défaut local |
 
@@ -318,4 +318,16 @@ Implémenté depuis l'inventaire (commit P11-A, `BUILD_UNVERIFIED`, **ADR-0042**
 
 Limites P11-A : aucun test/build/E2E exécuté ; pas de suppression de compte (décision distincte) ; pas de notification au compte suspendu ; le typecheck complet reste NOT_RUN (seuls contrôles ciblés rapportés par l'agent).
 
-> **Rappel final** : inventaire établi par lecture seule au HEAD `f5d515b`, mis à jour par P01 puis P02–P11A. Aucune commande de test, de build ou de fournisseur n'a été exécutée pour P09A/P09B/P10/P11A ; tout statut est une lecture de code, jamais une certification.
+## 15. Mise à jour P11-B — agents, outils et capacités (2026-11-21)
+
+Implémenté depuis l'inventaire (commit P11-B, `BUILD_UNVERIFIED`, **ADR-0043**) :
+
+- **Catalogue fermé des outils** : `GET /api/admin/tools` (super-admin) expose le registre existant avec action, portée, approbation, plafond, caractère proposable par l'agent, et **disponibilité réelle** calculée depuis la configuration (média, image, audio, Postiz, Vertex, Python). Aucun second registre, aucune définition arbitraire, aucun jeton.
+- **Capacités Python incluses** : `image.analyze@1`, `image.segment@1`, `audio.analyze@1` figurent dans le même catalogue avec `python-tools@1` et une disponibilité liée à la configuration du service interne.
+- **Politique d'exécution par compte** : `GET /api/admin/execution/accounts` et `/:account` (plafond, réservé, dépensé, état, outils) en lecture ; l'écriture reste le `PUT` existant, borné au registre fermé ; le broker conserve budget, approbation et `tool_disabled`.
+- **Web** : panneau « Disponibilité réelle des capacités » (Fournisseurs) et sections « Outils et permissions » + « Politique d'exécution par compte » (Agents), avec confirmations et états d'erreur ; chaque contrôle appelle une route réelle.
+- **Préservé** : activation/qualification fournisseur et modèle, credentials chiffrés, agents versionnés avec promotion/rollback, ToolBroker, Hatchet, autorisation super-admin.
+
+Limites P11-B : aucun test/build/E2E ; la disponibilité décrit la configuration, jamais un appel vérifié ; l'admin ne crée ni agent ni outil ; les fournisseurs restent désactivés par défaut.
+
+> **Rappel final** : inventaire établi par lecture seule au HEAD `f5d515b`, mis à jour par P01 puis P02–P11B. Aucune commande de test, de build ou de fournisseur n'a été exécutée pour P09A/P09B/P10/P11A ; tout statut est une lecture de code, jamais une certification.

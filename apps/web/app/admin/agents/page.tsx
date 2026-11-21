@@ -3,7 +3,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import ConfirmDialog from '../../../components/admin/ConfirmDialog';
 import ErrorState from '../../../components/admin/ErrorState';
-import { TextareaField } from '../../../components/admin/Fields';
+import { CheckboxField, SelectField, TextField, TextareaField } from '../../../components/admin/Fields';
 import LoadingState from '../../../components/admin/LoadingState';
 import PageHeader from '../../../components/admin/PageHeader';
 import SectionCard from '../../../components/admin/SectionCard';
@@ -15,6 +15,7 @@ import {
   formatDateTime,
   roleLabel,
   shortId,
+  TOOL_AVAILABILITY_LABELS,
   type AdminAgent,
   type AdminAgentConfig
 } from '../../../lib/admin';
@@ -393,6 +394,9 @@ export default function AdminAgentsPage() {
         )
       ) : null}
 
+      <ToolCatalogSection />
+      <ExecutionPolicySection />
+
       <ConfirmDialog
         open={pendingAction !== null}
         title={pendingAction && pendingAction.kind === 'promote' ? 'Promouvoir cette version' : 'Restaurer cette version'}
@@ -416,5 +420,240 @@ export default function AdminAgentsPage() {
         }}
       />
     </div>
+  );
+}
+
+/**
+ * P11-B — catalogue fermé des outils : permissions, restrictions et disponibilité réelle.
+ * Aucun outil ne peut être créé ici ; le registre serveur reste l'unique source.
+ */
+function ToolCatalogSection() {
+  const tools = useAdminResource(() => adminApi.tools(), 'admin-tools');
+  return (
+    <SectionCard
+      title="Outils et permissions"
+      description="Catalogue fermé du registre serveur, capacités Python incluses. La disponibilité décrit la configuration : aucun appel fournisseur n'est sondé ici."
+      actions={
+        <button type="button" className="btn btn-ghost btn-small" onClick={tools.reload} disabled={tools.loading}>
+          Actualiser
+        </button>
+      }
+    >
+      {tools.loading && !tools.data ? <LoadingState label="Chargement du catalogue..." /> : null}
+      {tools.error ? <ErrorState message={tools.error} onRetry={tools.reload} /> : null}
+      {tools.data ? (
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>Outil</th>
+                <th>Fournisseur</th>
+                <th>Action</th>
+                <th>Portee</th>
+                <th>Approbation</th>
+                <th>Plafond</th>
+                <th>Agent</th>
+                <th>Disponibilite</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tools.data.items.map((tool) => (
+                <tr key={tool.key}>
+                  <td>
+                    <strong>{tool.key}</strong>
+                    <br />
+                    <span className="admin-meta">{tool.description}</span>
+                  </td>
+                  <td className="admin-mono">{tool.provider}</td>
+                  <td>{tool.action}</td>
+                  <td>{tool.scope}</td>
+                  <td>{tool.approval === 'human' ? 'Humaine' : 'Automatique'}</td>
+                  <td className="admin-nowrap">{tool.maxCents} c</td>
+                  <td>{tool.agentProposable ? 'Proposable' : 'Reserve utilisateur'}</td>
+                  <td>
+                    <StatusBadge
+                      status={
+                        tool.availability === 'configured'
+                          ? 'ok'
+                          : tool.availability === 'local'
+                            ? 'active'
+                            : tool.availability === 'disabled'
+                              ? 'none'
+                              : 'pending'
+                      }
+                      label={TOOL_AVAILABILITY_LABELS[tool.availability]}
+                      title={tool.availabilityReason ?? undefined}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+      <p className="admin-meta">
+        Un outil non autorise pour un compte est refuse par le broker (tool_disabled), meme si le fournisseur est
+        configure. Les jalons de qualification des modeles restent geres dans Fournisseurs.
+      </p>
+    </SectionCard>
+  );
+}
+
+/** P11-B — politique d'execution par compte : plafond, activation et outils autorises. */
+function ExecutionPolicySection() {
+  const accounts = useAdminResource(() => adminApi.executionAccounts(), 'execution-accounts');
+  const tools = useAdminResource(() => adminApi.tools(), 'execution-tools');
+  const [accountId, setAccountId] = useState('');
+  const [enabled, setEnabled] = useState(false);
+  const [limitCents, setLimitCents] = useState('0');
+  const [selected, setSelected] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [error, setError] = useState('');
+  const current = accounts.data ? accounts.data.items.find((item) => item.userId === accountId) ?? null : null;
+
+  useEffect(() => {
+    if (!current) {
+      return;
+    }
+    setEnabled(current.enabled);
+    setLimitCents(String(current.limitCents));
+    setSelected(current.tools);
+  }, [current]);
+
+  const accountOptions = (accounts.data ? accounts.data.items : []).map((item) => ({
+    value: item.userId,
+    label: item.userId + (item.enabled ? ' - actif' : ' - desactive') + ' (' + item.tools.length + ' outil(s))'
+  }));
+
+  function toggleTool(key: string, checked: boolean) {
+    setSelected((previous) => (checked ? [...previous.filter((item) => item !== key), key] : previous.filter((item) => item !== key)));
+  }
+
+  async function savePolicy(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!accountId) {
+      return;
+    }
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const result = await adminApi.setExecutionAccount(accountId, {
+        enabled,
+        limitCents: Math.max(0, Math.trunc(Number(limitCents) || 0)),
+        tools: selected
+      });
+      setNotice(
+        'Politique enregistree pour ' +
+          result.userId +
+          ' : execution ' +
+          (result.enabled ? 'autorisee' : 'desactivee') +
+          ', ' +
+          result.tools.length +
+          ' outil(s) autorise(s), plafond ' +
+          result.limitCents +
+          ' c.'
+      );
+      accounts.reload();
+    } catch (failure) {
+      setError(errorMessage(failure));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <SectionCard
+      title="Politique d'execution par compte"
+      description="Seuls les outils coches peuvent etre proposes et autorises pour ce compte. Le broker applique ensuite plafond, reservation de cout et approbation humaine."
+    >
+      {accounts.loading && !accounts.data ? <LoadingState label="Chargement des comptes..." /> : null}
+      {accounts.error ? <ErrorState message={accounts.error} onRetry={accounts.reload} /> : null}
+      {tools.error ? <ErrorState message={tools.error} onRetry={tools.reload} /> : null}
+      <form className="admin-form" onSubmit={savePolicy}>
+        <SelectField
+          id="policy-account-existing"
+          label="Comptes existants"
+          value={accountOptions.some((option) => option.value === accountId) ? accountId : ''}
+          onChange={(value) => {
+            if (value) {
+              setAccountId(value);
+              setNotice('');
+              setError('');
+            }
+          }}
+          options={accountOptions}
+          placeholder="Selectionner un compte"
+          hint="Les comptes sans politique n'ont aucun droit d'execution."
+        />
+        <TextField
+          id="policy-account"
+          label="Identifiant du compte (userId)"
+          value={accountId}
+          onChange={(value) => {
+            setAccountId(value.trim());
+            setNotice('');
+            setError('');
+          }}
+          required
+          hint="La politique est creee ou mise a jour pour ce compte."
+        />
+        <TextField
+          id="policy-limit"
+          label="Plafond (centimes USD)"
+          type="number"
+          min={0}
+          step={1}
+          value={limitCents}
+          onChange={setLimitCents}
+          hint="Montant maximal reserve pour une operation de ce compte."
+        />
+        <CheckboxField
+          id="policy-enabled"
+          label="Autoriser l'execution d'outils pour ce compte"
+          checked={enabled}
+          onChange={setEnabled}
+          hint="Desactive par defaut : aucune operation ne peut etre approuvee sans cette activation."
+        />
+        {current ? (
+          <p className="admin-meta">
+            Consommation enregistree : reserve {current.reservedCents} c, depense {current.spentCents} c, plafond{' '}
+            {current.limitCents} c.
+          </p>
+        ) : accountId ? (
+          <p className="admin-meta">Aucune politique existante pour ce compte.</p>
+        ) : null}
+        {tools.data ? (
+          <div className="admin-checkbox-group" role="group" aria-label="Outils autorises pour ce compte">
+            {tools.data.items.map((tool) => (
+              <CheckboxField
+                key={tool.key}
+                id={'policy-tool-' + tool.key}
+                label={tool.key + ' · ' + tool.provider}
+                checked={selected.includes(tool.key)}
+                onChange={(checked) => toggleTool(tool.key, checked)}
+                hint={TOOL_AVAILABILITY_LABELS[tool.availability]}
+              />
+            ))}
+          </div>
+        ) : null}
+        {notice ? (
+          <p className="admin-banner admin-banner--success" role="status">
+            {notice}
+          </p>
+        ) : null}
+        {error ? (
+          <p className="admin-banner admin-banner--danger" role="alert">
+            {error}
+          </p>
+        ) : null}
+        <div className="admin-actions">
+          <button type="submit" className="btn btn-primary" disabled={busy || !accountId}>
+            {busy ? 'Enregistrement...' : 'Enregistrer la politique'}
+          </button>
+        </div>
+      </form>
+    </SectionCard>
   );
 }

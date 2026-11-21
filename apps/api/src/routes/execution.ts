@@ -31,6 +31,25 @@ export async function executionRoutes(app: FastifyInstance) {
       }
     })
   );
+  // P11-B — politique d'exécution par compte : outils autorisés, plafond, consommation.
+  // Lecture seule ; aucune définition d'outil arbitraire, aucun secret.
+  app.get('/api/admin/execution/accounts', admin, async () => {
+    const items = await prisma.executionAccount.findMany({
+      orderBy: [{ enabled: 'desc' }, { userId: 'asc' }],
+      take: 100,
+      select: { userId: true, enabled: true, limitCents: true, reservedCents: true, spentCents: true, tools: true }
+    });
+    return { items };
+  });
+  app.get('/api/admin/execution/accounts/:account', admin, async (r) => {
+    const account = z.string().min(1).max(128).parse((r.params as { account?: string }).account);
+    const row = await prisma.executionAccount.findUnique({
+      where: { userId: account },
+      select: { userId: true, enabled: true, limitCents: true, reservedCents: true, spentCents: true, tools: true }
+    });
+    if (!row) throw new HttpError(404, 'execution_account_not_found', 'Compte d’exécution introuvable.');
+    return row;
+  });
   app.get('/api/execution/tools', auth, () => Object.fromEntries(Object.entries(tools)
     .filter(([key]) => !demoDisabled() || !key.startsWith('sandbox.'))
     .map(([key, definition]) => [key, {

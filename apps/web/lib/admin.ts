@@ -175,6 +175,40 @@ export type AdminModel = {
   createdAt: string;
 };
 
+/** P11-B — disponibilité réelle d'une capacité (configuration serveur, jamais une sonde). */
+export type AdminToolAvailability = 'configured' | 'disabled' | 'missing_credential' | 'local';
+
+/** Outil du registre FERMÉ : aucune définition arbitraire ne peut être ajoutée côté client. */
+export type AdminTool = {
+  key: string;
+  provider: string;
+  action: string;
+  scope: string;
+  approval: string;
+  maxCents: number;
+  agentProposable: boolean;
+  hasParams: boolean;
+  description: string;
+  availability: AdminToolAvailability;
+  availabilityReason: string | null;
+};
+
+/** Politique d'exécution d'un compte (plafond, état, outils autorisés). */
+export type AdminExecutionAccount = {
+  userId: string;
+  enabled: boolean;
+  limitCents: number;
+  reservedCents: number;
+  spentCents: number;
+  tools: string[];
+};
+
+export type AdminExecutionAccountInput = {
+  limitCents: number;
+  enabled: boolean;
+  tools: string[];
+};
+
 export type AdminRun = {
   id: string;
   projectId: string;
@@ -468,6 +502,20 @@ export const adminApi = {
 
   agents: () => api<{ items: AdminAgent[] }>('/api/admin/agents'),
 
+  // P11-B — catalogue fermé des outils et politique d'exécution par compte.
+  tools: () => api<{ items: AdminTool[] }>('/api/admin/tools'),
+
+  executionAccounts: () => api<{ items: AdminExecutionAccount[] }>('/api/admin/execution/accounts'),
+
+  executionAccount: (account: string) =>
+    api<AdminExecutionAccount>('/api/admin/execution/accounts/' + encodeURIComponent(account)),
+
+  setExecutionAccount: (account: string, input: AdminExecutionAccountInput) =>
+    api<AdminExecutionAccount>('/api/admin/execution/accounts/' + encodeURIComponent(account), {
+      method: 'PUT',
+      body: JSON.stringify(input)
+    }),
+
   agentConfigs: (agentId: string) =>
     api<{ items: AdminAgentConfig[] }>('/api/admin/agents/' + encodeURIComponent(agentId) + '/configs'),
 
@@ -566,6 +614,13 @@ export const adminApi = {
     postJsonAdmin<ReconciliationReport>('/api/ops/reconcile', input),
 
   logout: () => api<{ ok: boolean }>('/api/auth/logout', { method: 'POST' })
+};
+
+export const TOOL_AVAILABILITY_LABELS: Record<AdminToolAvailability, string> = {
+  configured: 'Configuré (non sondé)',
+  disabled: 'Désactivé',
+  missing_credential: 'Identifiant manquant',
+  local: 'Local / déterministe'
 };
 
 export const ROLE_LABELS: Record<string, string> = {
