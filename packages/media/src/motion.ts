@@ -30,6 +30,17 @@ export async function encodeMotion(
   expectedDurationSeconds: number,
   run: (args: string[], cwd?: string) => Promise<string>
 ) {
+  // P12-07 — géométrie invalide = échec explicite avant FFmpeg : un clip sans hauteur exploitable
+  // produisait sinon « Invalid too big or non positive size for width/height » côté encodeur.
+  const even = (value: number) => Number.isInteger(value) && value >= 2 && value <= 4096 && value % 2 === 0;
+  if (!even(motion.width) || !even(motion.height))
+    throw new Error('media_motion_geometry_invalid: canvas non entier, impair ou hors bornes.');
+  motion.clips.forEach((clip, index) => {
+    if (clip && !even(clip.height))
+      throw new Error('media_motion_geometry_invalid: hauteur de clip invalide pour la scène ' + (index + 1) + '.');
+    if (clip && (!Number.isFinite(clip.start) || clip.start < 0))
+      throw new Error('media_motion_geometry_invalid: point de départ de clip invalide pour la scène ' + (index + 1) + '.');
+  });
   const list: string[] = [];
   for (const [i, image] of input.scenePaths.entries()) {
     const clip = motion.clips[i],

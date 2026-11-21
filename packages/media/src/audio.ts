@@ -37,7 +37,15 @@ export function buildMixArgs(tracks: AudioMixTrack[], durationSeconds: number, o
     input.push('-i', track.path);
     const start = Math.min(Math.max(0, track.start), Math.max(0, durationSeconds - 0.1));
     const length = Math.max(0.1, durationSeconds - start);
-    const chain = [`atrim=0:${fixed(length)}`, 'asetpts=PTS-STARTPTS', `volume=${fixed(track.gain)}`];
+    // Chaque piste est complétée en silence jusqu'à sa durée de créneau : sans cela, une voix
+    // courte tronque la musique via sidechaincompress et le mix final devient plus court que le
+    // master (défaut constaté : mix 2,6 s pour 3,5 s demandées).
+    const chain = [
+      `atrim=0:${fixed(length)}`,
+      'asetpts=PTS-STARTPTS',
+      `apad=whole_dur=${fixed(length)}`,
+      `volume=${fixed(track.gain)}`
+    ];
     if (track.fadeIn && track.fadeIn > 0) chain.push(`afade=t=in:st=0:d=${fixed(Math.min(track.fadeIn, length))}`);
     if (track.fadeOut && track.fadeOut > 0)
       chain.push(`afade=t=out:st=${fixed(Math.max(0, length - track.fadeOut))}:d=${fixed(Math.min(track.fadeOut, length))}`);
@@ -54,16 +62,19 @@ export function buildMixArgs(tracks: AudioMixTrack[], durationSeconds: number, o
     else filters.push(`${labels.join('')}amix=inputs=${labels.length}:normalize=0:dropout_transition=0[${name}]`);
     return `[${name}]`;
   };
+  // Le bus final est toujours complété en silence jusqu'à la durée demandée : le mix a
+  // exactement la durée du master, même si toutes les pistes s'arrêtent avant.
+  const padded = ',apad=whole_dur=' + fixed(durationSeconds);
   if (voices.length && beds.length) {
     const voice = bus(voices, 'voicebus');
     const bed = bus(beds, 'musicbus');
     if (ducking) {
       filters.push(`${voice}asplit=2[voiceMix][voiceSide]`);
       filters.push(`${bed}[voiceSide]sidechaincompress=threshold=0.05:ratio=8:attack=20:release=300[musicDucked]`);
-      filters.push('[voiceMix][musicDucked]amix=inputs=2:normalize=0:dropout_transition=0[aout]');
-    } else filters.push(`${voice}${bed}amix=inputs=2:normalize=0:dropout_transition=0[aout]`);
-  } else if (voices.length) filters.push(`${bus(voices, 'voicebus')}anull[aout]`);
-  else filters.push(`${bus(beds, 'musicbus')}anull[aout]`);
+      filters.push('[voiceMix][musicDucked]amix=inputs=2:normalize=0:dropout_transition=0' + padded + '[aout]');
+    } else filters.push(`${voice}${bed}amix=inputs=2:normalize=0:dropout_transition=0` + padded + '[aout]');
+  } else if (voices.length) filters.push(`${bus(voices, 'voicebus')}anull` + padded + '[aout]');
+  else filters.push(`${bus(beds, 'musicbus')}anull` + padded + '[aout]');
   return [
     '-loglevel', 'error', '-y', ...input,
     '-filter_complex', filters.join(';'),
