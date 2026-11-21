@@ -36,7 +36,7 @@ function parseParams(tool: string, raw: unknown): PythonToolParams | null {
 }
 
 /** Convertit les recommandations d'outils Python en exécution réelle, ou en échec déterministe explicite. */
-export async function runPythonCapability(job: PythonToolJob): Promise<{ costCents: number; result?: unknown } | PythonToolFailure> {
+export async function runPythonCapability(job: PythonToolJob): Promise<{ costCents: number; costBasis: 'none'; result?: unknown } | PythonToolFailure> {
   if (!pythonToolsConfig()) return fail('python_tools_unavailable', 'Boîte à outils Python non configurée sur ce serveur.');
   if (job.tool !== 'image.analyze@1' && job.tool !== 'image.segment@1' && job.tool !== audioTool)
     return fail('python_tool_unknown', 'Outil Python inconnu.');
@@ -80,7 +80,7 @@ export async function runPythonCapability(job: PythonToolJob): Promise<{ costCen
       });
       const data = (response as { data?: { analysis?: unknown; sourceSha256?: unknown }; version?: unknown } | null)?.data;
       if (!data?.analysis) return fail('python_tools_invalid_response', 'Analyse audio Python illisible.');
-      return { costCents: 0, result: { capability: audioTool, sourceVersionId: params.versionId,
+      return { costCents: 0, costBasis: 'none', result: { capability: audioTool, sourceVersionId: params.versionId,
         sourceSha256: version.sha256, analysis: data.analysis,
         pythonServiceVersion: (response as { version?: unknown }).version ?? null } };
     }
@@ -89,7 +89,7 @@ export async function runPythonCapability(job: PythonToolJob): Promise<{ costCen
       const response = await callPythonTool('image.analyze@1', { requestId: job.id, source });
       const data = (response as { data?: { analysis?: unknown }; version?: unknown } | null)?.data?.analysis;
       if (!data) return fail('python_tools_invalid_response', 'Analyse Python illisible.');
-      return { costCents: 0, result: { capability: 'image.analyze@1', sourceVersionId: params.versionId,
+      return { costCents: 0, costBasis: 'none', result: { capability: 'image.analyze@1', sourceVersionId: params.versionId,
         sourceSha256: version.sha256, analysis: data, pythonServiceVersion: (response as { version?: unknown }).version ?? null } };
     }
     const response = await callPythonTool('image.segment@1', { requestId: job.id, source,
@@ -114,7 +114,7 @@ export async function runPythonCapability(job: PythonToolJob): Promise<{ costCen
       stored.push({ kind: output.kind, assetId: uploaded.assetId, assetVersionId: uploaded.id, sha256: output.sha256,
         width: output.width, height: output.height, sizeBytes: output.sizeBytes });
     }
-    return { costCents: 0, result: { capability: 'image.segment@1', sourceVersionId: params.versionId,
+    return { costCents: 0, costBasis: 'none', result: { capability: 'image.segment@1', sourceVersionId: params.versionId,
       sourceSha256: version.sha256, outputs: stored } };
   } catch (error) {
     if (error instanceof PythonToolsError && !error.retryable) return fail(error.code, error.message);

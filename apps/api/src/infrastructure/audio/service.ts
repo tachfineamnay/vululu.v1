@@ -17,6 +17,7 @@ import { inspectAsset, mediaRun, normalizeForAsr } from '@vululu/media';
 import { assets, creativeStudio } from '../../application/container';
 import { HttpError } from '../../errors';
 import { proposeTx } from '../execution/broker';
+import type { EngineOutcome } from '../execution/registry';
 import { createArtifactStorageRegistry } from '../storage/storageFactory';
 import {
   AudioProviderRejected,
@@ -39,6 +40,8 @@ const sourceLimitBytes = 15 * 1024 * 1024;
 const outputLimitBytes = 12 * 1024 * 1024;
 const maxSourceSeconds = 180;
 const fail = (code: string, message: string) => ({ failed: { code, message } });
+/** Sortie payée (le fournisseur a répondu) mais inexploitable : coût incertain, jamais gratuit. */
+const unverified = (code: string, message: string) => ({ uncertain: { code, message } });
 
 type VersionRow = {
   id: string; assetId: string; name: string; mimeType: string; sha256: string; sizeBytes: number;
@@ -118,7 +121,7 @@ export async function audioHistory(userId: string, projectId: string) {
 export async function runAudioJob(
   job: { id: string; accountId: string; projectId: string; tool: string; maxCents: number; params: unknown },
   signal: AbortSignal
-): Promise<{ costCents: number; result?: unknown } | { failed: { code: string; message: string } }> {
+): Promise<EngineOutcome> {
   const project = await prisma.project.findFirst({ where: { id: job.projectId, userId: job.accountId }, select: { contextId: true } });
   if (!project) return fail('project_not_found', 'Projet introuvable.');
   if (job.tool === audioTranscribeTool) return transcribe(job, project.contextId, signal);
@@ -130,7 +133,7 @@ async function transcribe(
   job: { id: string; accountId: string; projectId: string; maxCents: number; params: unknown },
   contextId: string,
   signal: AbortSignal
-): Promise<{ costCents: number; result?: unknown } | { failed: { code: string; message: string } }> {
+): Promise<EngineOutcome> {
   const parsed = audioTranscribeRequest.safeParse(job.params);
   if (!parsed.success) return fail('audio_params_invalid', 'Paramètres de transcription invalides.');
   const request = parsed.data;
@@ -162,7 +165,9 @@ async function transcribe(
       throw error;
     }
     return {
-      costCents: Math.min(result.costCents, job.maxCents),
+      // Montant annoncé par le fournisseur = estimation configurée, jamais rogné au plafond.
+      costCents: result.costCents,
+      costBasis: 'configured_estimate',
       result: {
         tool: audioTranscribeTool,
         sourceVersionId: request.sourceVersionId,
@@ -185,7 +190,7 @@ async function synthesize(
   job: { id: string; accountId: string; projectId: string; maxCents: number; params: unknown },
   contextId: string,
   signal: AbortSignal
-): Promise<{ costCents: number; result?: unknown } | { failed: { code: string; message: string } }> {
+): Promise<EngineOutcome> {
   const parsed = audioTtsRequest.safeParse(job.params);
   if (!parsed.success) return fail('audio_params_invalid', 'Paramètres de synthèse vocale invalides.');
   const request = parsed.data;
@@ -200,14 +205,15 @@ async function synthesize(
     if (error instanceof AudioProviderUnavailable) return fail(error.code, error.message);
     throw error;
   }
+  // À partir d'ici le fournisseur a répondu : un rejet local ne peut pas rendre l'appel gratuit.
   if (!result.bytes.length || result.bytes.length > outputLimitBytes)
-    return fail('audio_tts_size', 'Audio de sortie au-delà de la limite.');
+    return unverified('audio_tts_size', 'Audio de sortie au-delà de la limite.');
   let inspection;
   try { inspection = await inspectAsset(result.bytes, 'audio/wav'); }
-  catch { return fail('audio_tts_invalid', 'Audio du fournisseur invalide ou illisible.'); }
+  catch { return unverified('audio_tts_invalid', 'Audio du fournisseur invalide ou illisible.'); }
   const duration = Number(inspection.metadata.duration);
   if (!Number.isFinite(duration) || duration < 0.4 || duration > 60)
-    return fail('audio_tts_duration', 'Durée de la voix off hors limites (0,4 à 60 s).');
+    return unverified('audio_tts_duration', 'Durée de la voix off hors limites (0,4 à 60 s).');
   const uploaded = await assets.upload({ id: job.accountId, role: 'user' }, contextId, {
     kind: 'audio',
     mimeType: 'audio/wav',
@@ -216,7 +222,9 @@ async function synthesize(
     provenance: ['gemini-tts@1', result.model, 'voix ' + request.voice, request.language, 'requête ' + job.id].join(' · ')
   }, result.bytes);
   return {
-    costCents: Math.min(result.costCents, job.maxCents),
+    // Montant annoncé par le fournisseur = estimation configurée, jamais rogné au plafond.
+    costCents: result.costCents,
+    costBasis: 'configured_estimate',
     result: {
       tool: audioTtsTool,
       assetId: uploaded.assetId,
@@ -241,7 +249,8 @@ export async function applyAudioResult(
   raw: unknown
 ) {
   const operation = await prisma.executionOperation.findFirst({
-    where: { id: operationId, projectId, accountId: userId, tool: { in: [...audioTools] }, state: 'SUCCEEDED', project: { userId } },
+    // RESOLVED : sortie payée déjà produite, coût constaté par un administrateur ; aucune relance payante.
+    where: { id: operationId, projectId, accountId: userId, tool: { in: [...audioTools] }, state: { in: ['SUCCEEDED', 'RESOLVED'] }, project: { userId } },
     select: { tool: true, result: true }
   });
   if (!operation) throw new HttpError(404, 'audio_result_missing', 'Résultat audio introuvable ou non appliquable.');

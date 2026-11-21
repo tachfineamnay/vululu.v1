@@ -46,7 +46,9 @@ export async function report(userId: string, now = new Date()) {
     FROM result_history WHERE "userId"=${userId}`;
   const [cost] = await prisma.$queryRaw<{ cents: number | null; pending: boolean | null }[]>`
     SELECT sum("reportedCents") FILTER (WHERE "costState" IN ('RECONCILED','REPORTED'))::float8 cents,
+      -- Un coût estimé réglé reste à rapprocher : le total confirmé est incomplet.
       bool_or("costState" IN ('UNKNOWN','RESERVED') OR
+              ("costState" = 'ESTIMATED' AND "state" = 'SUCCEEDED') OR
               ("costState" IN ('REPORTED','RECONCILED') AND "reportedCents" IS NULL)) pending
     FROM "ExecutionOperation" WHERE "accountId"=${userId} AND "createdAt">=${from}`;
   const pref = await prisma.resultPreference.findUnique({ where: { userId } });

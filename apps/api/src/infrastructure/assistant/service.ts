@@ -245,7 +245,7 @@ export async function createTurn(userId: string, projectId: string, raw: unknown
 }
 const frozen = (row: AssistantTurn) => row.snapshot as unknown as { source: Awaited<ReturnType<typeof snapshot>>; previous: Awaited<ReturnType<typeof lineage>> };
 export async function generateAssistantClaim(job: { id: string; accountId: string; projectId: string; revision: number }, signal: AbortSignal,
-  providerOverride?: AssistantProvider) {
+  providerOverride?: AssistantProvider): Promise<{ costCents: number; costBasis: 'configured_estimate' }> {
   const op = await prisma.executionOperation.findFirst({ where: { id: job.id, accountId: job.accountId, projectId: job.projectId,
     revision: job.revision, state: 'CLAIMED', approvedBy: job.accountId, tool: assistantTool, project: { userId: job.accountId } } });
   const row = op && await prisma.assistantTurn.findFirst({ where: { id: op.key, projectId: job.projectId, revision: job.revision,
@@ -307,7 +307,8 @@ export async function generateAssistantClaim(job: { id: string; accountId: strin
     await tx.assistantTurn.update({ where: { id: row.id }, data: resultFields(row.id, row.inputDigest, result, origin, reason) });
   });
   if (outcome.costCents === null) throw Error('assistant_cost_unknown');
-  return { costCents: outcome.costCents };
+  // Jetons annoncés par le fournisseur × tarif configuré : estimation, jamais une facture.
+  return { costCents: outcome.costCents, costBasis: 'configured_estimate' };
 }
 async function getMarketingTurn(tx: Tx, userId: string, projectId: string, id: string) {
   await projectScope(tx, userId, projectId);

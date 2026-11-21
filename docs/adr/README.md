@@ -59,6 +59,7 @@ Chaque décision suit [template.md](template.md) :
 | [0043](0043-administration-agents-outils-capacites.md) | Administration des agents, outils et capacités | Acceptée pour la mission P11-B | 2026-11-21 |
 | [0044](0044-observabilite-operations-administration.md) | Observabilité des opérations et actions administratives sûres | Acceptée pour la mission P11-C | 2026-11-21 |
 | [0045](0045-administration-couts-budgets.md) | Administration des coûts et budgets d'exécution | Acceptée pour la mission P11-D | 2026-11-21 |
+| [0046](0046-provenance-des-couts-et-reglement.md) | Provenance des coûts et règle de règlement (aucun rognage, estimation ≠ facture) | Acceptée pour la mission P12-01 | 2026-11-21 |
 
 ## Décisions encore ouvertes
 

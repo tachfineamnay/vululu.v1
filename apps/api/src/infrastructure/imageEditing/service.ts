@@ -6,6 +6,7 @@ import { inspectAsset } from '@vululu/media';
 import { assets, creativeStudio } from '../../application/container';
 import { HttpError } from '../../errors';
 import { proposeTx } from '../execution/broker';
+import type { EngineOutcome } from '../execution/registry';
 import { createArtifactStorageRegistry } from '../storage/storageFactory';
 import {
   ImageProviderRejected, ImageProviderUncertain, ImageProviderUnavailable, imageProviderCapabilities,
@@ -18,6 +19,8 @@ const maskLimitBytes = 2 * 1024 * 1024;
 const outputLimitBytes = 12 * 1024 * 1024;
 const allowedMime = ['image/png', 'image/jpeg', 'image/webp'];
 const fail = (code: string, message: string) => ({ failed: { code, message } });
+/** Sortie payée (le fournisseur a répondu) mais inexploitable : coût incertain, jamais gratuit. */
+const unverified = (code: string, message: string) => ({ uncertain: { code, message } });
 let readerRegistry: ReturnType<typeof createArtifactStorageRegistry> | null = null;
 const readers = () => (readerRegistry ??= createArtifactStorageRegistry());
 
@@ -86,7 +89,7 @@ export async function imageEditHistory(userId: string, projectId: string) {
 export async function runImageEdit(
   job: { id: string; accountId: string; projectId: string; maxCents: number; params: unknown },
   signal: AbortSignal
-): Promise<{ costCents: number; result?: unknown } | { failed: { code: string; message: string } }> {
+): Promise<EngineOutcome> {
   const parsed = imageEditRequest.safeParse(job.params);
   if (!parsed.success) return fail('image_edit_params_invalid', 'Paramètres d’édition invalides.');
   const request: ImageEditRequest = parsed.data;
@@ -121,14 +124,15 @@ export async function runImageEdit(
     if (error instanceof ImageProviderUncertain) throw error;
     throw error;
   }
-  if (!result.bytes.length || result.bytes.length > outputLimitBytes) return fail('image_output_too_large', 'Image de sortie au-delà de la limite.');
+  // À partir d'ici le fournisseur a répondu : un rejet local ne peut pas rendre l'appel gratuit.
+  if (!result.bytes.length || result.bytes.length > outputLimitBytes) return unverified('image_output_too_large', 'Image de sortie au-delà de la limite.');
   let inspection;
   try { inspection = await inspectAsset(result.bytes, result.mimeType); }
-  catch { return fail('image_output_invalid', 'Image du fournisseur invalide ou illisible.'); }
+  catch { return unverified('image_output_invalid', 'Image du fournisseur invalide ou illisible.'); }
   const width = Number(inspection.metadata.width);
   const height = Number(inspection.metadata.height);
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 64 || height < 64 || width > 4096 || height > 4096)
-    return fail('image_output_invalid', 'Dimensions de sortie hors limites.');
+    return unverified('image_output_invalid', 'Dimensions de sortie hors limites.');
   const uploaded = await assets.upload({ id: job.accountId, role: 'user' }, project.contextId, {
     kind: 'image', mimeType: result.mimeType,
     name: (request.operation === 'generate' ? 'Image générée' : 'Image éditée') + ' · ' + request.prompt.slice(0, 80),
@@ -136,7 +140,9 @@ export async function runImageEdit(
     provenance: [result.provider, result.model, request.operation, 'source ' + (request.sourceVersionId ?? 'aucune'),
       'requête ' + job.id, result.providerRequestId ? 'fournisseur ' + result.providerRequestId : null].filter(Boolean).join(' · ')
   }, result.bytes);
-  return { costCents: Math.min(result.costCents, job.maxCents), result: {
+  // Montant annoncé par le fournisseur = estimation configurée : jamais rogné au plafond, le
+  // broker refuse un dépassement au lieu de le masquer, et l'état reste ESTIMATED.
+  return { costCents: result.costCents, costBasis: 'configured_estimate', result: {
     assetId: uploaded.assetId, assetVersionId: uploaded.id, sha256: inspection.sha256, mimeType: result.mimeType,
     width, height, provider: result.provider, model: result.model, operation: request.operation,
     aspectRatio: request.aspectRatio, preserveSubject: request.preserveSubject,
@@ -150,7 +156,8 @@ export async function runImageEdit(
 export async function applyImageEdit(userId: string, projectId: string, operationId: string, raw: unknown) {
   const apply = imageEditApply.parse(raw);
   const operation = await prisma.executionOperation.findFirst({
-    where: { id: operationId, projectId, accountId: userId, tool: imageEditTool, state: 'SUCCEEDED', project: { userId } },
+    // RESOLVED : sortie payée déjà produite, coût constaté par un administrateur ; aucune relance payante.
+    where: { id: operationId, projectId, accountId: userId, tool: imageEditTool, state: { in: ['SUCCEEDED', 'RESOLVED'] }, project: { userId } },
     select: { result: true }
   });
   const result = operation?.result as { assetVersionId?: unknown; mimeType?: unknown } | null;

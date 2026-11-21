@@ -11,7 +11,7 @@ import { runPythonCapability } from '../python/adapter';
 import { runImageEdit } from '../imageEditing/service';
 import { runAudioJob } from '../audio/service';
 import { createArtifactStorage, createArtifactStorageRegistry } from '../storage/storageFactory';
-import type { EnginePort } from './registry';
+import type { EngineOutcome, EnginePort } from './registry';
 import { dispatchPublication } from '../publishing/service';
 import { PostizProvider } from '../publishing/provider';
 import { generateAssistantClaim } from '../assistant/service';
@@ -21,7 +21,7 @@ import { recover } from './broker';
 // Closed dispatch table. External media and publishing are reached only through a reserved claim.
 export function studioEngine(creativeStudio: CreativeStudio): EnginePort {
   return {
-    async invoke(job, signal) {
+    async invoke(job, signal): Promise<EngineOutcome> {
       signal.throwIfAborted();
       switch (job.tool) {
         case 'media.image@1':
@@ -36,27 +36,28 @@ export function studioEngine(creativeStudio: CreativeStudio): EnginePort {
           return dispatchPublication(job, creativeStudio, new PostizProvider(), signal);
         case 'studio.inspect@1':
           await creativeStudio.get(job.accountId, job.projectId, job.revision);
-          return { costCents: 0 };
+          return { costCents: 0, costBasis: 'none' };
         case 'studio.render@1':
           await creativeStudio.render(job.accountId, job.projectId, job.revision);
-          return { costCents: 0 };
+          return { costCents: 0, costBasis: 'none' };
         case 'sandbox.generate@1':
         case 'sandbox.publish@1':
-          return { costCents: job.maxCents }; // synthetic units only; never publishes
+          // Unités synthétiques (démo) : prix configuré, jamais une charge fournisseur.
+          return { costCents: job.maxCents, costBasis: 'configured_estimate' }; // synthetic units only; never publishes
         case 'project.summary@1': {
           const project = await prisma.project.findFirst({
             where: { id: job.projectId, userId: job.accountId },
             select: { id: true, title: true, objective: true, platform: true, format: true, status: true, assetsConfirmationDigest: true }
           });
           if (!project) return { failed: { code: 'execution_project_missing', message: 'Projet introuvable.' } };
-          return { costCents: 0, result: { projectId: project.id, title: project.title, objective: project.objective,
+          return { costCents: 0, costBasis: 'none', result: { projectId: project.id, title: project.title, objective: project.objective,
             platform: project.platform, format: project.format, status: project.status,
             assetDecisionDigest: project.assetsConfirmationDigest ?? null } };
         }
         case 'assets.list@1': {
           const decision = await confirmedDecision(job);
           if (!decision) return { failed: { code: 'assets_required', message: 'Ressources non confirmées.' } };
-          return { costCents: 0, result: { decision: decision.noAssets ? 'none' : 'assets', digest: decision.digest,
+          return { costCents: 0, costBasis: 'none', result: { decision: decision.noAssets ? 'none' : 'assets', digest: decision.digest,
             items: (decision.snapshot?.items ?? []).map((item) => ({ versionId: item.versionId, name: item.name, kind: item.kind, sha256: item.sha256, license: item.license })) } };
         }
         case 'assets.inspect@1': {
@@ -65,12 +66,12 @@ export function studioEngine(creativeStudio: CreativeStudio): EnginePort {
           const input = z.strictObject({ versionId: z.string().min(1).max(128) }).parse(job.params);
           const item = decision.snapshot?.items.find((candidate) => candidate.versionId === input.versionId);
           if (!item) return { failed: { code: 'asset_version_not_confirmed', message: 'Ressource hors sélection confirmée.' } };
-          return { costCents: 0, result: { versionId: item.versionId, name: item.name, kind: item.kind, mimeType: item.mimeType, sha256: item.sha256, license: item.license, provenance: item.provenance } };
+          return { costCents: 0, costBasis: 'none', result: { versionId: item.versionId, name: item.name, kind: item.kind, mimeType: item.mimeType, sha256: item.sha256, license: item.license, provenance: item.provenance } };
         }
         case 'creative.direction@1': {
           const input = creativeDirectionInput.parse(job.params);
           const created = await new CreativeDirections(new PrismaCreativeDirectionRepository()).create(job.accountId, job.projectId, input);
-          return { costCents: 0, result: { created: created.created ?? [], count: created.directions.length } };
+          return { costCents: 0, costBasis: 'none', result: { created: created.created ?? [], count: created.directions.length } };
         }
         case 'image.analyze@1':
         case 'image.segment@1':

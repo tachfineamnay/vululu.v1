@@ -5,6 +5,7 @@ import { contentChecksum } from '@vululu/domain';
 import { mediaApprovalDigest } from '../mediaGeneration/approval';
 import { HttpError } from '../../errors';
 import { tools, toolSchema, proposal, type EnginePort, type Tool } from './registry';
+import { settlementFor, type CostBasis } from './costBasis';
 import { holdTool,checkClaim,finishTool } from '../billing/service';
 import {demoDisabled} from '../../releaseMode';
 type Tx = Prisma.TransactionClient;
@@ -208,44 +209,70 @@ async function transition<T>(id: string, fn: (tx: Tx, o: Op) => Promise<T>) {
     return fn(tx, await tx.executionOperation.findUniqueOrThrow({ where: { id } }));
   });
 }
-async function incident(tx: Tx, o: Op) {
+/** Sortie bornée persistable : la trace d'un appel payé survit à l'incident. */
+function storableResult(result: unknown): Prisma.InputJsonValue | undefined {
+  if (result === undefined) return undefined;
+  const json = JSON.stringify(result);
+  return json.length <= 32768
+    ? (JSON.parse(json) as Prisma.InputJsonValue)
+    : { truncated: true, sizeBytes: json.length };
+}
+/**
+ * Issue incertaine : réservation CONSERVÉE (aucune libération automatique) et sortie éventuelle
+ * conservée pour permettre un rapprochement humain sans rejouer l'appel payé.
+ */
+async function incident(tx: Tx, o: Op, result?: unknown) {
   await audit(tx, o, null, 'outcome_unknown');
+  const stored = storableResult(result);
   return tx.executionOperation.update({
     where: { id: o.id },
-    data: { state: 'UNKNOWN', costState: 'UNKNOWN' }
+    data: { state: 'UNKNOWN', costState: 'UNKNOWN', ...(stored === undefined ? {} : { result: stored }) }
   });
 }
-async function settle(tx: Tx, o: Op, cents: number, manual?: { actor: string; evidence: string }, result?: unknown) {
-  if (!Number.isInteger(cents) || cents < 0 || cents > o.maxCents) {
-    if (manual) deny(409, 'invalid_cost');
+type Settlement = {
+  cents: number;
+  basis: CostBasis;
+  /** Rapprochement humain : preuve obligatoire, jamais automatique. */
+  manual?: { actor: string; evidence: string };
+  result?: unknown;
+};
+/**
+ * Règlement unique : le montant est pris tel qu'annoncé, jamais rogné au plafond. Un montant
+ * hors plafond n'est pas un succès — compte gelé, réservation conservée, incident, sortie gardée.
+ * L'état de coût suit la provenance : une estimation reste ESTIMATED et n'est jamais une facture.
+ */
+async function settle(tx: Tx, o: Op, settlement: Settlement) {
+  const { cents, basis } = settlement;
+  const outcome = settlementFor(cents, basis, o.maxCents);
+  if (!outcome.valid) {
+    if (settlement.manual) deny(409, 'invalid_cost');
     await tx.executionAccount.update({ where: { userId: o.accountId }, data: { enabled: false } });
-    await audit(tx, o, null, 'invalid_provider_cost', Number.isSafeInteger(cents) ? { cents } : {});
-    return incident(tx, o);
+    await audit(tx, o, null, 'invalid_provider_cost', {
+      basis,
+      ...(Number.isSafeInteger(cents) ? { cents } : {}),
+      ...(outcome.reason === 'above_ceiling' ? { maxCents: o.maxCents } : {})
+    });
+    return incident(tx, o, settlement.result);
   }
-  await finishTool(tx,o,manual?'manual':'success');
-  if (!manual) await audit(tx, o, null, 'reported', { cents });
+  await finishTool(tx, o, settlement.manual ? 'manual' : 'success');
+  if (!settlement.manual) await audit(tx, o, null, 'reported', { cents, basis });
   await tx.executionAccount.update({
     where: { userId: o.accountId },
     data: { reservedCents: { decrement: o.maxCents }, spentCents: { increment: cents } }
   });
-  await audit(tx, o, manual?.actor ?? null, 'reconciled', {
+  await audit(tx, o, settlement.manual?.actor ?? null, 'reconciled', {
     cents,
-    ...(manual ? { evidence: manual.evidence } : {})
+    basis,
+    ...(settlement.manual ? { evidence: settlement.manual.evidence } : {})
   });
-  let storedResult: Prisma.InputJsonValue | undefined;
-  if (result !== undefined) {
-    const json = JSON.stringify(result);
-    storedResult = json.length <= 32768
-      ? (JSON.parse(json) as Prisma.InputJsonValue)
-      : { truncated: true, sizeBytes: json.length };
-  }
+  const stored = storableResult(settlement.result);
   return tx.executionOperation.update({
     where: { id: o.id },
     data: {
-      state: manual ? 'RESOLVED' : 'SUCCEEDED',
-      costState: manual ? 'RECONCILED' : 'REPORTED',
+      state: settlement.manual ? 'RESOLVED' : 'SUCCEEDED',
+      costState: settlement.manual ? 'RECONCILED' : outcome.costState,
       reportedCents: cents,
-      ...(storedResult !== undefined ? { result: storedResult } : {})
+      ...(stored === undefined ? {} : { result: stored })
     }
   });
 }
@@ -254,7 +281,8 @@ export async function resolveIncident(actor: string, id: string, cents: number, 
     if ((await tx.user.findUnique({ where: { id: actor }, select: { role: true } }))?.role !== 'super_admin')
       deny(403, 'forbidden');
     if (o.state !== 'UNKNOWN') deny(409, 'not_unknown');
-    return settle(tx, o, cents, { actor, evidence });
+    // Constat humain : l'état RECONCILED atteste la vérification, jamais une estimation.
+    return settle(tx, o, { cents, basis: 'manual', manual: { actor, evidence } });
   });
 }
 // Commit the non-replayable boundary before invoking any engine. A crash on either side
@@ -316,6 +344,11 @@ export async function execute(id: string, engine: EnginePort, timeoutMs = 120000
         });
         return;
       }
+      if ('uncertain' in result) {
+        await audit(tx, row, null, 'uncertain', { code: result.uncertain.code });
+        await incident(tx, row);
+        return;
+      }
       if ('pendingMedia' in result) {
         if (
           !row.tool.startsWith('media.') ||
@@ -328,7 +361,11 @@ export async function execute(id: string, engine: EnginePort, timeoutMs = 120000
           where: { id },
           data: { state: 'POLLING', claimUntil: null, notifyAfter: new Date(Date.now() + 10000) }
         });
-      } else await settle(tx, row, result.costCents, undefined, ('result' in result ? result.result : undefined));
+      } else await settle(tx, row, {
+        cents: result.costCents,
+        basis: result.costBasis,
+        result: 'result' in result ? result.result : undefined
+      });
     });
   } catch {
     await transition(id, async (tx, row) => {
@@ -355,7 +392,8 @@ export async function recover() {
           return;
         }
         if (media && ['READY', 'FAILED', 'CANCELLED', 'INVALID_OUTPUT'].includes(media.state) && media.reportedCents !== null) {
-          await settle(tx, o, media.reportedCents);
+          // Reprise depuis le reçu déjà persisté : l'appel fournisseur n'est pas rejoué.
+          await settle(tx, o, { cents: media.reportedCents, basis: 'provider_reported' });
           return;
         }
       }

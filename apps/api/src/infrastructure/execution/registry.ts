@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { caps } from '../mediaGeneration/providers';
 import { audioTranscribeRequest, audioTtsRequest, creativeDirectionInput, imageEditRequest } from '@vululu/contracts';
 
+import type { CostBasis } from './costBasis';
+
 export type ToolScope = 'project' | 'revision' | 'assets';
 export type ToolApproval = 'auto' | 'human';
 export type ToolDefinition = {
@@ -62,13 +64,26 @@ export function agentCatalog() {
   }));
 }
 export const proposal = z.object({ key: z.string().min(1).max(160), tool: toolSchema, revision: z.int().positive() }).strict();
+/**
+ * Issue d'un moteur d'exécution.
+ *
+ * `costCents` est le montant brut annoncé par le fournisseur : jamais rogné au plafond.
+ * `costBasis` déclare sa provenance (voir ./costBasis) ; le broker refuse de régler un montant
+ * au-delà de `maxCents` et enregistre un incident au lieu d'un succès.
+ */
+export type EngineOutcome =
+  | { costCents: number; costBasis: CostBasis; result?: unknown }
+  /** Échec déterministe AVANT tout appel fournisseur : rien n'a été facturé, la réservation est libérée. */
+  | { failed: { code: string; message: string } }
+  /**
+   * Le fournisseur a répondu (donc facturé) mais la sortie n'est pas exploitable : jamais un
+   * succès, jamais une libération gratuite — le broker enregistre un incident à rapprocher.
+   */
+  | { uncertain: { code: string; message: string } }
+  | { pendingMedia: true };
 export interface EnginePort {
   invoke(
     job: { id: string; accountId: string; projectId: string; tool: Tool; revision: number; maxCents: number; params: unknown },
     signal: AbortSignal
-  ): Promise<
-    | { costCents: number; result?: unknown }
-    | { failed: { code: string; message: string } }
-    | { pendingMedia: true }
-  >;
+  ): Promise<EngineOutcome>;
 }

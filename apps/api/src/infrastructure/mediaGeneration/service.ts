@@ -7,6 +7,7 @@ import { creativeSpec, isVideoOutput, mediaRequest, type CreativeLayer, type Med
 import { HttpError } from '../../errors';
 import { assets, creativeStudio } from '../../application/container';
 import { cancel, proposeTx } from '../execution/broker';
+import type { CostBasis } from '../execution/costBasis';
 import { ProviderHttpError, caps, capability, mediaRouter, type MediaProvider } from './providers';
 const fail = (code: string, status = 422): never => {
   throw new HttpError(status, code, code);
@@ -143,7 +144,7 @@ export async function dispatchMedia(
   job: Job,
   signal: AbortSignal,
   router: (k: MediaRequest['kind']) => MediaProvider | null = mediaRouter
-) {
+): Promise<{ costCents: number; costBasis: CostBasis } | { pendingMedia: true }> {
   const op = await prisma.executionOperation.findFirst({
     where: {
       id: job.id,
@@ -179,7 +180,7 @@ export async function dispatchMedia(
   if (!p) {
     await update('UNAVAILABLE');
     if (g.remoteId) throw Error('media_cost_unknown');
-    return { costCents: 0 };
+    return { costCents: 0, costBasis: 'none' };
   }
   if (!g.remoteId) {
     if (g.state !== 'DRAFT') throw Error('media_submit_not_replayable');
@@ -198,7 +199,7 @@ export async function dispatchMedia(
       signal.throwIfAborted();
     } catch {
       await update('INVALID_INPUT');
-      return { costCents: 0 };
+      return { costCents: 0, costBasis: 'none' };
     }
     const claimed = await prisma.mediaGeneration.updateMany({
       where: { id: g.id, state: 'DRAFT', cancelRequested: false },
@@ -207,7 +208,7 @@ export async function dispatchMedia(
     if (!claimed.count) {
       if ((await prisma.mediaGeneration.findUniqueOrThrow({ where: { id: g.id } })).cancelRequested) {
         await update('CANCELLED');
-        return { costCents: 0 };
+        return { costCents: 0, costBasis: 'none' };
       }
       throw Error('media_already_submitted');
     }
@@ -219,11 +220,11 @@ export async function dispatchMedia(
     } catch (error) {
       if (error instanceof ProviderHttpError && [401, 403].includes(error.status)) {
         await update('CREDENTIAL_REJECTED');
-        return { costCents: 0 };
+        return { costCents: 0, costBasis: 'none' };
       }
       if (error instanceof ProviderHttpError && [400, 402, 422, 429].includes(error.status)) {
         await update([402, 429].includes(error.status) ? 'QUOTA_REJECTED' : 'PROVIDER_REJECTED');
-        return { costCents: 0 };
+        return { costCents: 0, costBasis: 'none' };
       }
       await update('SUBMISSION_UNKNOWN');
       throw Error('media_submission_unknown', { cause: error });
@@ -256,7 +257,7 @@ export async function dispatchMedia(
       await prisma.mediaGeneration.update({ where: { id: g.id }, data: { reportedCents: receipt } });
     if (receipt !== undefined && receipt > op.maxCents) {
       await update('COST_INCIDENT');
-      return { costCents: receipt };
+      return { costCents: receipt, costBasis: 'provider_reported' };
     }
     if (result.state === 'ready') {
       ready = true;
@@ -295,7 +296,7 @@ export async function dispatchMedia(
         data: { state: result.state.toUpperCase(), reportedCents: receipt }
       });
     if (receipt === undefined) throw Error('media_cost_unknown');
-    return { costCents: receipt };
+    return { costCents: receipt, costBasis: 'provider_reported' };
   } catch (error) {
     // Safe reads may be retried without repeating generation, including a freshly signed CDN URL.
     if (reading && !signal.aborted && (
@@ -306,7 +307,7 @@ export async function dispatchMedia(
       where: { id: g.id, state: { in: ['PENDING', 'MATERIALIZING'] } },
       data: { state: ready ? 'INVALID_OUTPUT' : 'OUTCOME_UNKNOWN' }
     });
-    if (receipt !== undefined) return { costCents: receipt };
+    if (receipt !== undefined) return { costCents: receipt, costBasis: 'provider_reported' };
     throw Error('media_outcome_or_cost_unknown', { cause: error });
   }
 }

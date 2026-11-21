@@ -292,7 +292,7 @@ describe('BETA01 — free beta over HTTP and PostgreSQL (no payment, no external
     // Nothing is spent before the explicit approval.
     const queued = await broker.approve(betaUser.id, proposed.id, proposed.digest);
     expect(queued.state).toBe('QUEUED');
-    const engine: EnginePort = { async invoke() { return { costCents: 10 }; } };
+    const engine: EnginePort = { async invoke() { return { costCents: 10, costBasis: 'configured_estimate' }; } };
     await broker.execute(proposed.id, engine);
     const settled = await db.executionOperation.findUniqueOrThrow({ where: { id: proposed.id } });
     expect(settled.state).toBe('SUCCEEDED');

@@ -47,7 +47,8 @@ export async function adminCostRoutes(app: FastifyInstance): Promise<void> {
 
     const byCostState: Record<string, number> = {};
     for (const operation of operations) byCostState[operation.costState] = (byCostState[operation.costState] ?? 0) + 1;
-    const estimatedCents = sum(operations.filter((op) => op.costState === 'ESTIMATED').map((op) => op.maxCents));
+    // Une estimation réglée porte son montant estimé ; à défaut, le plafond engagé reste la borne.
+    const estimatedCents = sum(operations.filter((op) => op.costState === 'ESTIMATED').map((op) => op.reportedCents ?? op.maxCents));
     const reservedCents = sum(operations.filter((op) => op.costState === 'RESERVED').map((op) => op.maxCents));
     const confirmedCents = sum(operations
       .filter((op) => op.costState === 'REPORTED' || op.costState === 'RECONCILED')
@@ -66,7 +67,9 @@ export async function adminCostRoutes(app: FastifyInstance): Promise<void> {
       };
       entry.operations += 1;
       entry.maxCents += operation.maxCents;
-      entry.confirmedCents += operation.reportedCents ?? 0;
+      // Seuls un montant fournisseur (REPORTED) ou un constat humain (RECONCILED) sont confirmés.
+      if (operation.costState === 'REPORTED' || operation.costState === 'RECONCILED')
+        entry.confirmedCents += operation.reportedCents ?? 0;
       if (operation.costState === 'UNKNOWN' || operation.state === 'UNKNOWN') entry.uncertainCents += operation.maxCents;
       toolMap.set(operation.tool, entry);
     }
