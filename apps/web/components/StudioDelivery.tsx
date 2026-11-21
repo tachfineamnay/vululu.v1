@@ -101,6 +101,28 @@ export function StudioDelivery({
             </nav>
           )}
 
+          {/* Export scène par scène d'une révision rendue : fichier déjà scellé côté serveur,
+              aucun rendu supplémentaire et aucune publication. */}
+          {view.spec.scenes.length > 0 && (
+            <div className="actions" aria-label="Export des scènes rendues">
+              {view.spec.scenes.map((scene) => (
+                <a
+                  key={scene.key}
+                  className="btn btn-secondary"
+                  href={base + '/' + view.version + '/scenes/' + scene.key}
+                  download={'v' + view.version + '-' + scene.key + '.png'}
+                  onClick={() =>
+                    onNotice(
+                      'Export de la scène ' + scene.key + ' · v' + view.version + ' : fichier rendu, aucune publication.'
+                    )
+                  }
+                >
+                  Exporter la scène {scene.key}
+                </a>
+              ))}
+            </div>
+          )}
+
           {checksum && (
             <p className="hint">
               Checksum SHA-256 exact · <code title={checksum}>{shortSha(checksum)}</code>

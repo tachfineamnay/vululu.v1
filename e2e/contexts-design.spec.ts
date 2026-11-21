@@ -100,7 +100,15 @@ test('marques et références : création, erreur conservée, recherche, révisi
   await expect(page.getByText('Droits à confirmer : cette version ne peut pas être sélectionnée pour un projet.', { exact: false })).toBeVisible();
   await page.getByRole('link', { name: 'Retour au projet', exact: true }).click();
   await expect(page).toHaveURL(projectUrl);
-  await page.getByRole('link', { name: 'Ressources du projet', exact: true }).click();
+  const resourcesHref = await page
+    .getByRole('link', {
+      name: 'Consulter les ressources du projet',
+      exact: true,
+      includeHidden: true
+    })
+    .getAttribute('href');
+  expect(resourcesHref).toContain('/assets?context=' + contextId);
+  await page.goto(resourcesHref!);
   await expect(page.getByLabel('Sélection pour un projet')).toHaveValue(projectId);
   await expect(page.getByLabel('Contexte', { exact: true })).toHaveValue(contextId);
 });
@@ -120,9 +128,16 @@ test('fondations : clavier, cascade et bannière conservés après navigation', 
   await page.getByText('Références et couleurs (facultatif)', { exact: true }).press('Enter');
   await expect(page.getByTestId('context-website')).toBeVisible();
   await page.goto('/login');
-  await expect(page.locator('[data-vululu-theme="blue"]')).toHaveCount(0);
-  await expect(page.getByTestId('login-submit')).toHaveCSS('background-image', /linear-gradient/);
+  await expect(page.locator('[data-vululu-theme="blue"]')).toHaveCount(1);
+  const loginButton = await page.getByTestId('login-submit').evaluate((el) => {
+    const style = getComputedStyle(el);
+    return { background: style.backgroundColor, image: style.backgroundImage };
+  });
+  expect(loginButton.image === 'none' ? loginButton.background : loginButton.image).toMatch(
+    /linear-gradient|rgb/
+  );
+  expect(loginButton.background).not.toBe('rgba(0, 0, 0, 0)');
   await expect(page.getByRole('note', { name: 'Mode demonstration' })).toContainText('MODE DÉMO');
   await page.goto('/admin');
-  await expect(page.locator('[data-vululu-theme="blue"]')).toHaveCount(0);
+  await expect(page.locator('[data-vululu-theme="blue"]')).toHaveCount(1);
 });

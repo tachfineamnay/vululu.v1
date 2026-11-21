@@ -44,9 +44,9 @@ test('livraison réelle : versions exactes, téléchargement, approbation obsol�
   await page.getByTestId('version-select').selectOption('1'); await expect(page.getByTestId('master-video')).toHaveAttribute('src', endpoint + '/master?version=1');
   await expect(page.getByTestId('approval-invalidated')).toBeVisible(); await expect(page.getByTestId('approve')).toBeDisabled(); await expect(page.getByTestId('transfer')).toHaveCount(0);
   await page.getByTestId('compare-version').selectOption('2'); await expect(page.getByTestId('master-video-compare')).toHaveAttribute('src', endpoint + '/master?version=2');
-  await page.route('**/api/projects/' + project.id + '/master?version=1', (route) => route.fulfill({ status: 503, json: { message: 'Média temporairement indisponible' } }));
+  await page.route(new RegExp('/api/projects/' + project.id + '/master\\?version=1&export=1'), (route) => route.fulfill({ status: 503, json: { message: 'Média temporairement indisponible' } }));
   await page.getByTestId('download-master').click(); await expect(page.getByTestId('delivery-error')).toContainText('Téléchargement impossible'); await expect(page.getByTestId('version-select')).toHaveValue('1');
-  await page.unroute('**/api/projects/' + project.id + '/master?version=1');
+  await page.unroute(new RegExp('/api/projects/' + project.id + '/master\\?version=1&export=1'));
   const downloadPromise = page.waitForEvent('download'); await page.getByTestId('download-master').click(); const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe(project.id + '-v1.mp4');
   const downloadPath = await download.path(); expect(downloadPath).toBeTruthy(); expect(createHash('sha256').update(await fs.readFile(downloadPath!)).digest('hex')).toBe(first.master.checksum);

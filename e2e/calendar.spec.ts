@@ -68,7 +68,7 @@ test('weekly plan survives edits, archive, logout and login', async ({ page }) =
     await expect(page.getByRole('combobox', { name: 'Campagne', exact: true })).toHaveValue(ids.campaign);
     await expect(page.getByRole('link', { name: 'Ouvrir le projet dans le Studio' })).toHaveAttribute(
       'href',
-      '/projects/' + ids.project
+      new RegExp('^/projects/' + ids.project + '\\?item=')
     );
     await expect(page.getByLabel('Objectif marketing')).toHaveValue('Remplir le cours');
     await page.getByLabel('Public cible').fill('Débutants');

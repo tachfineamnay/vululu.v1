@@ -5,8 +5,8 @@ test('mode demo explicite sans identifiants pre-remplis ni dependance IA', async
   await expect(page.getByTestId('login-email')).toHaveValue('');
   await expect(page.getByTestId('login-password')).toHaveValue('');
   if (process.env.DEMO_MODE === '1') {
-    await expect(page.getByRole('note', { name: 'Mode demonstration' })).toContainText('IA simulée');
-    await expect(page.getByRole('note', { name: 'Mode demonstration' })).toContainText('Postiz');
+    await expect(page.getByRole('note', { name: 'Mode demonstration' })).toContainText('MODE DÉMO');
+    await expect(page.getByRole('note', { name: 'Mode demonstration' })).toContainText('transfert simulés');
   } else {
     await expect(page.getByRole('note', { name: 'Mode demonstration' })).toHaveCount(0);
   }

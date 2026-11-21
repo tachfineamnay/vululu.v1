@@ -1,4 +1,4 @@
-import { beforeEach, afterEach, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
@@ -24,7 +24,7 @@ import {
   recover,
   resolveIncident
 } from '../../apps/api/src/infrastructure/execution/broker';
-import { tools, type Tool } from '../../apps/api/src/infrastructure/execution/registry';
+import { catalogForAccount, tools, type Tool } from '../../apps/api/src/infrastructure/execution/registry';
 import { loadOperationResult } from '../../apps/api/src/infrastructure/execution/operationResults';
 import { isResultPayloadReference } from '../../apps/api/src/infrastructure/execution/resultPayload';
 let actor: string, admin: string, project: string;
@@ -501,4 +501,22 @@ it('keeps a paid large result resolvable when the provider amount exceeds the ce
   expect(isResultPayloadReference(row.result)).toBe(true);
   expect(await loadOperationResult({ accountId: row.accountId, result: row.result })).toEqual(big);
   expect(await wallet()).toMatchObject({ reservedCents: 10, spentCents: 0 });
+});
+
+// Le catalogue ne doit jamais proposer une opération que la politique refuse ensuite.
+describe('catalogue d outils aligné sur la politique de périmètre', () => {
+  it('n expose que les outils autorisés du compte actif', () => {
+    const catalog = catalogForAccount({ enabled: true, tools: ['studio.inspect@1', 'marketing.plan@1'] }, { demoDisabled: false });
+    expect(Object.keys(catalog).sort()).toEqual(['marketing.plan@1', 'studio.inspect@1']);
+    expect(catalog['studio.inspect@1']).toEqual(tools['studio.inspect@1']);
+  });
+  it('n expose rien sans compte ou avec un compte désactivé', () => {
+    expect(catalogForAccount(null, { demoDisabled: false })).toEqual({});
+    expect(catalogForAccount({ enabled: false, tools: Object.keys(tools) }, { demoDisabled: false })).toEqual({});
+  });
+  it('masque les outils sandbox quand la démonstration est désactivée', () => {
+    const catalog = catalogForAccount({ enabled: true, tools: Object.keys(tools) }, { demoDisabled: true });
+    expect(Object.keys(catalog).some((key) => key.startsWith('sandbox.'))).toBe(false);
+    expect(Object.keys(catalog)).toContain('studio.inspect@1');
+  });
 });

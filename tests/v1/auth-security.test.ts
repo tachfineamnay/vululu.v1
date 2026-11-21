@@ -614,12 +614,18 @@ describe('V1-00 auth security: sessions serveur persistantes, CSRF, invitations,
       });
       expect(nameMissing.statusCode).toBe(400);
 
+      const publicEmail = 'public-' + Date.now() + '@vululu.local';
       const register = await request('POST', '/api/auth/register', null, {
-        email: 'public-' + Date.now() + '@vululu.local',
+        email: publicEmail,
         password: password,
         name: 'Public'
       });
-      expect([401, 404]).toContain(register.statusCode);
+      // F01 : l'inscription publique existe mais reste vérifiée par email. Sans
+      // transport configuré ici, le serveur refuse explicitement (503) et ne crée
+      // aucun compte ; aucun succès implicite n'est accepté.
+      expect(register.statusCode).toBeGreaterThanOrEqual(400);
+      expect(['not_found', 'unauthorized', 'account_email_unavailable']).toContain(register.json().error);
+      expect(await prisma.user.count({ where: { email: publicEmail } })).toBe(0);
     });
 
     it('journalise les actions sensibles sans secret', async () => {

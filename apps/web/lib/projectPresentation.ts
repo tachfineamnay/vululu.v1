@@ -37,7 +37,9 @@ export function restoreProjectDraft(raw: string | null): ProjectDraft | null {
     const value = JSON.parse(raw) as Partial<ProjectDraft>;
     if (!value || typeof value !== 'object' || typeof value.title !== 'string' || value.title.length > 160 || typeof value.objective !== 'string' || value.objective.length > 8000 || typeof value.contextId !== 'string' || value.contextId.length > 128 || !(projectPlatforms as readonly string[]).includes(value.platform ?? '') || !['Video','Story','Affiche','Carrousel','Reel'].includes(value.format??'') || !Number.isInteger(value.sceneDurationSeconds) || value.sceneDurationSeconds! < 1 || value.sceneDurationSeconds! > 15 || !Number.isInteger(value.step) || value.step! < 0 || value.step! > 3) return null;
     const campaignId = typeof value.campaignId === 'string' && value.campaignId.length <= 128 ? value.campaignId : '';
-    return { title: value.title, objective: value.objective, contextId: value.contextId, campaignId, platform: value.platform as ProjectPlatform, format: (availableFormats[value.platform as ProjectPlatform] as readonly string[]).includes(value.format!) ? value.format! : availableFormats[value.platform as ProjectPlatform][0], sceneDurationSeconds: value.sceneDurationSeconds!, step: value.step! };
+    // Un couple destination/format non qualifié est refusé, jamais corrigé en silence.
+    if (!(availableFormats[value.platform as ProjectPlatform] as readonly string[]).includes(value.format!)) return null;
+    return { title: value.title, objective: value.objective, contextId: value.contextId, campaignId, platform: value.platform as ProjectPlatform, format: value.format as ProductionFormat, sceneDurationSeconds: value.sceneDurationSeconds!, step: value.step! };
   } catch { return null; }
 }
 

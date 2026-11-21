@@ -2,6 +2,16 @@ import { availableFormats, variant, type Content } from '@vululu/contracts';
 import type { BrandContext, ProjectSummary } from '../../lib/api';
 import { shift, dayKey } from './dates';
 export type Offer = { id: string; contextId: string; name: string };
+
+/**
+ * Une audience absente n'est jamais inventée : le calendrier porte explicitement
+ * « Audience non renseignée » jusqu'à ce que l'utilisateur la décrive lui-même.
+ */
+export const AUDIENCE_UNSPECIFIED = 'Audience non renseignée';
+export function calendarAudience(context: { audience?: string | null }): string {
+  const declared = context.audience?.trim();
+  return declared ? declared : AUDIENCE_UNSPECIFIED;
+}
 export function suggestions(
   start: Date,
   offer: Offer,
@@ -10,7 +20,7 @@ export function suggestions(
   preferredProject: string | null = null
 ) {
   const project = projects.find((p) => p.contextId === context.id && p.id === preferredProject);
-  const audience = context.audience || `Personnes intéressées par ${offer.name}`;
+  const audience = calendarAudience(context);
   return ['Présenter', 'Expliquer', 'Inviter à découvrir'].map((angle, i) => {
     const platform = variant.shape.platform.safeParse(project?.platform).data ?? 'Instagram';
     const storedFormat = variant.shape.format.safeParse(project?.format).data;

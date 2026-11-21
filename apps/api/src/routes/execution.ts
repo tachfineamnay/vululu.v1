@@ -4,7 +4,7 @@ import { prisma } from '@vululu/db';
 import { agentOutput } from '@vululu/contracts';
 import { approve, cancel, propose, resolveIncident } from '../infrastructure/execution/broker';
 import { loadOperationResult, resolveOperationRows } from '../infrastructure/execution/operationResults';
-import { tools, toolSchema, toolPolicy, type Tool } from '../infrastructure/execution/registry';
+import { tools, toolSchema, toolPolicy, catalogForAccount, type Tool } from '../infrastructure/execution/registry';
 import { checkAgentProposal } from '../application/agentProposalPolicy';
 import { rateLimitPreHandler } from '../infrastructure/security/rateLimiter';
 import {demoDisabled} from '../releaseMode';
@@ -52,13 +52,21 @@ export async function executionRoutes(app: FastifyInstance) {
     if (!row) throw new HttpError(404, 'execution_account_not_found', 'Compte d’exécution introuvable.');
     return row;
   });
-  app.get('/api/execution/tools', auth, () => Object.fromEntries(Object.entries(tools)
-    .filter(([key]) => !demoDisabled() || !key.startsWith('sandbox.'))
-    .map(([key, definition]) => [key, {
-      action: definition.action, scope: definition.scope, approval: definition.approval,
-      maxCents: definition.maxCents, description: definition.description,
-      proposable: definition.params !== undefined
-    }])));
+  // P12 : le catalogue exposé est déjà borné à la politique du compte, donc jamais une
+  // opération que `propose()` refuserait ensuite (403 `tool_disabled`) ; le retrait des
+  // outils sandbox en mode démo reste porté par `catalogForAccount`.
+  app.get('/api/execution/tools', auth, async (r) => {
+    const account = await prisma.executionAccount.findUnique({
+      where: { userId: r.currentUser!.id },
+      select: { enabled: true, tools: true }
+    });
+    return Object.fromEntries(Object.entries(catalogForAccount(account, { demoDisabled: demoDisabled() }))
+      .map(([key, definition]) => [key, {
+        action: definition.action, scope: definition.scope, approval: definition.approval,
+        maxCents: definition.maxCents, description: definition.description,
+        proposable: definition.params !== undefined
+      }]));
+  });
   app.put('/api/admin/execution/accounts/:account', admin, async (r) => {
     const { account } = z.object({ account: z.string().min(1).max(128) }).parse(r.params);
     const data = z

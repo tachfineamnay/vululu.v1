@@ -10,7 +10,7 @@ import { SocialConnections } from './SocialConnections';
 import { PublishingPanel } from './PublishingPanel';
 import { Editor, labels } from './Editor';
 import { dayKey, period, shift } from './dates';
-import { suggestions, type Offer } from './suggestions';
+import { AUDIENCE_UNSPECIFIED, suggestions, type Offer } from './suggestions';
 import './calendar.css';
 
 const fmt = (d: Date, options: Intl.DateTimeFormatOptions) => d.toLocaleDateString('fr-FR', options);
@@ -100,7 +100,7 @@ export default function CalendarPage() {
         for (const key of ['planProject', 'planVersion', 'idea']) url.searchParams.delete(key);
         window.history.replaceState(null, '', url);
         edit({ id: crypto.randomUUID(), version: 0, title: idea.hook.slice(0, 160), offerId: offer.id,
-          audience: context?.audience || `Personnes intéressées par ${offer.name}`, objective: idea.idea,
+          audience: context?.audience?.trim() || AUDIENCE_UNSPECIFIED, objective: idea.idea,
           projectId: matches ? project.id : null, campaignId: project.campaignId ?? null,
           status: 'IDEA', archived: false, plannedAt: date.toISOString(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           variants: [{ platform: idea.platform, format: matches ? project.format as ProjectFormat : availableFormats[idea.platform][0], caption: idea.caption, cta: idea.cta.slice(0, 240), hashtags: [] }] });

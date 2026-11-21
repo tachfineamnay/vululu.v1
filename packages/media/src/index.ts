@@ -112,44 +112,55 @@ function toPosix(value: string): string {
   return value.split(path.sep).join('/');
 }
 
-function run(exe: string, args: string[], cwd?: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(exe, args, { windowsHide: true, ...(cwd ? { cwd } : {}) });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-    child.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
+/**
+ * Tampon de sortie borné pour les processus média.
+ *
+ * FFmpeg peut écrire des heures de progression sur stderr : sans borne, un
+ * rendu long accumule toute la sortie en mémoire. On conserve au plus
+ * `STDIO_LIMIT_BYTES` (la fin, la plus utile pour diagnostiquer), et on signale
+ * explicitement la troncature au lieu de croître indéfiniment.
+ */
+export const STDIO_LIMIT_BYTES = 1024 * 1024;
+
+export type BoundedOutput = { text: string; truncated: boolean };
+
+export function appendBounded(current: BoundedOutput, chunk: Buffer | string, limit = STDIO_LIMIT_BYTES): BoundedOutput {
+  const combined = Buffer.concat([Buffer.from(current.text, 'utf8'), Buffer.from(chunk.toString(), 'utf8')]);
+  if (combined.length <= limit) return { text: combined.toString('utf8'), truncated: current.truncated };
+  return { text: combined.subarray(combined.length - limit).toString('utf8'), truncated: true };
+}
+
+function collect(child: ReturnType<typeof spawn>): {
+  stdout: BoundedOutput;
+  stderr: BoundedOutput;
+  done: Promise<number>;
+} {
+  const stdout: BoundedOutput = { text: '', truncated: false };
+  const stderr: BoundedOutput = { text: '', truncated: false };
+  child.stdout?.on('data', (data: Buffer) => { Object.assign(stdout, appendBounded(stdout, data)); });
+  child.stderr?.on('data', (data: Buffer) => { Object.assign(stderr, appendBounded(stderr, data)); });
+  const done = new Promise<number>((resolve, reject) => {
     child.on('error', reject);
-    child.on('close', (code) => {
-      if (code === 0) {
-        resolve(stdout);
-      } else {
-        reject(new Error('Media command failed with code ' + code + ': ' + stderr.slice(0, 2000)));
-      }
-    });
+    child.on('close', (code) => resolve(code ?? 1));
+  });
+  return { stdout, stderr, done };
+}
+
+function run(exe: string, args: string[], cwd?: string): Promise<string> {
+  const child = spawn(exe, args, { windowsHide: true, ...(cwd ? { cwd } : {}) });
+  const { stdout, stderr, done } = collect(child);
+  return done.then((code) => {
+    if (code !== 0) {
+      throw new Error('Media command failed with code ' + code + ': ' + stderr.text.slice(0, 2000) + (stderr.truncated ? ' [sortie tronquée]' : ''));
+    }
+    return stdout.text;
   });
 }
 
 function runCapture(exe: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(exe, args, { windowsHide: true });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-    child.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-    child.on('error', reject);
-    child.on('close', () => {
-      resolve({ stdout, stderr });
-    });
-  });
+  const child = spawn(exe, args, { windowsHide: true });
+  const { stdout, stderr, done } = collect(child);
+  return done.then(() => ({ stdout: stdout.text, stderr: stderr.text }));
 }
 
 export async function renderScene(input: SceneRenderInput): Promise<SceneRenderOutput> {
