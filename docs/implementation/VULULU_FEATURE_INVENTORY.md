@@ -118,7 +118,7 @@
 | Bêta gratuite (paiements gelés serveur) | IMPLEMENTED | `betaMode.ts:25-58`, `infrastructure/beta/freeze.ts:25-61`, `index.ts:8` | Défaut = bêta, irréversible par ce chemin |
 | Facturation Stripe (produits, achats, reçus, crédits, réconciliation) | PROVIDER_DEPENDENT (gelée) | `billing/config.ts:10-33`, `billing/service.ts:151`, `routes/billing.ts:39-55,77-83` | Exige clés + phrase d'activation ; `VULULU_BETA_MODE` ferme la vente |
 | Support / tickets / feedback bêta / effacement | IMPLEMENTED | `billing/support.ts:21-78`, `routes/billing.ts:84-118`, `app/support/page.tsx` | — |
-| Admin (9 pages, utilisateurs, agents, fournisseurs, modèles, routing, audit, coûts, commerce) | IMPLEMENTED | `routes/admin*.ts`, `apps/web/app/admin/**`, `lib/admin.ts` | Secrets fournisseurs chiffrés (`providerCredentialCipher.ts`) |
+| Admin (9 pages, utilisateurs, agents, fournisseurs, modèles, routing, audit, coûts, commerce) | IMPLEMENTED | `routes/admin*.ts`, `apps/web/app/admin/**`, `lib/admin.ts` | P11-A : rôles et statut de compte gérables, suspension immédiate, fiche utilisateur et audit ; aucun test exécuté | Secrets fournisseurs chiffrés (`providerCredentialCipher.ts`) |
 | Ops : ready, santé, métriques Prometheus, snapshot, réconciliation | IMPLEMENTED | `routes/ops.ts:9-46`, `operations/opsMetrics.ts`, `operations/runtimeReconciliation.ts` | Résultats réels NON VÉRIFIÉS |
 | Orchestration durable Hatchet + outbox | PROVIDER_DEPENDENT | `worker/pipeline.ts:50-68`, `durable/outboxDispatcher.ts:20-67`, `durable/hatchetOrchestratorAdapter.ts` | `ORCHESTRATOR_MODE=hatchet` + `HATCHET_CLIENT_*` ; défaut local |
 
@@ -307,4 +307,15 @@ Implémenté depuis l'inventaire (commit P10, `BUILD_UNVERIFIED`, aucun test com
 
 Limites P10 : aucun test/build/typecheck/E2E ; aucune publication réelle (`POSTIZ_PUBLISH_ENABLED` off, `direct_disabled`) ; TikTok/vidéos non programmables en direct (capacités existantes) → paquet manuel ; les métriques restent dépendantes de Postiz analytics ; la reprogrammation se fait par annulation + édition de l'heure (nouvelle version) + nouvelle préparation.
 
-> **Rappel final** : inventaire établi par lecture seule au HEAD `f5d515b`, mis à jour par P01 puis P02–P10. Aucune commande de test, de build ou de fournisseur n'a été exécutée pour P09A/P09B/P10 ; tout statut est une lecture de code, jamais une certification.
+## 14. Mise à jour P11-A — administration des utilisateurs (2026-11-21)
+
+Implémenté depuis l'inventaire (commit P11-A, `BUILD_UNVERIFIED`, **ADR-0042**) :
+
+- **Migration additive** `20261122140000_user_administration` : `User.status` (`active` par défaut) + `User.suspendedAt` nullable + index `User_status_idx`. Aucune donnée modifiée.
+- **Connexion** : le statut est vérifié après le mot de passe sous le verrou de compte ; un compte suspendu renvoie 403 `account_suspended` (journalisé `auth.login_suspended`) sans jamais révéler si le mot de passe était correct ; la résolution de session refuse tout compte suspendu en profondeur.
+- **API admin** : `GET /api/admin/users` (recherche `q`, filtres `role`/`status`, pagination serveur), `GET /api/admin/users/:id` (compteurs bornés + 20 événements d'audit), `PATCH /api/admin/users/:id` (rôle/statut uniquement, auto-modification interdite, dernier `super_admin` actif préservé, audit `user.role_changed`/`user.suspended`/`user.reactivated`, révocation des sessions sur changement de rôle/suspension, verrou consultatif contre les mutations concurrentes).
+- **Web** : recherche et filtres serveur, badges de statut, fiche utilisateur (compteurs, sessions, audit), changement de rôle et suspension/réactivation avec confirmation et états d'erreur, actions désactivées pour son propre compte, aucune donnée secrète affichée.
+
+Limites P11-A : aucun test/build/E2E exécuté ; pas de suppression de compte (décision distincte) ; pas de notification au compte suspendu ; le typecheck complet reste NOT_RUN (seuls contrôles ciblés rapportés par l'agent).
+
+> **Rappel final** : inventaire établi par lecture seule au HEAD `f5d515b`, mis à jour par P01 puis P02–P11A. Aucune commande de test, de build ou de fournisseur n'a été exécutée pour P09A/P09B/P10/P11A ; tout statut est une lecture de code, jamais une certification.

@@ -22,6 +22,8 @@ model User {
   passwordHash String
   name         String
   role         String         @default("user")
+  status       String         @default("active")
+  suspendedAt  DateTime?
   createdAt    DateTime       @default(now())
   contexts     BrandContext[]
   campaigns    Campaign[]
@@ -29,6 +31,8 @@ model User {
   projects     Project[]
   sessions     Session[]
   invitations  Invitation[] @relation("InvitationCreator")
+
+  @@index([status])
 }
 
 model AccountToken {

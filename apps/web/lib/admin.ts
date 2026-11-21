@@ -1,4 +1,4 @@
-import { api } from './api';
+import { api, patchJson } from './api';
 
 /**
  * Types et client des routes /api/admin/* et /api/ops/*.
@@ -65,16 +65,48 @@ export type AdminOverview = {
   recentErrors: AdminOverviewError[];
 };
 
+export type AdminUserStatus = 'active' | 'suspended';
+
 export type AdminUser = {
   id: string;
   email: string;
   name: string;
   role: string;
+  status: AdminUserStatus;
+  suspendedAt: string | null;
   createdAt: string;
   projectsCount: number;
   sessionsCount: number;
   lastSessionAt: string | null;
   lastSessionStatus: 'active' | 'expired' | 'revoked' | 'none';
+};
+
+export type AdminUserCounts = {
+  contexts: number;
+  projects: number;
+  contentItems: number;
+  sessions: number;
+  activeSessions: number;
+  publicationRequests: Record<string, number>;
+};
+
+export type AdminUserDetail = AdminUser & {
+  counts: AdminUserCounts;
+  recentAuditEvents: AdminAuditEvent[];
+  auditEventsTotal: number;
+};
+
+export type AdminUserMutationResult = {
+  user: {
+    id: string;
+    email: string;
+    role: string;
+    status: AdminUserStatus;
+    suspendedAt: string | null;
+  };
+  revokedSessions: number;
+  roleChanged: boolean;
+  statusChanged: boolean;
 };
 
 export type AdminInvitation = {
@@ -326,6 +358,8 @@ export type AdminUserQuery = {
   page: number;
   pageSize: number;
   q?: string;
+  role?: string;
+  status?: AdminUserStatus;
 };
 
 export type AdminRunQuery = {
@@ -400,7 +434,23 @@ export const adminApi = {
   overview: () => api<AdminOverview>('/api/admin/overview'),
 
   users: (input: AdminUserQuery) =>
-    api<AdminPage<AdminUser>>('/api/admin/users' + buildQuery({ page: input.page, pageSize: input.pageSize, q: input.q })),
+    api<AdminPage<AdminUser>>(
+      '/api/admin/users' +
+        buildQuery({
+          page: input.page,
+          pageSize: input.pageSize,
+          q: input.q,
+          role: input.role,
+          status: input.status
+        })
+    ),
+
+  user: (userId: string) => api<AdminUserDetail>('/api/admin/users/' + encodeURIComponent(userId)),
+
+  updateUser: (userId: string, input: { role?: string; status?: AdminUserStatus }) =>
+    patchJson<AdminUserMutationResult>('/api/admin/users/' + encodeURIComponent(userId), input),
+
+  me: () => api<{ user: { id: string; email: string; name: string; role: string } }>('/api/auth/me'),
 
   revokeUserSessions: (userId: string) =>
     postJsonAdmin<{ ok: boolean; revokedSessions: number }>(
@@ -524,6 +574,15 @@ export const ROLE_LABELS: Record<string, string> = {
   super_admin: 'Super administrateur'
 };
 
+export const USER_STATUS_LABELS: Record<string, string> = {
+  active: 'Actif',
+  suspended: 'Suspendu'
+};
+
+export function userStatusLabel(status: string): string {
+  return USER_STATUS_LABELS[status] ?? status;
+}
+
 export const JOB_RUN_STATUSES = [
   'queued',
   'running',
@@ -539,6 +598,7 @@ export const LICENSE_OPTIONS: AdminLicense[] = ['internal', 'commercial', 'unkno
 
 const STATUS_LABELS: Record<string, string> = {
   active: 'Active',
+  suspended: 'Suspendu',
   expired: 'Expiree',
   revoked: 'Revoquee',
   none: 'Aucune',
@@ -587,6 +647,7 @@ export function statusTone(status: string): StatusTone {
     case 'failed':
     case 'revoked':
     case 'denied':
+    case 'suspended':
     case 'timed_out':
       return 'danger';
     case 'running':

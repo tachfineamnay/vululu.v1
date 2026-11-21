@@ -4,7 +4,8 @@ import {
   adminCostQuerySchema,
   adminPaginationSchema,
   adminRoutingQuerySchema,
-  adminRunQuerySchema
+  adminRunQuerySchema,
+  adminUserQuerySchema
 } from '@vululu/contracts';
 import { actorOf, adminQueries } from '../application/container';
 
@@ -21,8 +22,13 @@ export async function adminReadRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/api/admin/users', superAdminOnly, async (request) => {
-    const input = adminPaginationSchema.parse(request.query);
+    const input = adminUserQuerySchema.parse(request.query);
     return adminQueries.listUsers(actorOf(request.currentUser), input);
+  });
+
+  app.get('/api/admin/users/:id', superAdminOnly, async (request) => {
+    const params = request.params as { id: string };
+    return adminQueries.getUserDetail(actorOf(request.currentUser), params.id);
   });
 
   app.get('/api/admin/projects', superAdminOnly, async (request) => {

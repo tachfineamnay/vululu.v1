@@ -65,11 +65,17 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(401).send(invalidCredentials);
     }
 
-    // Recheck the password under the same lock as reset/change, so an old-password
-    // login racing with revocation cannot create a session after the password changes.
+    // Recheck the password AND the account status under the same lock used by
+    // reset/change/suspension: a concurrent suspension must block session creation.
+    // The 403 "account_suspended" is only returned when the password was correct.
     const login = await prisma.$transaction(async (tx) => {
       await lockAccountEmail(tx, user.email);
-      if (!await tx.user.count({ where: { id: user.id, passwordHash: hash } })) return null;
+      const current = await tx.user.findUnique({
+        where: { id: user.id },
+        select: { passwordHash: true, status: true }
+      });
+      if (!current || current.passwordHash !== hash) return null;
+      if (current.status === 'suspended') return { suspended: true } as const;
       const presented = request.cookies?.[SESSION_COOKIE];
       if (presented) {
         await tx.session.updateMany({ where: { tokenHash: sha256Hex(presented), revokedAt: null },
@@ -84,6 +90,20 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       return { created, needsBusinessProfile };
     });
     if (!login) return reply.code(401).send(invalidCredentials);
+    if ('suspended' in login) {
+      // Journalise le refus sans mot de passe ni jeton. Aucun cookie de session n est ecrit.
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'auth.login_suspended',
+        targetType: 'user',
+        targetId: user.id,
+        metadata: { email: user.email }
+      });
+      return reply.code(403).send({
+        error: 'account_suspended',
+        message: 'Compte suspendu. Contactez un administrateur.'
+      });
+    }
     const { created, needsBusinessProfile } = login;
     setAuthCookies(reply, created.token, created.csrfToken);
     return reply.code(200).send({ user: publicUser(user), csrfToken: created.csrfToken, needsBusinessProfile });

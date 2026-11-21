@@ -55,6 +55,7 @@ Chaque décision suit [template.md](template.md) :
 | [0039](0039-atelier-visuel-canvas-et-brouillons.md) | Atelier visuel : canvas rendu serveur, historique local et brouillons | Acceptée pour la campagne P08 | 2026-11-20 |
 | [0040](0040-production-video-multiscene.md) | Production vidéo multiscène éditable (timeline, aperçu, progression, régénération ciblée) | Acceptée pour la mission P09A | 2026-11-21 |
 | [0041](0041-audio-sous-titres-voix.md) | Audio : pistes, mixage, sous-titres et voix off fournisseur | Acceptée pour la mission P09B | 2026-11-21 |
+| [0042](0042-administration-comptes-et-suspension.md) | Administration des comptes : rôles, suspension et révocation immédiate | Acceptée pour la mission P11-A | 2026-11-21 |
 
 ## Décisions encore ouvertes
 

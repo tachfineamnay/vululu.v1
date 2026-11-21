@@ -90,12 +90,17 @@ export async function revokeSessionByToken(
   return result.count;
 }
 
-/** Revocation globale des sessions actives d un utilisateur. */
+/**
+ * Revocation globale des sessions actives d un utilisateur.
+ * "reason" est journalise dans Session.revokedReason pour l audit.
+ * Le parametre "db" permet de partager la transaction d une suspension.
+ */
 export async function revokeAllUserSessions(
   userId: string,
-  reason: string
+  reason: string,
+  db: Prisma.TransactionClient = prisma
 ): Promise<number> {
-  const result = await prisma.session.updateMany({
+  const result = await db.session.updateMany({
     where: { userId, revokedAt: null },
     data: { revokedAt: new Date(), revokedReason: reason }
   });
@@ -147,6 +152,11 @@ export async function resolveRequestSession(request: FastifyRequest): Promise<Au
     return null;
   }
   if (session.expiresAt.getTime() <= Date.now()) {
+    return null;
+  }
+  // Defense en profondeur : une session creee juste avant une suspension ne doit
+  // jamais rester valide, meme si la revocation de masse a echoue.
+  if (session.user.status === 'suspended') {
     return null;
   }
   if (Date.now() - session.lastUsedAt.getTime() > LAST_USED_REFRESH_MS) {

@@ -27,8 +27,34 @@ export const adminCostQuerySchema = adminPaginationSchema.extend({
 
 export const adminRoutingQuerySchema = adminPaginationSchema;
 
+/** Roles de compte gerables par l'administration (valeurs stockees dans User.role). */
+export const adminUserRoleSchema = z.enum(['user', 'support', 'super_admin']);
+/** Statut de compte : "active" par defaut, "suspended" bloque la connexion. */
+export const adminUserStatusSchema = z.enum(['active', 'suspended']);
+
+/** Filtres serveur de la liste des utilisateurs (recherche limitee a 120 caracteres). */
+export const adminUserQuerySchema = adminPaginationSchema.extend({
+  q: z.string().trim().max(120).optional(),
+  role: adminUserRoleSchema.optional(),
+  status: adminUserStatusSchema.optional()
+});
+
+/** Mutation administrateur : role et/ou statut uniquement, tout autre champ est rejete. */
+export const adminUserUpdateSchema = z
+  .strictObject({
+    role: adminUserRoleSchema.optional(),
+    status: adminUserStatusSchema.optional()
+  })
+  .refine((value) => value.role !== undefined || value.status !== undefined, {
+    message: 'Au moins un champ role ou status est requis.'
+  });
+
 export type AdminPaginationInput = z.infer<typeof adminPaginationSchema>;
 export type AdminRunQueryInput = z.infer<typeof adminRunQuerySchema>;
+export type AdminUserQueryInput = z.infer<typeof adminUserQuerySchema>;
+export type AdminUserUpdateInput = z.infer<typeof adminUserUpdateSchema>;
+export type AdminUserRole = z.infer<typeof adminUserRoleSchema>;
+export type AdminUserStatus = z.infer<typeof adminUserStatusSchema>;
 export type AdminAuditQueryInput = z.infer<typeof adminAuditQuerySchema>;
 export type AdminCostQueryInput = z.infer<typeof adminCostQuerySchema>;
 
@@ -92,11 +118,43 @@ export type AdminUser = {
   email: string;
   name: string;
   role: string;
+  status: AdminUserStatus;
+  suspendedAt: string | null;
   createdAt: string;
   projectsCount: number;
   sessionsCount: number;
   lastSessionAt: string | null;
   lastSessionStatus: 'active' | 'expired' | 'revoked' | 'none';
+};
+
+export type AdminUserCounts = {
+  contexts: number;
+  projects: number;
+  contentItems: number;
+  sessions: number;
+  activeSessions: number;
+  publicationRequests: Record<string, number>;
+};
+
+/** Fiche utilisateur complete : compteurs bornes et audit recent (20 evenements). */
+export type AdminUserDetail = AdminUser & {
+  counts: AdminUserCounts;
+  recentAuditEvents: AdminAuditEvent[];
+  auditEventsTotal: number;
+};
+
+/** Resultat d'une mutation de role ou de statut de compte. */
+export type AdminUserMutationResult = {
+  user: {
+    id: string;
+    email: string;
+    role: string;
+    status: AdminUserStatus;
+    suspendedAt: string | null;
+  };
+  revokedSessions: number;
+  roleChanged: boolean;
+  statusChanged: boolean;
 };
 
 export type AdminProject = {
