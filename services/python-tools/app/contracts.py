@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .config import settings
 
 _ALLOWED_MIME = Literal["image/png", "image/jpeg", "image/webp"]
+_ALLOWED_AUDIO_MIME = Literal["audio/wav"]
 ASSET_ID_PATTERN = r"^[A-Za-z0-9_-]{1,128}$"
 SHA256_PATTERN = r"^[a-f0-9]{64}$"
 
@@ -84,4 +85,49 @@ class SegmentData(BaseModel):
     analysis: ImageAnalysis
     coverage: float
     boundingBox: list[int] = Field(min_length=4, max_length=4)
+    sourceSha256: str = Field(pattern=SHA256_PATTERN)
+
+
+class AudioSourceRef(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    assetVersionId: str = Field(pattern=ASSET_ID_PATTERN)
+    sha256: str = Field(pattern=SHA256_PATTERN)
+    mimeType: _ALLOWED_AUDIO_MIME
+    audioBase64: str = Field(min_length=16, max_length=_max_base64_length())
+
+
+class AnalyzeAudioRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    requestId: str = Field(pattern=r"^[0-9a-fA-F-]{36}$")
+    source: AudioSourceRef
+
+
+class SilenceSegment(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    start: float = Field(ge=0, le=300)
+    end: float = Field(ge=0, le=300)
+
+
+class AudioAnalysis(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    duration: float = Field(gt=0, le=300)
+    sampleRate: int = Field(ge=8_000, le=96_000)
+    channels: int = Field(ge=1, le=2)
+    sampleWidth: int = Field(ge=1, le=4)
+    frames: int = Field(ge=1)
+    peakDbfs: float = Field(ge=-120, le=0)
+    rmsDbfs: float = Field(ge=-120, le=0)
+    clippingRatio: float = Field(ge=0, le=1)
+    silenceRatio: float = Field(ge=0, le=1)
+    silenceSegments: list[SilenceSegment] = Field(default_factory=list, max_length=20)
+
+
+class AnalyzeAudioData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    analysis: AudioAnalysis
     sourceSha256: str = Field(pattern=SHA256_PATTERN)

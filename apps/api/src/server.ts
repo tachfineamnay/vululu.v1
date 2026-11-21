@@ -31,6 +31,7 @@ import {mediaGenerationRoutes} from "./routes/mediaGeneration";
 import {marketingRoutes} from "./routes/marketing";
 import { executionRoutes } from './routes/execution';
 import { imageEditingRoutes } from './routes/imageEditing';
+import { audioRoutes } from './routes/audio';
 import { productionRoutes } from './routes/production';
 import { opsRoutes } from './routes/ops';
 import { betaRoutes } from './routes/beta';
@@ -148,6 +149,7 @@ export async function buildServer({ accountMail = configuredAccountMail(), billi
   await app.register(creativeRoutes);
   await app.register(executionRoutes);
   await app.register(imageEditingRoutes);
+  await app.register(audioRoutes);
   await app.register(marketingRoutes);
   await app.register(assistantRoutes);
   await app.register(mediaGenerationRoutes);

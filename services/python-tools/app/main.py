@@ -18,9 +18,11 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import __version__
+from .audio import analyze as analyze_audio
+from .audio import decode_source as decode_audio_source
 from .auth import require_token
 from .config import settings
-from .contracts import AnalyzeRequest, AnalyzeData, ImageOutput, SegmentData, SegmentRequest
+from .contracts import AnalyzeAudioData, AnalyzeAudioRequest, AnalyzeRequest, AnalyzeData, ImageOutput, SegmentData, SegmentRequest
 from .errors import ToolError
 from .imaging import analyze, decode_source, segment
 from .models import model_status
@@ -139,6 +141,19 @@ def _segment_sync(request: SegmentRequest) -> dict[str, object]:
             "source": source_meta, "durationMs": round((time.perf_counter() - started) * 1000, 1)}
 
 
+def _source_audio(source: Any) -> tuple[bytes, dict[str, object]]:
+    raw = decode_audio_source(source.audioBase64, source.sha256)
+    return raw, {"assetVersionId": source.assetVersionId, "sha256": source.sha256, "mimeType": source.mimeType}
+
+
+def _analyze_audio_sync(request: AnalyzeAudioRequest) -> dict[str, object]:
+    raw, source_meta = _source_audio(request.source)
+    started = time.perf_counter()
+    analysis = analyze_audio(raw)
+    return {"data": AnalyzeAudioData(analysis=analysis, sourceSha256=request.source.sha256).model_dump(),
+            "source": source_meta, "durationMs": round((time.perf_counter() - started) * 1000, 1)}
+
+
 def _envelope(capability: str, request_id: str, payload: dict[str, object]) -> dict[str, object]:
     return {"requestId": request_id, "capability": capability, "capabilityVersion": CAPABILITIES[capability].version,
             "version": __version__, **payload}
@@ -154,3 +169,9 @@ async def image_analyze(request: AnalyzeRequest) -> dict[str, object]:
 async def image_segment(request: SegmentRequest) -> dict[str, object]:
     payload = await _bounded(lambda: _segment_sync(request))
     return _envelope("image.segment@1", request.requestId, payload)
+
+
+@app.post("/v1/tools/audio.analyze@1", dependencies=[Depends(require_token)])
+async def audio_analyze(request: AnalyzeAudioRequest) -> dict[str, object]:
+    payload = await _bounded(lambda: _analyze_audio_sync(request))
+    return _envelope("audio.analyze@1", request.requestId, payload)

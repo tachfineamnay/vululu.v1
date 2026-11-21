@@ -32,6 +32,12 @@ CAPABILITIES: dict[str, Capability] = {
         engine="opencv-grabcut", params_model="SegmentRequest",
         outputs=("cutout", "mask"), limits={"maxDimension": 4096},
     ),
+    "audio.analyze@1": Capability(
+        name="audio.analyze", version=1, action="READ", effect="read",
+        description="Analyse un WAV/PCM confirmé : durée, fréquence, canaux, largeur d'échantillon, crête et RMS en dBFS, écrêtage, silences.",
+        engine="wave+numpy", params_model="AnalyzeAudioRequest",
+        outputs=("AudioAnalysis",), limits={"maxSeconds": 300, "maxBytes": 16_777_216},
+    ),
 }
 
 _DEPENDENCIES = {

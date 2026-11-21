@@ -10,6 +10,8 @@
 
 import { isVideoOutput, studioExportExtension } from '@vululu/contracts';
 import type { StudioInspectorProps } from '../lib/studioComponentTypes';
+import { StudioAudioPanel } from './StudioAudioPanel';
+import { StudioSubtitles } from './StudioSubtitles';
 import {
   MIN_LAYER_SIZE,
   clamp,
@@ -127,6 +129,7 @@ export function StudioInspector({
   sceneIndex,
   selected,
   sources,
+  media,
   confirmedIds,
   presets,
   channel,
@@ -134,7 +137,8 @@ export function StudioInspector({
   onSpec,
   onSelect,
   onChannel,
-  onNotice
+  onNotice,
+  audio
 }: StudioInspectorProps) {
   const scene = spec.scenes[sceneIndex];
   const layers = scene?.layers ?? [];
@@ -918,6 +922,27 @@ export function StudioInspector({
               <p className="hint">Clip, cadrage du clip et transition sont réservés aux sorties vidéo.</p>
             )}
           </section>
+
+          {videoOutput ? (
+            <>
+              <StudioAudioPanel
+                spec={spec}
+                media={media}
+                busy={busy}
+                operations={audio}
+                onSpec={onSpec}
+                onNotice={onNotice}
+              />
+              <StudioSubtitles
+                spec={spec}
+                busy={busy}
+                base={audio.base}
+                approvedVersion={audio.approvedVersion}
+                onSpec={onSpec}
+                onNotice={onNotice}
+              />
+            </>
+          ) : null}
         </fieldset>
       </div>
     </aside>

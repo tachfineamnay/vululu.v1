@@ -1,7 +1,7 @@
 import { z } from 'zod';
 // Version is part of each immutable tool identity. No dynamic URLs, secrets, prompts or provider selection.
 import { caps } from '../mediaGeneration/providers';
-import { creativeDirectionInput, imageEditRequest } from '@vululu/contracts';
+import { audioTranscribeRequest, audioTtsRequest, creativeDirectionInput, imageEditRequest } from '@vululu/contracts';
 
 export type ToolScope = 'project' | 'revision' | 'assets';
 export type ToolApproval = 'auto' | 'human';
@@ -37,7 +37,11 @@ export const tools = {
   'image.analyze@1': { provider: 'python-tools@1', action: 'READ', maxCents: 0, scope: 'assets', approval: 'auto', description: 'Analyser une image confirmée (exposition, netteté, couleurs, empreinte perceptuelle) via le service Python interne.', params: z.strictObject({ versionId: z.string().min(1).max(128) }) },
   'image.segment@1': { provider: 'python-tools@1', action: 'GENERATE', maxCents: 0, scope: 'assets', approval: 'human', description: 'Détourer une image confirmée (PNG transparent + masque alpha) via le service Python interne, puis enregistrer de nouvelles versions.', params: z.strictObject({ versionId: z.string().min(1).max(128), outputs: z.array(z.enum(['cutout', 'mask'])).min(1).max(2).optional(), maxDimension: z.int().min(256).max(4096).optional() }) },
   // P07 — édition/génération d'image IA : action utilisateur explicite (droits + source choisis), jamais auto-proposée par l'agent.
-  'media.image.edit@1': { provider: 'gemini-image@1', action: 'GENERATE', maxCents: 8, scope: 'project', approval: 'human', agentProposable: false, description: 'Éditer ou générer une image (Gemini Image via Vertex) à partir d’une ressource choisie, avec ratio social et préservation du sujet ; nouvelle version d’asset, jamais d’écrasement.', params: imageEditRequest }
+  'media.image.edit@1': { provider: 'gemini-image@1', action: 'GENERATE', maxCents: 8, scope: 'project', approval: 'human', agentProposable: false, description: 'Éditer ou générer une image (Gemini Image via Vertex) à partir d’une ressource choisie, avec ratio social et préservation du sujet ; nouvelle version d’asset, jamais d’écrasement.', params: imageEditRequest },
+  // P09B — audio : lecture Python locale gratuite, transcription et voix off fournisseur avec approbation humaine.
+  'audio.analyze@1': { provider: 'python-tools@1', action: 'READ', maxCents: 0, scope: 'assets', approval: 'auto', description: 'Analyser une piste WAV confirmée (durée, niveaux, silences) via le service Python interne.', params: z.strictObject({ versionId: z.string().min(1).max(128) }) },
+  'audio.transcribe@1': { provider: 'gemini-audio@1', action: 'GENERATE', maxCents: 8, scope: 'revision', approval: 'human', agentProposable: false, description: 'Transcrire une piste audio confirmée en segments horodatés (Vertex Gemini, budget requis) ; nouvelle révision de sous-titres, jamais d’écrasement.', params: audioTranscribeRequest },
+  'audio.tts@1': { provider: 'gemini-tts@1', action: 'GENERATE', maxCents: 12, scope: 'revision', approval: 'human', agentProposable: false, description: 'Générer une voix off (Vertex Gemini TTS) depuis un texte fourni ; nouveau fichier audio immuable, aucune voix clonée.', params: audioTtsRequest }
 } as const satisfies Record<string, ToolDefinition>;
 export type Tool = keyof typeof tools;
 export const toolSchema = z.enum(Object.keys(tools) as [Tool, ...Tool[]]);

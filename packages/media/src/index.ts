@@ -65,7 +65,7 @@ export type MasterInput = {
     audio?: { path: string; gain: number };
     /** Encodage plus rapide pour un apercu (defaut : veryfast). */
     preset?: string;
-    /** Un fichier ASS par scene, resolu depuis le dossier des parties. */
+    /** Document ASS par scene (texte), ecrit dans le dossier des parties au moment de l'encodage. */
     subtitles?: (string | undefined)[];
   };
   sceneDurationsSeconds: number[];
@@ -376,6 +376,27 @@ export async function runQa(scenes: SceneRenderOutput[], master: MasterOutput, e
 }
 
 export { creativeFrame, draftThumbnail } from './creativeFrame';
+
+/**
+ * P09B — exécuteur FFmpeg exposé aux compositions audio (mixage, sous-titres,
+ * extraction M4A, normalisation ASR). Le binaire reste imposé par FFMPEG_PATH.
+ */
+export function mediaRun(args: string[]): Promise<string> {
+  return run(findFfmpeg(), args);
+}
+
+export {
+  buildAssText,
+  buildSrtText,
+  buildMixArgs,
+  buildAudioExportArgs,
+  buildAsrNormalizeArgs,
+  extractAudio,
+  mixTracks,
+  normalizeForAsr,
+  type AudioMixTrack,
+  type MediaRun
+} from './audio';
 
 /** Encode the already approved render as a single opaque photo for publishing APIs. */
 export function publishingJpeg(png: Buffer) {

@@ -21,7 +21,7 @@ const maxResponseBytes = 48 * 1024 * 1024;
 type Envelope = { error?: { code?: string; message?: string; retryable?: boolean } };
 
 export async function callPythonTool(
-  capability: 'image.analyze@1' | 'image.segment@1',
+  capability: 'image.analyze@1' | 'image.segment@1' | 'audio.analyze@1',
   body: unknown,
   signal?: AbortSignal
 ): Promise<unknown> {

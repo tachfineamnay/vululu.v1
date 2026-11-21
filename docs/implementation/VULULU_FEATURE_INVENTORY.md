@@ -88,6 +88,10 @@
 | Aperçu vidéo borné (20 s) | IMPLEMENTED (code) | `application/creative.ts:218-266` (`previewVideo`), `routes/creative.ts` (`POST /creative/preview/video`) | Même compositeur que le master ; jamais un artefact approuvable |
 | Progression / annulation / reprise de rendu | IMPLEMENTED (code) | `StudioRender.progress`/`cancelRequested` (migration additive), `renderJobs.ts`, `studioEvents.ts` | Annulation coopérative en fin de scène ; bail/lease et reprise existants |
 | Motion | MISSING | `channels.ts:4` déclare `Motion` ; aucun rendu/format de production | — |
+| Pistes audio, volume, mixage | IMPLEMENTED (code) | P09B : `contracts/audio.ts`, `packages/media/src/audio.ts` (`mixTracks`, ducking), `application/creative.ts` | Rendu réel non joué en P12 ; FFmpeg requis |
+| Sous-titres éditables, style, rendu | IMPLEMENTED (code) | `buildAssText`/`buildSrtText`, `motion.ts` (ass par scène), `StudioSubtitles` | Nécessite libass ; texte assaini par le contrat |
+| Transcription et voix off | PROVIDER_DEPENDENT | `infrastructure/audio/{providers,vertex,service}.ts`, outils `audio.transcribe@1`/`audio.tts@1` | Vertex Gemini, `AUDIO_*_ENABLED=0` par défaut ; aucun appel réel, aucun credential |
+| Analyse audio locale (WAV) | IMPLEMENTED (service Python requis) | `services/python-tools/app/audio.py`, outil `audio.analyze@1` | Service interne non démarré ici ; aucun modèle |
 
 ### 3.4 Revue, approbation, publication, résultats
 
@@ -148,7 +152,7 @@
 ## 6. Manques explicites et écarts de vision (vérifiés)
 
 - **Serveur MCP : MISSING.** `infrastructure/prisma/adminQuery.ts:111` (« Aucun serveur MCP implemente »), `apps/web/lib/studio.ts:46`, `app/admin/reglages/page.tsx:12`.
-- **TTS / voix / audio généré : MISSING.** Aucune occurrence de TTS/voice/elevenlabs dans `apps`/`packages` ; `adminQuery.ts:112` (« Piste AAC silencieuse seulement ») ; `productionRunRepository.ts:181` refuse une voix/musique non qualifiée. L'audio n'existe que comme asset importé, accepté seulement en vidéo courte (`contracts/creative.ts:18,74-81`).
+- **TTS / voix / audio généré : TRAITÉ EN P09B (fournisseur désactivé).** L'inventaire P00 constatait l'absence de TTS/transcription/sous-titres. Depuis P09B : pistes audio et sous-titres dans la composition (`contracts/audio.ts`), mixage FFmpeg local, sous-titres ASS/SRT, capacité Python locale `audio.analyze@1`, outils `audio.transcribe@1` et `audio.tts@1` (Vertex Gemini, drapeaux off par défaut, appels NON VÉRIFIÉS). Aucun clonage de voix.
 - **Entité « propositions de directions artistiques » : MISSING.** Aucun modèle Prisma ; seuls un champ libre « Direction artistique simulée » (`ProjectStudio.tsx:496-499`) et la stratégie d'un plan marketing. Pas d'alternatives persistantes, comparables, versionnées.
 - **Assets avant le brainstorming : non contraignant.** Le snapshot assistant ne contient que profil/contexte/offre (`assistant/service.ts:49-65`) ; le marketing ne lit que contexte+offre+semaine (`marketing/service.ts:45-92`) ; la création de projet ne sélectionne aucun asset (`projects/new/page.tsx:94` : « Aucun fichier de sa bibliothèque n'est sélectionné automatiquement »). Aucun gate serveur.
 - **Vidéo multiscène éditable : traitée en P09A.** L'inventaire P00 constatait `productionFormats.ts:10` (`Video: studio:null`) et un pipeline démo-only. Depuis P09A, `Video` ouvre l'atelier (vertical par défaut, paysage 16:9 additif), avec timeline, aperçu borné et progression/annulation ; le pipeline historique démo reste présent mais n'est plus le seul chemin vidéo.
@@ -277,4 +281,19 @@ Implémenté depuis l'inventaire (commit P09A, `BUILD_UNVERIFIED`, aucun test co
 
 Limites P09A : aucun test, build, lint ni typecheck exécuté (campagne P00–P11) ; rendu/aperçu réels non joués ici (P12) ; client Prisma à régénérer avant typecheck (`progress`, `cancelRequested`) ; transitions prises en charge = `cut` et `dip` uniquement ; l'aperçu est plafonné à 20 s et consomme un slot de rendu ; l'annulation ne coupe pas une scène déjà en cours d'encodage ; Runway reste désactivé et `NOT_VERIFIED`.
 
-> **Rappel final** : inventaire établi par lecture seule au HEAD `f5d515b`, mis à jour par P01 puis P02–P09A. Aucune commande de test, de build ou de fournisseur n'a été exécutée pour P09A ; tout statut est une lecture de code, jamais une certification.
+## 12. Mise à jour P09B — audio, sous-titres et voix off (2026-11-21)
+
+Implémenté depuis l'inventaire (commit P09B, `BUILD_UNVERIFIED`, aucun test complet, **ADR-0041**) :
+
+- **Contrat additif** `packages/contracts/src/audio.ts` : jusqu'à 4 pistes (`voiceover`/`music`/`sfx`, version d'asset, début, gain, fondus, ducking), sous-titres (langue, ≤ 200 repères, style), demandes de transcription et de voix off avec attestation de droits. `CreativeSpec.audio` est optionnel ; audio et sous-titres exigent une sortie vidéo ; l'ancienne piste `delivery.audio` reste valide et devient une musique de la timeline.
+- **Média local** `packages/media/src/audio.ts` : `mixTracks` (trim, gain, fondus, `adelay`, bus voix/musique, `sidechaincompress` pour le ducking, PCM 48 kHz stéréo), `buildAssText` (ASS par scène, temps local, style positionnel, marges de zone sûre), `buildSrtText`, extraction M4A sans réencodage, normalisation ASR 16 kHz mono. `assembleMaster` vérifie la durée réelle de la piste audio par `ffprobe`.
+- **Rendu** : mixage et sous-titres appliqués au master vidéo ; manifeste enrichi (pistes, SHA-256, nombre de sous-titres) ; l'aperçu borné inclut audio et sous-titres.
+- **API** : export `GET /creative/:version/audio` (M4A) et `:version/subtitles` (SRT), réservés à une révision approuvée ; `/api/audio/capabilities` (disponibilité et autorisation par compte), préparation transcription/voix off, historique des opérations, application à une nouvelle révision.
+- **Fournisseurs** : adaptateurs Vertex Gemini (transcription JSON horodatée, TTS PCM→WAV), erreurs déterministes/incertaines, plafonds 8 ¢ et 12 ¢, approbation humaine obligatoire, non proposables par l'agent, aucun clonage de voix, drapeaux désactivés par défaut.
+- **Outils** : registre étendu (`audio.analyze@1`, `audio.transcribe@1`, `audio.tts@1`) ; dispatch worker.
+- **Python** : `audio.analyze@1` (WAV/PCM, stdlib wave + numpy) — durée, niveaux dBFS, écrêtage, silences ; borné à 300 s / 16 Mio, sans dépendance ni modèle.
+- **Web** : `StudioAudioPanel` (pistes, volume, fondus, ducking, analyse, transcription, voix off avec états réels), `StudioSubtitles` (repères, style, SRT), pistes audio et repères dans la timeline, exports M4A/SRT dans la livraison.
+
+Limites P09B : aucun test, build, lint ni typecheck exécuté ; fournisseurs audio désactivés et appels NON VÉRIFIÉS ; horodatages de transcription estimés (pas mot à mot) ; le rendu vidéo avec sous-titres exige un FFmpeg avec libass (échec explicite sinon) ; le service Python doit être démarré pour l'analyse ; aucun clonage de voix.
+
+> **Rappel final** : inventaire établi par lecture seule au HEAD `f5d515b`, mis à jour par P01 puis P02–P09B. Aucune commande de test, de build ou de fournisseur n'a été exécutée pour P09A/P09B ; tout statut est une lecture de code, jamais une certification.

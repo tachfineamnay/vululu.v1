@@ -7,6 +7,12 @@ const MIN_SECONDS = 0.5;
 const MAX_SECONDS = 30;
 const MAX_TOTAL_SECONDS = 180;
 const TRANSITION_LABELS: Record<'cut' | 'dip', string> = { cut: 'Coupe', dip: 'Fondu' };
+const TRACK_KIND_LABELS: Record<'voiceover' | 'music' | 'sfx', string> = {
+  voiceover: 'Voix off',
+  music: 'Musique',
+  sfx: 'Effet sonore'
+};
+const formatSeconds = (value: number) => String(Math.round(value * 10) / 10).replace('.', ',');
 
 const roundSeconds = (value: number) =>
   Math.round(Math.min(MAX_SECONDS, Math.max(MIN_SECONDS, value)) * 2) / 2;
@@ -24,15 +30,21 @@ const nextKey = (scenes: CreativeSpec['scenes']) =>
  * Une seule bande de scènes : sélection, réordonnancement (boutons accessibles + glisser-déposer),
  * durée par pas de 0,5 s (0,5 à 30 s) et ajout/duplication/retrait dans les limites du contrat.
  * Chaque mutation appelle onSpec : révision locale avec historique, puis enregistrement serveur.
- * La zone audio/repères reste un emplacement réservé : aucune donnée de piste n'est inventée.
+ * P09B : les pistes audio et les sous-titres réels de la composition remplacent les anciennes
+ * lignes réservées ; aucune piste, durée ou repère n'est inventé.
  */
-export function StudioTimeline({ spec, sceneIndex, busy, onSpec, onSelect, onNotice }: StudioTimelineProps) {
+export function StudioTimeline({ spec, sceneIndex, busy, sources, onSpec, onSelect, onNotice }: StudioTimelineProps) {
   const [dragging, setDragging] = useState<number | null>(null);
   const kind = spec.delivery?.kind;
   const multiScene = !spec.delivery || kind === 'carousel' || isVideoOutput(kind);
   const total = spec.scenes.reduce((sum, scene) => sum + scene.seconds, 0);
   const over = total > MAX_TOTAL_SECONDS + 1e-9;
   const current = spec.scenes[sceneIndex] ?? spec.scenes[0];
+  const audio = spec.audio;
+  const tracks = audio?.tracks ?? [];
+  const subtitles = audio?.subtitles;
+  const cues = subtitles?.cues ?? [];
+  const firstCue = [...cues].sort((left, right) => left.start - right.start)[0];
 
   function move(from: number, to: number) {
     if (to < 0 || to >= spec.scenes.length || from === to) return;
@@ -213,18 +225,54 @@ export function StudioTimeline({ spec, sceneIndex, busy, onSpec, onSelect, onNot
           </p>
         ) : null}
       </div>
-      <div className="studio-timeline-lanes" role="group" aria-label="Pistes de la timeline">
-        <p className="studio-timeline-lane">
-          <strong>Audio</strong>
+      <div className="studio-timeline-lanes" role="group" aria-label="Pistes audio et sous-titres de la timeline">
+        {spec.delivery?.audio ? (
+          <p className="studio-timeline-lane studio-audio-lane">
+            <strong>Piste liée</strong>
+            <span>
+              Piste audio de livraison · volume {Math.round(spec.delivery.audio.gain * 100)} %. Elle reste distincte des
+              pistes audio de la composition.
+            </span>
+          </p>
+        ) : null}
+        {tracks.length === 0 ? (
+          <p className="studio-timeline-lane studio-audio-lane">
+            <strong>Audio</strong>
+            <span>Aucune piste audio dans la composition : le rendu vidéo reste muet.</span>
+          </p>
+        ) : (
+          tracks.map((track, index) => {
+            const source = sources.find((item) => item.id === track.versionId);
+            return (
+              <p key={track.id} className="studio-timeline-lane studio-audio-lane">
+                <strong>Audio {index + 1}</strong>
+                <span>
+                  {TRACK_KIND_LABELS[track.kind]} · {source?.name ?? 'ressource non fournie'} · début{' '}
+                  {formatSeconds(track.start)} s · volume {Math.round(track.gain * 100)} % · fondus{' '}
+                  {formatSeconds(track.fadeIn)} s / {formatSeconds(track.fadeOut)} s
+                  {track.ducking ? ' · ducking' : ''}
+                  {track.start >= total - 1e-6 ? ' · commence après la fin de la vidéo' : ''}
+                </span>
+              </p>
+            );
+          })
+        )}
+        <p className="studio-timeline-lane studio-subtitle-lane">
+          <strong>Sous-titres</strong>
           <span>
-            {spec.delivery?.audio
-              ? 'Piste liée · volume ' + Math.round(spec.delivery.audio.gain * 100) + ' %.'
-              : 'Aucune piste audio liée : le rendu vidéo reste muet.'}
+            {subtitles?.enabled
+              ? firstCue
+                ? cues.length +
+                  ' repère(s) · premier de ' +
+                  formatSeconds(firstCue.start) +
+                  ' à ' +
+                  formatSeconds(firstCue.end) +
+                  ' s'
+                : 'Activés · aucun repère horodaté'
+              : cues.length
+                ? 'Désactivés · ' + cues.length + ' repère(s) enregistré(s)'
+                : 'Aucun sous-titre dans la composition'}
           </span>
-        </p>
-        <p className="studio-timeline-lane">
-          <strong>Repères</strong>
-          <span>Emplacement réservé : aucun repère horodaté n’est fourni par la composition actuelle.</span>
         </p>
       </div>
     </section>

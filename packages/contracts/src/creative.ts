@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { platformSchema } from './channels';
+import { audioSpec } from './audio';
 export const outputKind = z.enum(['square', 'portrait', 'story', 'carousel', 'short', 'landscape']);
 export type OutputKind = z.infer<typeof outputKind>;
 export const outputSize: Record<OutputKind, [number, number]> = {
@@ -58,6 +59,8 @@ export const creativeSpec = z
   .object({
     schemaVersion: z.literal(1),
     delivery: delivery.optional(),
+    /** P09B — pistes audio et sous-titres de la timeline vidéo (jamais pour une image). */
+    audio: audioSpec.optional(),
     width: z.int().min(320).max(1920).multipleOf(2),
     height: z.int().min(320).max(1920).multipleOf(2),
     brand: z.object({ background: color, accent: color }),
@@ -112,6 +115,17 @@ export const creativeSpec = z
         if (l.x < m || l.y < m || l.x + l.w > 1 - m + 1e-8 || l.y + l.h > 1 - m + 1e-8)
           invalid('Calque hors cadre ou texte hors zone sûre.');
       }
+    if (s.audio) {
+      if (!(s.delivery && isVideoOutput(s.delivery.kind)))
+        invalid('Les pistes audio et les sous-titres nécessitent une vidéo.');
+      if (new Set(s.audio.tracks.map((track) => track.id)).size !== s.audio.tracks.length)
+        invalid('Pistes audio en double.');
+      const total = s.scenes.reduce((sum, scene) => sum + scene.seconds, 0);
+      for (const track of s.audio.tracks)
+        if (track.start >= total) invalid('Une piste audio commence après la fin de la vidéo.');
+      for (const cue of s.audio.subtitles?.cues ?? [])
+        if (cue.end > total + 1e-6) invalid('Un sous-titre dépasse la durée totale de la vidéo.');
+    }
   });
 export type CreativeSpec = z.infer<typeof creativeSpec>;
 export type CreativeLayer = z.infer<typeof creativeLayer>;

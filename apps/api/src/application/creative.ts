@@ -3,9 +3,26 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { buffer } from 'node:stream/consumers';
-import { creativeSpec, isVideoOutput, type CreativeAssetApply, type CreativeSpec } from '@vululu/contracts';
+import {
+  creativeSpec,
+  defaultSubtitleStyle,
+  isVideoOutput,
+  type CreativeAssetApply,
+  type CreativeSpec
+} from '@vululu/contracts';
 import type { ArtifactStoragePort } from '@vululu/application';
-import { creativeFrame, assembleMaster, clipPoster, masterDurationTolerance } from '@vululu/media';
+import {
+  creativeFrame,
+  assembleMaster,
+  buildAssText,
+  buildSrtText,
+  clipPoster,
+  extractAudio,
+  masterDurationTolerance,
+  mediaRun,
+  mixTracks,
+  type AudioMixTrack
+} from '@vululu/media';
 import { HttpError } from '../errors';
 
 const missing = () => new HttpError(404, 'creative_not_found', 'Projet, révision ou ressource introuvable.');
@@ -18,7 +35,8 @@ const sourceIds = (s: CreativeSpec) => [
       ...scene.layers.flatMap((l) => (l.type === 'image' ? [l.versionId] : [])),
       ...(scene.clip ? [scene.clip.versionId] : [])
     ]),
-    ...(s.delivery?.audio ? [s.delivery.audio.versionId] : [])
+    ...(s.delivery?.audio ? [s.delivery.audio.versionId] : []),
+    ...(s.audio?.tracks ?? []).map((track) => track.versionId)
   ])
 ];
 type ObjectRef = { provider: string; key: string; sha256: string; sizeBytes: number };
@@ -35,6 +53,12 @@ export type Manifest = {
   frames: Frame[];
   master: ObjectRef;
   seconds: number;
+  /** P09B — provenance du mixage et des sous-titres effectivement encodés. */
+  audio?: {
+    seconds: number;
+    tracks: { kind: string; versionId: string; sha256: string }[];
+    subtitles: number;
+  };
 };
 type RevisionMeta = { version: number; approvedAt: Date | null; createdAt: Date };
 type Revision = RevisionMeta & { spec: CreativeSpec; manifest: Manifest | null };
@@ -153,6 +177,31 @@ export class CreativeStudio {
       openRead: async (range?: { start: number; end?: number }) => (await reader.get(ref.key, range)).stream
     };
   }
+  /** Sous-titres SRT d'une révision rendue (texte seul, aucun média). */
+  async subtitleFile(userId: string, id: string, version: number) {
+    const row = await this.get(userId, id, version);
+    if (!row.manifest) throw new HttpError(409, 'creative_unrendered', 'Rendez la révision avant d’exporter ses sous-titres.');
+    const cues = row.spec.audio?.subtitles?.enabled ? row.spec.audio.subtitles.cues : [];
+    if (!cues.length) throw new HttpError(404, 'creative_subtitles_missing', 'Aucun sous-titre dans cette révision.');
+    return { text: buildSrtText(cues), filename: `sous-titres-v${version}.srt`, count: cues.length };
+  }
+  /** Piste audio du master approuvé, extraite sans réencodage (AAC/M4A). */
+  async audioFile(userId: string, id: string, version: number) {
+    const row = await this.get(userId, id, version);
+    const master = row.manifest?.master;
+    if (!master) throw new HttpError(409, 'creative_unrendered', 'Rendez la révision avant d’exporter sa piste audio.');
+    const reader = this.reader(master);
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'vululu-audio-'));
+    try {
+      const source = path.join(dir, 'master.mp4');
+      await fs.writeFile(source, await buffer((await reader.get(master.key)).stream));
+      const out = path.join(dir, 'audio.m4a');
+      await extractAudio({ master: source, out, run: mediaRun });
+      return { bytes: await fs.readFile(out), contentType: 'audio/mp4' as const };
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  }
   private async checked(userId: string, p: { contextId: string; usage: string }, spec: CreativeSpec) {
     const rows = await this.repo.sources(userId, p.contextId, p.usage, sourceIds(spec));
     for (const scene of spec.scenes) {
@@ -171,8 +220,8 @@ export class CreativeStudio {
           throw new HttpError(422, 'clip_duration', 'Le clip est trop court pour cette scène.');
       }
     }
-    if (spec.delivery?.audio && !rows.get(spec.delivery.audio.versionId)?.mimeType?.startsWith('audio/'))
-      throw missing();
+    for (const track of this.audioTracks(spec))
+      if (!rows.get(track.versionId)?.mimeType?.startsWith('audio/')) throw missing();
     return rows;
   }
   private async bytes(rows: Awaited<ReturnType<CreativeRepository['sources']>>, id: string) {
@@ -180,6 +229,79 @@ export class CreativeStudio {
     const b = await buffer((await this.reader({ provider: r.storageProvider }).get(r.storageKey)).stream);
     if (hash(b) !== r.sha256) throw new Error('creative_asset_integrity');
     return b;
+  }
+  /** Pistes audio effectives : l'ancienne piste delivery.audio reste une musique de la timeline. */
+  private audioTracks(spec: CreativeSpec) {
+    const legacy = spec.delivery?.audio;
+    return [
+      ...(legacy
+        ? [{ kind: 'music' as const, versionId: legacy.versionId, start: 0, gain: legacy.gain, fadeIn: 0, fadeOut: 0, ducking: false }]
+        : []),
+      ...(spec.audio?.tracks ?? []).map((track) => ({
+        kind: track.kind,
+        versionId: track.versionId,
+        start: track.start,
+        gain: track.gain,
+        fadeIn: track.fadeIn,
+        fadeOut: track.fadeOut,
+        ducking: track.ducking === true
+      }))
+    ];
+  }
+  /** Sous-titres ASS par scène, ramenés au temps local de chaque partie vidéo. */
+  private subtitleTexts(spec: CreativeSpec, durations: readonly number[]): (string | undefined)[] {
+    const subtitles = spec.audio?.subtitles;
+    if (!subtitles?.enabled || !subtitles.cues.length) return [];
+    const style = subtitles.style ?? defaultSubtitleStyle;
+    const texts: (string | undefined)[] = [];
+    let cursor = 0;
+    for (const [index, seconds] of durations.entries()) {
+      const sceneEnd = cursor + seconds;
+      const subset = subtitles.cues.filter((cue) => cue.start < sceneEnd && cue.end > cursor);
+      if (subset.length) {
+        const text = buildAssText({
+          cues: subset,
+          style,
+          width: spec.width,
+          height: spec.height,
+          safeArea: spec.safeArea,
+          sceneStart: cursor,
+          sceneEnd
+        });
+        if (text) texts[index] = text;
+      }
+      cursor = sceneEnd;
+    }
+    return texts;
+  }
+  /** Mixage local déterministe des pistes de la timeline (WAV 48 kHz stéréo). */
+  private async mixedAudio(
+    spec: CreativeSpec,
+    sources: Awaited<ReturnType<CreativeRepository['sources']>>,
+    dir: string,
+    durationSeconds: number
+  ) {
+    const tracks = this.audioTracks(spec);
+    if (!tracks.length) return undefined;
+    const inputs: AudioMixTrack[] = [];
+    for (const [index, track] of tracks.entries()) {
+      const source = sources.get(track.versionId);
+      if (!source) throw missing();
+      const file = path.join(dir, `track-${index}.${source.mimeType === 'audio/wav' ? 'wav' : 'mp3'}`);
+      await fs.writeFile(file, await this.bytes(sources, track.versionId));
+      inputs.push({
+        path: file,
+        kind: track.kind,
+        gain: track.gain,
+        start: track.start,
+        fadeIn: track.fadeIn,
+        fadeOut: track.fadeOut,
+        ducking: track.ducking
+      });
+    }
+    const mixed = path.join(dir, 'mixed.wav');
+    await mixTracks({ tracks: inputs, durationSeconds, out: mixed, run: mediaRun });
+    return mixed;
   }
   private async draw(
     spec: CreativeSpec,
@@ -239,6 +361,9 @@ export class CreativeStudio {
         dips.push((scene.transition ?? spec.delivery?.transition) === 'dip');
         total += take;
       }
+      const previewSeconds = seconds.reduce((sum, value) => sum + value, 0);
+      const mixed = await this.mixedAudio(spec, sources, dir, previewSeconds);
+      const subtitles = this.subtitleTexts(spec, seconds);
       const master = await assembleMaster({
         motion: {
           width: spec.width,
@@ -246,7 +371,9 @@ export class CreativeStudio {
           clips,
           dip: spec.delivery?.transition === 'dip',
           sceneDip: dips,
-          preset: 'ultrafast'
+          preset: 'ultrafast',
+          ...(mixed ? { audio: { path: mixed, gain: 1 } } : {}),
+          ...(subtitles.some(Boolean) ? { subtitles } : {})
         },
         artifactRoot: dir,
         projectId: 'preview',
@@ -370,10 +497,10 @@ export class CreativeStudio {
         });
         return (await this.get(userId, id, version)).manifest!;
       }
-      const audio = spec.delivery?.audio;
-      const audioPath = path.join(dir, 'audio');
-      if (audio) await fs.writeFile(audioPath, await this.bytes(sources, audio.versionId));
       hooks.onProgress?.(85);
+      const totalSeconds = frames.reduce((sum, frame) => sum + frame.seconds, 0);
+      const mixed = await this.mixedAudio(spec, sources, dir, totalSeconds);
+      const subtitles = this.subtitleTexts(spec, frames.map((frame) => frame.seconds));
       const master = await assembleMaster({
         motion: spec.delivery
           ? {
@@ -382,7 +509,8 @@ export class CreativeStudio {
               clips,
               dip: spec.delivery.transition === 'dip',
               sceneDip: spec.scenes.map((s) => (s.transition ?? spec.delivery?.transition) === 'dip'),
-              audio: audio ? { path: audioPath, gain: audio.gain } : undefined
+              ...(mixed ? { audio: { path: mixed, gain: 1 } } : {}),
+              ...(subtitles.some(Boolean) ? { subtitles } : {})
             }
           : undefined,
         artifactRoot: dir,
@@ -408,11 +536,25 @@ export class CreativeStudio {
         sizeBytes,
         contentType: 'video/mp4'
       });
+      const tracks = this.audioTracks(spec);
       const manifest: Manifest = {
         renderer: spec.delivery ? 'creative-2' : 'creative-1',
         frames,
         master: { key, provider: this.storage.provider, sha256: master.checksum, sizeBytes },
-        seconds: master.duration
+        seconds: master.duration,
+        ...(mixed || subtitles.some(Boolean)
+          ? {
+              audio: {
+                seconds: mixed ? master.audioDuration : 0,
+                tracks: tracks.map((track) => ({
+                  kind: track.kind,
+                  versionId: track.versionId,
+                  sha256: sources.get(track.versionId)!.sha256
+                })),
+                subtitles: subtitles.some(Boolean) ? (spec.audio?.subtitles?.cues.length ?? 0) : 0
+              }
+            }
+          : {})
       };
       hooks.onProgress?.(95);
       // Never replace a sealed manifest, even on concurrent render requests.

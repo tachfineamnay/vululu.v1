@@ -38,6 +38,9 @@ export function StudioDelivery({
   // Sans delivery explicite (format « Vidéo multiscène »), le serveur assemble quand même un master MP4.
   const video = !view.spec.delivery || isVideoOutput(kind);
   const carousel = kind === 'carousel';
+  // P09B : contenus réels de la révision pour les exports audio et SRT (aucun fichier supposé).
+  const audioTracks = view.spec.audio?.tracks.length ?? 0;
+  const subtitleCues = view.spec.audio?.subtitles?.cues.length ?? 0;
   const state = renderState?.state;
   const rendering = state === 'queued' || state === 'running';
   const failed = state === 'failed' || state === 'offline';
@@ -225,6 +228,67 @@ export function StudioDelivery({
           )}
         </div>
       )}
+
+      {video ? (
+        <section className="studio-delivery-audio" aria-labelledby="studio-delivery-audio-heading">
+          <div className="section-head">
+            <h4 id="studio-delivery-audio-heading">Audio et sous-titres de la vidéo</h4>
+          </div>
+          {approved && manifest ? (
+            <>
+              <p className="hint">
+                Fichiers dérivés du master approuvé v{view.version} : le téléchargement ne publie rien. La vérification
+                version + checksum reste faite par le serveur.
+              </p>
+              <div className="actions">
+                {audioTracks > 0 ? (
+                  <a
+                    className="btn btn-secondary"
+                    href={base + '/' + view.version + '/audio'}
+                    download={'v' + view.version + '.m4a'}
+                    onClick={() =>
+                      onNotice(
+                        'Export M4A de la piste audio v' + view.version + ' : fichier dérivé du master approuvé, aucune publication.'
+                      )
+                    }
+                  >
+                    Exporter la piste audio (M4A)
+                  </a>
+                ) : (
+                  <p className="hint">
+                    Cette révision ne contient aucune piste audio : le master reste muet, aucun fichier M4A n’est
+                    proposé.
+                  </p>
+                )}
+                {subtitleCues > 0 ? (
+                  <a
+                    className="btn btn-secondary"
+                    href={base + '/' + view.version + '/subtitles'}
+                    download={'v' + view.version + '.srt'}
+                    onClick={() =>
+                      onNotice(
+                        'Téléchargement des sous-titres v' + view.version + ' : fichier dérivé du master approuvé, aucune publication.'
+                      )
+                    }
+                  >
+                    Sous-titres (SRT)
+                  </a>
+                ) : (
+                  <p className="hint">
+                    Cette révision ne contient aucun sous-titre : aucun fichier SRT n’est proposé.
+                  </p>
+                )}
+              </div>
+            </>
+          ) : (
+            <p className="hint">
+              L’export de la piste audio (M4A) et le fichier de sous-titres (SRT) sont produits à partir du master
+              approuvé : approuvez la révision affichée pour activer les téléchargements.
+              {!manifest ? ' Le master doit d’abord être rendu.' : ''}
+            </p>
+          )}
+        </section>
+      ) : null}
 
       {!latest && (
         <button

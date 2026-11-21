@@ -10,6 +10,7 @@ import { callPythonTool, pythonToolsConfig, PythonToolsError } from './client';
 /** Exécution bornée d'une capacité Python sur une ressource confirmée. Aucun effet payant, stockage via l'AssetStore existant. */
 export type PythonToolJob = { id: string; accountId: string; projectId: string; tool: string; maxCents: number; params: unknown };
 export type PythonToolParams = { versionId: string; outputs?: Array<'cutout' | 'mask'>; maxDimension?: number };
+const audioTool = 'audio.analyze@1';
 export type PythonToolFailure = { failed: { code: string; message: string } };
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const maxSourceBytes = 16 * 1024 * 1024;
@@ -25,7 +26,7 @@ function parseParams(tool: string, raw: unknown): PythonToolParams | null {
   if (!raw || typeof raw !== 'object') return null;
   const value = raw as Record<string, unknown>;
   if (typeof value.versionId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(value.versionId)) return null;
-  if (tool === 'image.analyze@1') return { versionId: value.versionId };
+  if (tool === 'image.analyze@1' || tool === audioTool) return { versionId: value.versionId };
   const outputs = value.outputs === undefined ? ['cutout', 'mask'] : value.outputs;
   if (!Array.isArray(outputs) || outputs.length < 1 || outputs.length > 2) return null;
   if (!outputs.every((item) => item === 'cutout' || item === 'mask')) return null;
@@ -37,7 +38,8 @@ function parseParams(tool: string, raw: unknown): PythonToolParams | null {
 /** Convertit les recommandations d'outils Python en exécution réelle, ou en échec déterministe explicite. */
 export async function runPythonCapability(job: PythonToolJob): Promise<{ costCents: number; result?: unknown } | PythonToolFailure> {
   if (!pythonToolsConfig()) return fail('python_tools_unavailable', 'Boîte à outils Python non configurée sur ce serveur.');
-  if (job.tool !== 'image.analyze@1' && job.tool !== 'image.segment@1') return fail('python_tool_unknown', 'Outil Python inconnu.');
+  if (job.tool !== 'image.analyze@1' && job.tool !== 'image.segment@1' && job.tool !== audioTool)
+    return fail('python_tool_unknown', 'Outil Python inconnu.');
   const params = parseParams(job.tool, job.params);
   if (!params) return fail('python_tool_params_invalid', 'Paramètres d’outil Python invalides.');
   const decisionRow = await readAssetDecisionRow(prisma, job.projectId, job.accountId);
@@ -52,8 +54,13 @@ export async function runPythonCapability(job: PythonToolJob): Promise<{ costCen
       storageKey: true, license: true, metadata: true, asset: { select: { kind: true } } }
   });
   if (!version) return fail('asset_version_unavailable', 'Version de ressource introuvable ou non prête.');
-  if (version.asset.kind !== 'image' && version.asset.kind !== 'logo') return fail('asset_type_unsupported', 'Seules les images et les logos peuvent être traités.');
-  if (!['image/png', 'image/jpeg', 'image/webp'].includes(version.mimeType)) return fail('asset_type_unsupported', 'Format d’image non pris en charge par la boîte à outils Python.');
+  if (job.tool === audioTool) {
+    if (version.asset.kind !== 'audio') return fail('asset_type_unsupported', 'Seule une piste audio peut être analysée.');
+    if (version.mimeType !== 'audio/wav') return fail('asset_type_unsupported', 'Seul le format WAV est analysé par la boîte à outils Python.');
+  } else {
+    if (version.asset.kind !== 'image' && version.asset.kind !== 'logo') return fail('asset_type_unsupported', 'Seules les images et les logos peuvent être traités.');
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(version.mimeType)) return fail('asset_type_unsupported', 'Format d’image non pris en charge par la boîte à outils Python.');
+  }
   if (version.license === 'unknown') return fail('asset_license_unknown', 'Droits de la ressource non confirmés : traitement refusé.');
   if (version.sizeBytes > maxSourceBytes) return fail('asset_too_large', 'Ressource au-delà de la limite interne du service Python.');
   const reader = readers()[version.storageProvider];
@@ -63,9 +70,21 @@ export async function runPythonCapability(job: PythonToolJob): Promise<{ costCen
   catch { return fail('asset_unreadable', 'Ressource illisible dans le stockage.'); }
   const digest = createHash('sha256').update(bytes).digest('hex');
   if (digest !== version.sha256) return fail('asset_integrity', 'Le fichier source ne correspond pas à sa version enregistrée.');
-  const source = { assetVersionId: params.versionId, sha256: version.sha256, mimeType: version.mimeType, imageBase64: bytes.toString('base64') };
+  const base64 = bytes.toString('base64');
 
   try {
+    if (job.tool === audioTool) {
+      const response = await callPythonTool(audioTool, {
+        requestId: job.id,
+        source: { assetVersionId: params.versionId, sha256: version.sha256, mimeType: version.mimeType, audioBase64: base64 }
+      });
+      const data = (response as { data?: { analysis?: unknown; sourceSha256?: unknown }; version?: unknown } | null)?.data;
+      if (!data?.analysis) return fail('python_tools_invalid_response', 'Analyse audio Python illisible.');
+      return { costCents: 0, result: { capability: audioTool, sourceVersionId: params.versionId,
+        sourceSha256: version.sha256, analysis: data.analysis,
+        pythonServiceVersion: (response as { version?: unknown }).version ?? null } };
+    }
+    const source = { assetVersionId: params.versionId, sha256: version.sha256, mimeType: version.mimeType, imageBase64: base64 };
     if (job.tool === 'image.analyze@1') {
       const response = await callPythonTool('image.analyze@1', { requestId: job.id, source });
       const data = (response as { data?: { analysis?: unknown }; version?: unknown } | null)?.data?.analysis;

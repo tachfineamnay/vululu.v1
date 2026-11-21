@@ -18,9 +18,9 @@ export function clipCrop(
 }
 
 /**
- * Encode chaque scene puis concatene. Les fichiers ASS de sous-titres sont resolus
- * relativement au dossier des parties (cwd du processus), ce qui evite tout echappement
- * de chemin Windows dans filter_complex.
+ * Encode chaque scene puis concatene. Les sous-titres sont fournis comme documents ASS
+ * (pas comme chemins) : ils sont ecrits dans le dossier des parties et references par un
+ * nom relatif, ce qui evite tout echappement de chemin Windows dans filter_complex.
  */
 export async function encodeMotion(
   input: MasterInput,
@@ -35,6 +35,8 @@ export async function encodeMotion(
     const clip = motion.clips[i],
       seconds = input.sceneDurationsSeconds[i];
     const subtitle = motion.subtitles?.[i];
+    // Un document ASS par scene : les reperes sont deja ramenes au temps local de la scene.
+    if (subtitle) await fsp.writeFile(path.join(frameDir, `part-${i}.ass`), subtitle, 'utf8');
     const inputs = clip
       ? ['-ss', String(clip.start), '-protocol_whitelist', 'file,pipe', '-i', clip.path, '-i', clip.overlay]
       : ['-loop', '1', '-i', image];
@@ -43,7 +45,7 @@ export async function encodeMotion(
         ? `[0:v]${clipCrop(motion.width, clip.height, { fit: clip.fit, focusY: clip.focusY })},pad=${motion.width}:${motion.height}:0:0[b];[b][1:v]overlay=0:0,`
         : '[0:v]') +
       'fps=30,setsar=1' +
-      (subtitle ? `,ass=filename=${subtitle}` : '') +
+      (subtitle ? `,ass=filename=part-${i}.ass` : '') +
       ((motion.sceneDip?.[i] ?? motion.dip) ? `,fade=t=in:d=0.12,fade=t=out:st=${seconds - 0.12}:d=0.12` : '') +
       '[out]';
     await run(

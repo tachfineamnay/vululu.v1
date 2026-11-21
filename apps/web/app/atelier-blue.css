@@ -467,3 +467,56 @@ main :where(input,select,textarea){max-inline-size:100%;box-sizing:border-box}
   [data-vululu-theme="blue"] .studio-timeline-item { flex-basis: 78vw; }
   [data-vululu-theme="blue"] .studio-timeline-lane { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ==========================================================================
+   P09B — audio et sous-titres de la composition vidéo : pistes, forme d'onde,
+   transcription, voix off, repères et exports. Valeurs sémantiques uniquement ;
+   mise en page prévue à 1440, 1024, 768 et 390 px (une colonne sous 639 px).
+   ========================================================================== */
+[data-vululu-theme="blue"] .studio-audio-panel,
+[data-vululu-theme="blue"] .studio-subtitles-panel,
+[data-vululu-theme="blue"] .studio-delivery-audio { display: grid; gap: var(--v-space-8); min-width: 0; }
+[data-vululu-theme="blue"] .studio-audio-panel h3,
+[data-vululu-theme="blue"] .studio-subtitles-panel h3 { font-size: var(--v-font-size-body); }
+[data-vululu-theme="blue"] :is(.studio-audio-panel,.studio-subtitles-panel,.studio-delivery-audio) h4 { font-size: var(--v-font-size-body); line-height: var(--v-font-line-section); margin: 0; }
+[data-vululu-theme="blue"] .studio-audio-tracks { display: grid; gap: var(--v-space-8); margin: 0; padding: 0; list-style: none; }
+[data-vululu-theme="blue"] .studio-audio-track { display: grid; gap: var(--v-space-8); padding: var(--v-space-8); border: 1px solid var(--v-color-border); border-radius: var(--v-radius-control); background: var(--v-color-surface); min-width: 0; }
+[data-vululu-theme="blue"] .studio-audio-track:focus-within { border-color: var(--v-color-action); }
+[data-vululu-theme="blue"] .studio-audio-track-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--v-space-8); }
+[data-vululu-theme="blue"] .studio-audio-track-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--v-space-8); }
+[data-vululu-theme="blue"] .studio-audio-track-controls .label { min-width: 0; }
+[data-vululu-theme="blue"] .studio-audio-source { display: grid; gap: var(--v-space-4); min-width: 0; }
+[data-vululu-theme="blue"] .studio-audio-waveform { display: block; inline-size: 100%; block-size: 56px; border: 1px solid var(--v-color-border); border-radius: var(--v-radius-small); background: var(--v-color-background); }
+[data-vululu-theme="blue"] .studio-audio-add { display: grid; gap: var(--v-space-8); padding-top: var(--v-space-8); border-top: 1px solid var(--v-color-border); }
+[data-vululu-theme="blue"] .studio-audio-details > summary { min-height: var(--v-layout-target); }
+[data-vululu-theme="blue"] .studio-audio-block { display: grid; gap: var(--v-space-8); padding-top: var(--v-space-8); border-top: 1px solid var(--v-color-border); min-width: 0; }
+[data-vululu-theme="blue"] .studio-audio-availability { padding: var(--v-space-8) var(--v-space-12); border-left: 4px solid var(--v-color-accent); background: var(--v-color-background); border-radius: var(--v-radius-small); }
+[data-vululu-theme="blue"] .studio-audio-error { color: var(--v-color-danger); background: var(--v-color-danger-bg); border: 1px solid var(--v-color-danger); border-radius: var(--v-radius-control); padding: var(--v-space-8) var(--v-space-12); margin: 0; }
+[data-vululu-theme="blue"] .studio-audio-jobs { display: grid; gap: var(--v-space-8); }
+[data-vululu-theme="blue"] .studio-audio-job { display: grid; gap: var(--v-space-8); padding: var(--v-space-8); border: 1px solid var(--v-color-border); border-radius: var(--v-radius-control); background: var(--v-color-background); min-width: 0; }
+[data-vululu-theme="blue"] .studio-audio-job-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--v-space-8); }
+[data-vululu-theme="blue"] .studio-audio-job-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--v-space-8); }
+[data-vululu-theme="blue"] .studio-subtitle-style { display: grid; gap: var(--v-space-8); padding-top: var(--v-space-8); border-top: 1px solid var(--v-color-border); }
+[data-vululu-theme="blue"] .studio-subtitle-style-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--v-space-8); }
+[data-vululu-theme="blue"] .studio-subtitle-warnings { display: grid; gap: var(--v-space-4); margin: 0; padding-left: var(--v-space-24); font-size: var(--v-font-size-label); color: var(--v-color-danger); }
+[data-vululu-theme="blue"] .studio-cue-list { display: grid; gap: var(--v-space-8); margin: 0; padding: 0; list-style: none; }
+[data-vululu-theme="blue"] .studio-cue-row { display: grid; gap: var(--v-space-8); padding: var(--v-space-8); border: 1px solid var(--v-color-border); border-radius: var(--v-radius-control); background: var(--v-color-surface); min-width: 0; }
+[data-vululu-theme="blue"] .studio-cue-row:focus-within { border-color: var(--v-color-action); }
+[data-vululu-theme="blue"] .studio-cue-times { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--v-space-8); }
+[data-vululu-theme="blue"] .studio-cue-actions { display: flex; flex-wrap: wrap; gap: var(--v-space-4); }
+[data-vululu-theme="blue"] .studio-delivery-audio { padding-top: var(--v-space-16); border-top: 1px solid var(--v-color-border); }
+[data-vululu-theme="blue"] .studio-delivery-audio .actions { display: flex; flex-wrap: wrap; gap: var(--v-space-8); }
+[data-vululu-theme="blue"] .studio-timeline-lane span { min-width: 0; overflow-wrap: anywhere; }
+[data-vululu-theme="blue"] .studio-timeline-lane.studio-subtitle-lane { border-style: solid; }
+@media (max-width: 1024px) {
+  [data-vululu-theme="blue"] .studio-audio-track-controls { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 768px) {
+  [data-vululu-theme="blue"] :is(.studio-audio-track-controls,.studio-audio-job-actions,.studio-cue-times,.studio-subtitle-style-grid) { grid-template-columns: minmax(0, 1fr); }
+  [data-vululu-theme="blue"] .studio-audio-waveform { block-size: 48px; }
+}
+@media (max-width: 390px) {
+  [data-vululu-theme="blue"] .studio-audio-track,
+  [data-vululu-theme="blue"] .studio-cue-row,
+  [data-vululu-theme="blue"] .studio-audio-job { padding: var(--v-space-4); }
+}

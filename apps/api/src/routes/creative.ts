@@ -283,6 +283,31 @@ export async function creativeRoutes(app: FastifyInstance) {
     if((r.query as {export?:string}).export==='1')markExport(r,reply,p.id,p.version,'Master créatif');
     return sendArtifact(r, reply, await service.file(r.currentUser!.id, p.id, p.version));
   });
+  // P09B — sous-titres SRT et piste audio M4A, uniquement depuis une révision approuvée.
+  app.get(base + '/:version/subtitles', auth, async (r, reply) => {
+    const p = revision.parse(r.params), user = r.currentUser!.id;
+    const row = await service.get(user, p.id, p.version);
+    if (!row.approvedAt || !row.manifest)
+      throw new HttpError(409, 'creative_unapproved', 'Approuvez cette révision avant de télécharger ses sous-titres.');
+    const file = await service.subtitleFile(user, p.id, p.version);
+    reply.header('Cache-Control', 'private, no-store');
+    return reply
+      .header('Content-Disposition', `attachment; filename="${file.filename}"`)
+      .type('text/plain; charset=utf-8')
+      .send(file.text);
+  });
+  app.get(base + '/:version/audio', auth, async (r, reply) => {
+    const p = revision.parse(r.params), user = r.currentUser!.id;
+    const row = await service.get(user, p.id, p.version);
+    if (!row.approvedAt || !row.manifest)
+      throw new HttpError(409, 'creative_unapproved', 'Approuvez cette révision avant de télécharger la piste audio.');
+    const file = await service.audioFile(user, p.id, p.version);
+    reply.header('Cache-Control', 'private, no-store');
+    return reply
+      .header('Content-Disposition', `attachment; filename="audio-v${p.version}.m4a"`)
+      .type('audio/mp4')
+      .send(file.bytes);
+  });
   app.get(base + '/:version/scenes/:key', auth, async (r, reply) => {
     const p = revision.extend({ key: z.string() }).parse(r.params);
     const f = await service.file(r.currentUser!.id, p.id, p.version, p.key);

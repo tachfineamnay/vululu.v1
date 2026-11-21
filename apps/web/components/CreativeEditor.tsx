@@ -18,7 +18,7 @@ import { applyChannelPreset, compatiblePresets, defaultPreset, CHANNEL_PRESETS }
 import { alignLayers, clampLayer, distributeLayers, specWithLayers } from '../lib/studioGeometry';
 import { outputSize, platformSchema, productionCapability, readableInk, studioExportExtension, creativeSpec, isVideoOutput, type CreativeSpec, type CreativeLayer } from '@vululu/contracts';
 import { api, apiResponse, postJson, type ProjectBundle } from '../lib/api';
-import type { StudioAlignMode, StudioLayerSpec } from '../lib/studioTypes';
+import type { StudioAlignMode, StudioLayerSpec, StudioRevision } from '../lib/studioTypes';
 
 type RenderStatus = { revision: number; state: string; reason: string | null; progress: number };
 
@@ -27,7 +27,7 @@ type Revision = Rev & {
   spec: CreativeSpec;
   manifest: { approvalSha256?: string; master: { sha256: string } } | null;
 };
-type Source = { mimeType?: string; license?: string; provenance?: string; sizeBytes?: number; metadata?: { width?: number; height?: number; duration?: number }; id: string; name: string; kind: string };
+type Source = { assetId?: string; mimeType?: string; license?: string; provenance?: string; sizeBytes?: number; metadata?: { width?: number; height?: number; duration?: number }; id: string; name: string; kind: string };
 const copy = (text: string, role: 'headline' | 'body' | 'cta'): CreativeLayer => ({
   type: 'text',
   role,
@@ -426,6 +426,19 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
   // Le serveur refuse un clip dont le ratio ne suit pas l'orientation du cadre.
   const clipSize: '1280:720' | '720:1280' = spec && spec.width / spec.height >= 1.4 ? '1280:720' : '720:1280';
   const currentRenderState = renderState;
+  // P09B : opérations audio réelles, montées dans l'inspecteur pour les sorties vidéo uniquement.
+  const audioOperations = {
+    project: projectId,
+    base,
+    revision: expected,
+    approvedVersion: view?.approvedAt ? view.version : null,
+    ready: !dirty && Boolean(view && view.version === expected),
+    run: action,
+    onApplied: async (next: StudioRevision) => {
+      await sync(next);
+      await load();
+    }
+  };
   return (
     <details
       className="card stack studio-editor"
@@ -518,6 +531,7 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
                   spec={spec}
                   sceneIndex={index}
                   busy={busy}
+                  sources={assets}
                   onSpec={change}
                   onSelect={setScene}
                   onNotice={notify}
@@ -570,6 +584,7 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
                     sceneIndex={index}
                     selected={selected}
                     sources={sources}
+                    media={assets}
                     confirmedIds={confirmed}
                     presets={presets}
                     channel={channel}
@@ -578,6 +593,7 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
                     onSelect={selectLayer}
                     onChannel={changeChannel}
                     onNotice={notify}
+                    audio={audioOperations}
                   />
                 </div>
                 {!dirty && view?.version === expected ? (
