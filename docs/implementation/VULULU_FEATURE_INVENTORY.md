@@ -330,4 +330,16 @@ Implémenté depuis l'inventaire (commit P11-B, `BUILD_UNVERIFIED`, **ADR-0043**
 
 Limites P11-B : aucun test/build/E2E ; la disponibilité décrit la configuration, jamais un appel vérifié ; l'admin ne crée ni agent ni outil ; les fournisseurs restent désactivés par défaut.
 
-> **Rappel final** : inventaire établi par lecture seule au HEAD `f5d515b`, mis à jour par P01 puis P02–P11B. Aucune commande de test, de build ou de fournisseur n'a été exécutée pour P09A/P09B/P10/P11A ; tout statut est une lecture de code, jamais une certification.
+## 16. Mise à jour P11-C — observabilité des opérations (2026-11-21)
+
+Implémenté depuis l'inventaire (commit P11-C, BUILD_UNVERIFIED, **ADR-0044**) :
+
+- **Opérations outillées** : GET /api/admin/ops/execution (états, états de coût, 50 dernières, éligibilités) et GET /api/admin/ops/execution/:id (détail + audit par corrélation) ; annulation admin d'une opération PROPOSED/QUEUED via le broker (acteur audité) ; résolution d'incident UNKNOWN via la route existante.
+- **Jobs** : durées et blocages calculés (ageMs, sinceUpdateMs, stalled à 300 s, durationMs terminal) affichés dans la table des runs ; heartbeats workers existants.
+- **Python** : GET /api/admin/ops/python (readyz + capabilities, timeout court, sans jeton ni URL interne).
+- **Audit** : filtre traceId sur GET /api/admin/audit, pré-remplissage ?traceId=, lien depuis chaque opération.
+- **UI** : sections opérations/détail/audit/Python dans Jobs, actions confirmées, états d'erreur explicites ; aucune relance aveugle payante.
+
+Limites P11-C : aucun test/build/E2E ; vérification Python à la demande seulement ; annulation limitée aux opérations non envoyées ; pas de relance admin d'une opération terminée ; durée d'opération outillée non stockée.
+
+> **Rappel final** : inventaire établi par lecture seule au HEAD f5d515b, mis à jour par P01 puis P02–P11C. Aucune commande de test, de build ou de fournisseur n'a été exécutée pour P09A/P09B/P10/P11A ; tout statut est une lecture de code, jamais une certification.

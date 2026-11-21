@@ -227,6 +227,10 @@ export type AdminRun = {
   error: string | null;
   productionStatus: string | null;
   progress: number | null;
+  ageMs?: number;
+  sinceUpdateMs?: number;
+  stalled?: boolean;
+  durationMs?: number | null;
 };
 
 export type AdminStep = {
@@ -402,12 +406,70 @@ export type AdminRunQuery = {
   status?: string;
 };
 
+/** P11-C — operations outillees (ToolBroker) vues par l'administration. */
+export type AdminExecutionItem = {
+  id: string;
+  tool: string;
+  state: string;
+  costState: string;
+  maxCents: number;
+  reportedCents: number | null;
+  correlationId: string;
+  createdAt: string;
+  ageMs: number;
+  claimUntil: string | null;
+  approved: boolean;
+  accountId: string;
+  projectId: string;
+  projectTitle: string;
+  ownerEmail: string;
+  cancelEligible: boolean;
+  resolveEligible: boolean;
+};
+
+export type AdminExecutionOverview = {
+  generatedAt: string;
+  states: Record<string, number>;
+  costStates: Record<string, number>;
+  items: AdminExecutionItem[];
+};
+
+export type AdminExecutionDetail = AdminExecutionItem & {
+  params: unknown;
+  result: unknown;
+  audit: AdminAuditEvent[];
+};
+
+/** P11-C — etat reel du service Python interne et de ses capacites declarees. */
+export type AdminPythonCapability = {
+  key: string;
+  name: string;
+  action: string;
+  engine: string;
+  description: string;
+  limits: Record<string, unknown>;
+};
+
+export type AdminPythonStatus = {
+  configured: boolean;
+  reachable: boolean;
+  ready: boolean;
+  checkedAt: string;
+  error?: string;
+  version?: string | null;
+  dependencies?: Record<string, unknown>;
+  models?: unknown[];
+  capabilities: AdminPythonCapability[];
+  capabilitiesError?: string | null;
+};
+
 export type AdminAuditQuery = {
   page: number;
   pageSize: number;
   action?: string;
   actorId?: string;
   targetType?: string;
+  traceId?: string;
   from?: string;
   to?: string;
 };
@@ -587,6 +649,7 @@ export const adminApi = {
           action: input.action,
           actorId: input.actorId,
           targetType: input.targetType,
+          traceId: input.traceId,
           from: input.from,
           to: input.to
         })
@@ -605,6 +668,26 @@ export const adminApi = {
     ),
 
   runtime: () => api<AdminRuntime>('/api/admin/runtime'),
+
+  // P11-C — operations outillees, sante Python et actions administratives sures.
+  opsExecution: () => api<AdminExecutionOverview>('/api/admin/ops/execution'),
+
+  opsExecutionDetail: (operationId: string) =>
+    api<AdminExecutionDetail>('/api/admin/ops/execution/' + encodeURIComponent(operationId)),
+
+  cancelExecution: (operationId: string) =>
+    postJsonAdmin<{ id: string; state: string }>(
+      '/api/admin/ops/execution/' + encodeURIComponent(operationId) + '/cancel',
+      {}
+    ),
+
+  resolveExecutionIncident: (operationId: string, input: { cents: number; evidence: string }) =>
+    postJsonAdmin<{ id: string; state: string; costState: string }>(
+      '/api/admin/execution/' + encodeURIComponent(operationId) + '/resolve',
+      input
+    ),
+
+  opsPython: () => api<AdminPythonStatus>('/api/admin/ops/python'),
 
   opsHealth: () => api<OpsHealth>('/api/ops/health'),
 

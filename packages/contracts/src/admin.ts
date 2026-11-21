@@ -15,6 +15,8 @@ export const adminAuditQuerySchema = adminPaginationSchema.extend({
   action: z.string().trim().max(120).optional(),
   actorId: z.string().trim().max(64).optional(),
   targetType: z.string().trim().max(60).optional(),
+  /** P11-C — relier les evenements d audit a une operation via son identifiant de correlation. */
+  traceId: z.string().trim().max(64).optional(),
   from: z.string().trim().max(40).optional(),
   to: z.string().trim().max(40).optional()
 });

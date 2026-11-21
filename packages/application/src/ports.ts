@@ -1154,6 +1154,8 @@ export type AdminAuditQuery = AdminPageInput & {
   action?: string;
   actorId?: string;
   targetType?: string;
+  /** Identifiant de correlation/trace (P11-C) pour relier audit et operation. */
+  traceId?: string;
   from?: string;
   to?: string;
 };
@@ -1277,6 +1279,11 @@ export type AdminRunRecord = {
   error: string | null;
   productionStatus: string | null;
   progress: number | null;
+  /** P11-C — metriques operationnelles calculees (jamais inventees). */
+  ageMs?: number;
+  sinceUpdateMs?: number;
+  stalled?: boolean;
+  durationMs?: number | null;
 };
 
 export type AdminStepRecord = {

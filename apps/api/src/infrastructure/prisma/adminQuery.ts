@@ -558,10 +558,13 @@ export class PrismaAdminQuery implements AdminQueryPort {
         }
       })
     ]);
+    const now = Date.now();
+    const terminal = ['succeeded', 'failed', 'timed_out', 'cancelled'];
     const items: AdminRunRecord[] = rows.map((row) => {
       const failedStep = row.steps.find((step) => step.status === 'failed');
       const runningStep = row.steps.find((step) => step.status === 'running');
       const pendingStep = row.steps.find((step) => step.status === 'pending');
+      const sinceUpdateMs = Math.max(0, now - row.updatedAt.getTime());
       return {
         id: row.id,
         projectId: row.projectId,
@@ -579,7 +582,13 @@ export class PrismaAdminQuery implements AdminQueryPort {
         currentStep: (runningStep ?? pendingStep ?? row.steps[row.steps.length - 1])?.name ?? null,
         error: row.productionJob?.error ?? failedStep?.error ?? null,
         productionStatus: row.productionJob?.status ?? null,
-        progress: row.productionJob?.progress ?? null
+        progress: row.productionJob?.progress ?? null,
+        ageMs: Math.max(0, now - row.createdAt.getTime()),
+        sinceUpdateMs,
+        // Seuil aligne sur la reconciliation par defaut (300 s) : au-dela, un run non
+        // terminal est signale comme bloque, sans le declarer en echec.
+        stalled: !terminal.includes(row.status) && sinceUpdateMs > 300_000,
+        durationMs: terminal.includes(row.status) ? Math.max(0, row.updatedAt.getTime() - row.createdAt.getTime()) : null
       };
     });
     return pageOf(items, total, input);
@@ -678,6 +687,7 @@ export class PrismaAdminQuery implements AdminQueryPort {
       ...(input.action ? { action: input.action } : {}),
       ...(input.actorId ? { actorId: input.actorId } : {}),
       ...(input.targetType ? { targetType: input.targetType } : {}),
+      ...(input.traceId ? { traceId: input.traceId } : {}),
       ...(Object.keys(createdAt).length > 0 ? { createdAt } : {})
     };
     const [total, rows] = await Promise.all([
