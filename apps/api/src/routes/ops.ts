@@ -5,6 +5,7 @@ import { RuntimeReconciliationService } from '../infrastructure/operations/runti
 import { OpsMetricsService } from '../infrastructure/operations/opsMetrics';
 import { outboxDispatcher } from '../application/container';
 import { cancel } from '../infrastructure/execution/broker';
+import { loadOperationResult } from '../infrastructure/execution/operationResults';
 import { recordAuditEvent } from '../security/audit';
 import { pythonToolsConfig } from '../infrastructure/python/client';
 import { HttpError } from '../errors';
@@ -111,6 +112,8 @@ export async function opsRoutes(app: FastifyInstance): Promise<void> {
       }
     });
     if (!operation) throw new HttpError(404, 'execution_not_found', 'Operation introuvable.');
+    // Résolution propriétaire + empreinte : un payload de résultat est relu, jamais exposé brut.
+    const result = await loadOperationResult({ accountId: operation.accountId, result: operation.result });
     const audit = await prisma.auditEvent.findMany({
       where: { traceId: operation.correlationId },
       orderBy: { createdAt: 'desc' },
@@ -119,6 +122,7 @@ export async function opsRoutes(app: FastifyInstance): Promise<void> {
     });
     return {
       ...operation,
+      result,
       createdAt: operation.createdAt.toISOString(),
       claimUntil: operation.claimUntil ? operation.claimUntil.toISOString() : null,
       audit: audit.map((row) => ({ ...row, createdAt: row.createdAt.toISOString() }))

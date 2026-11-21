@@ -18,6 +18,7 @@ import { assets, creativeStudio } from '../../application/container';
 import { HttpError } from '../../errors';
 import { proposeTx } from '../execution/broker';
 import type { EngineOutcome } from '../execution/registry';
+import { loadOperationResult, resolveOperationRows } from '../execution/operationResults';
 import { createArtifactStorageRegistry } from '../storage/storageFactory';
 import {
   AudioProviderRejected,
@@ -106,15 +107,15 @@ export async function prepareAudioJob(
 }
 
 export async function audioHistory(userId: string, projectId: string) {
-  return {
-    items: await prisma.executionOperation.findMany({
-      where: { projectId, accountId: userId, tool: { in: [...audioTools] }, project: { userId } },
-      orderBy: { createdAt: 'desc' },
-      take: 30,
-      select: { id: true, tool: true, state: true, costState: true, maxCents: true, reportedCents: true,
-        digest: true, result: true, params: true, approvedBy: true, createdAt: true }
-    })
-  };
+  const rows = await prisma.executionOperation.findMany({
+    where: { projectId, accountId: userId, tool: { in: [...audioTools] }, project: { userId } },
+    orderBy: { createdAt: 'desc' },
+    take: 30,
+    select: { id: true, accountId: true, tool: true, state: true, costState: true, maxCents: true, reportedCents: true,
+      digest: true, result: true, params: true, approvedBy: true, createdAt: true }
+  });
+  // Une transcription volumineuse est relue depuis son payload vérifié : jamais un marqueur tronqué.
+  return { items: await resolveOperationRows(rows) };
 }
 
 /** Exécution worker : fournisseur réel, vérification stricte, stockage immuable. */
@@ -251,12 +252,15 @@ export async function applyAudioResult(
   const operation = await prisma.executionOperation.findFirst({
     // RESOLVED : sortie payée déjà produite, coût constaté par un administrateur ; aucune relance payante.
     where: { id: operationId, projectId, accountId: userId, tool: { in: [...audioTools] }, state: { in: ['SUCCEEDED', 'RESOLVED'] }, project: { userId } },
-    select: { tool: true, result: true }
+    select: { tool: true, accountId: true, result: true }
   });
   if (!operation) throw new HttpError(404, 'audio_result_missing', 'Résultat audio introuvable ou non appliquable.');
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { userId: true } });
   if (project.userId !== userId) throw new HttpError(404, 'project_not_found', 'Projet introuvable.');
-  const result = (operation.result ?? null) as Record<string, unknown> | null;
+  const result = (await loadOperationResult<Record<string, unknown>>({
+    accountId: operation.accountId,
+    result: operation.result
+  })) ?? null;
   if (operation.tool === audioTranscribeTool) {
     const apply = audioTranscribeApply.parse(raw);
     const row = await creativeStudio.get(userId, projectId, apply.expectedRevision);

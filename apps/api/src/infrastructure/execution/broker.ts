@@ -6,6 +6,7 @@ import { mediaApprovalDigest } from '../mediaGeneration/approval';
 import { HttpError } from '../../errors';
 import { tools, toolSchema, proposal, type EnginePort, type Tool } from './registry';
 import { settlementFor, type CostBasis } from './costBasis';
+import { storeOperationResult } from './operationResults';
 import { holdTool,checkClaim,finishTool } from '../billing/service';
 import {demoDisabled} from '../../releaseMode';
 type Tx = Prisma.TransactionClient;
@@ -209,24 +210,16 @@ async function transition<T>(id: string, fn: (tx: Tx, o: Op) => Promise<T>) {
     return fn(tx, await tx.executionOperation.findUniqueOrThrow({ where: { id } }));
   });
 }
-/** Sortie bornée persistable : la trace d'un appel payé survit à l'incident. */
-function storableResult(result: unknown): Prisma.InputJsonValue | undefined {
-  if (result === undefined) return undefined;
-  const json = JSON.stringify(result);
-  return json.length <= 32768
-    ? (JSON.parse(json) as Prisma.InputJsonValue)
-    : { truncated: true, sizeBytes: json.length };
-}
 /**
  * Issue incertaine : réservation CONSERVÉE (aucune libération automatique) et sortie éventuelle
- * conservée pour permettre un rapprochement humain sans rejouer l'appel payé.
+ * conservée — déjà bornée et persistée par `storeOperationResult` — pour permettre un
+ * rapprochement humain sans rejouer l'appel payé.
  */
-async function incident(tx: Tx, o: Op, result?: unknown) {
+async function incident(tx: Tx, o: Op, result?: Prisma.InputJsonValue) {
   await audit(tx, o, null, 'outcome_unknown');
-  const stored = storableResult(result);
   return tx.executionOperation.update({
     where: { id: o.id },
-    data: { state: 'UNKNOWN', costState: 'UNKNOWN', ...(stored === undefined ? {} : { result: stored }) }
+    data: { state: 'UNKNOWN', costState: 'UNKNOWN', ...(result === undefined ? {} : { result }) }
   });
 }
 type Settlement = {
@@ -234,7 +227,8 @@ type Settlement = {
   basis: CostBasis;
   /** Rapprochement humain : preuve obligatoire, jamais automatique. */
   manual?: { actor: string; evidence: string };
-  result?: unknown;
+  /** Valeur déjà bornée par storeOperationResult : valeur en ligne, ou référence de payload. */
+  result?: Prisma.InputJsonValue;
 };
 /**
  * Règlement unique : le montant est pris tel qu'annoncé, jamais rogné au plafond. Un montant
@@ -265,14 +259,13 @@ async function settle(tx: Tx, o: Op, settlement: Settlement) {
     basis,
     ...(settlement.manual ? { evidence: settlement.manual.evidence } : {})
   });
-  const stored = storableResult(settlement.result);
   return tx.executionOperation.update({
     where: { id: o.id },
     data: {
       state: settlement.manual ? 'RESOLVED' : 'SUCCEEDED',
       costState: settlement.manual ? 'RECONCILED' : outcome.costState,
       reportedCents: cents,
-      ...(stored === undefined ? {} : { result: stored })
+      ...(settlement.result === undefined ? {} : { result: settlement.result })
     }
   });
 }
@@ -328,6 +321,11 @@ export async function execute(id: string, engine: EnginePort, timeoutMs = 120000
         }, timeoutMs);
       })
     ]);
+    // La sortie payante devient durable AVANT le règlement : un gros résultat part hors base,
+    // et un échec d'écriture est explicite (jamais un marqueur tronqué).
+    const stored = 'result' in result && result.result !== undefined
+      ? await storeOperationResult({ accountId: o.accountId, operationId: o.id, value: result.result })
+      : undefined;
     await transition(id, async (tx, row) => {
       if (row.state !== 'CLAIMED') return;
       if ('failed' in result) {
@@ -364,7 +362,7 @@ export async function execute(id: string, engine: EnginePort, timeoutMs = 120000
       } else await settle(tx, row, {
         cents: result.costCents,
         basis: result.costBasis,
-        result: 'result' in result ? result.result : undefined
+        result: stored
       });
     });
   } catch {

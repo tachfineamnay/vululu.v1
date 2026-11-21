@@ -7,6 +7,7 @@ import { assets, creativeStudio } from '../../application/container';
 import { HttpError } from '../../errors';
 import { proposeTx } from '../execution/broker';
 import type { EngineOutcome } from '../execution/registry';
+import { loadOperationResult, resolveOperationRows } from '../execution/operationResults';
 import { createArtifactStorageRegistry } from '../storage/storageFactory';
 import {
   ImageProviderRejected, ImageProviderUncertain, ImageProviderUnavailable, imageProviderCapabilities,
@@ -75,14 +76,14 @@ export async function prepareImageEdit(userId: string, projectId: string, raw: u
 }
 
 export async function imageEditHistory(userId: string, projectId: string) {
-  return {
-    items: await prisma.executionOperation.findMany({
-      where: { projectId, accountId: userId, tool: imageEditTool, project: { userId } },
-      orderBy: { createdAt: 'desc' }, take: 30,
-      select: { id: true, state: true, costState: true, maxCents: true, reportedCents: true, params: true,
-        result: true, digest: true, createdAt: true, approvedBy: true }
-    })
-  };
+  const rows = await prisma.executionOperation.findMany({
+    where: { projectId, accountId: userId, tool: imageEditTool, project: { userId } },
+    orderBy: { createdAt: 'desc' }, take: 30,
+    select: { id: true, accountId: true, state: true, costState: true, maxCents: true, reportedCents: true, params: true,
+      result: true, digest: true, createdAt: true, approvedBy: true }
+  });
+  // Résolution transparente du résultat (payload vérifié si la valeur dépasse la borne inline).
+  return { items: await resolveOperationRows(rows) };
 }
 
 /** Exécution worker : fournisseur réel, vérification stricte, stockage immuable. Aucune sortie fabriquée. */
@@ -158,9 +159,14 @@ export async function applyImageEdit(userId: string, projectId: string, operatio
   const operation = await prisma.executionOperation.findFirst({
     // RESOLVED : sortie payée déjà produite, coût constaté par un administrateur ; aucune relance payante.
     where: { id: operationId, projectId, accountId: userId, tool: imageEditTool, state: { in: ['SUCCEEDED', 'RESOLVED'] }, project: { userId } },
-    select: { result: true }
+    select: { accountId: true, result: true }
   });
-  const result = operation?.result as { assetVersionId?: unknown; mimeType?: unknown } | null;
+  const result = operation
+    ? await loadOperationResult<{ assetVersionId?: unknown; mimeType?: unknown }>({
+        accountId: operation.accountId,
+        result: operation.result
+      })
+    : null;
   if (!result || typeof result.assetVersionId !== 'string' || !allowedMime.includes(String(result.mimeType)))
     throw new HttpError(404, 'image_edit_result_missing', 'Résultat d’édition introuvable ou non appliquable.');
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { contextId: true, userId: true } });

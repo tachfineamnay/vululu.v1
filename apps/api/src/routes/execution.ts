@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@vululu/db';
 import { agentOutput } from '@vululu/contracts';
 import { approve, cancel, propose, resolveIncident } from '../infrastructure/execution/broker';
+import { loadOperationResult, resolveOperationRows } from '../infrastructure/execution/operationResults';
 import { tools, toolSchema, type Tool } from '../infrastructure/execution/registry';
 import { rateLimitPreHandler } from '../infrastructure/security/rateLimiter';
 import {demoDisabled} from '../releaseMode';
@@ -94,10 +95,11 @@ export async function executionRoutes(app: FastifyInstance) {
     const items = await prisma.executionOperation.findMany({
       where: { projectId, accountId: r.currentUser!.id, project: { userId: r.currentUser!.id } },
       orderBy: { createdAt: 'desc' }, take: 30,
-      select: { id: true, tool: true, state: true, costState: true, maxCents: true, reportedCents: true,
+      select: { id: true, accountId: true, tool: true, state: true, costState: true, maxCents: true, reportedCents: true,
         result: true, createdAt: true, agentTurnId: true, step: true, digest: true, approvedBy: true }
     });
-    return { items };
+    // Résolution transparente : un gros résultat est relu depuis son payload vérifié.
+    return { items: await resolveOperationRows(items) };
   });
   app.post('/api/projects/:projectId/execution/agent', auth, async (r) => {
     const { projectId } = z.object({ projectId: z.string().max(128) }).parse(r.params);
@@ -125,7 +127,7 @@ export async function executionRoutes(app: FastifyInstance) {
       where: { id: id(r.params), accountId: r.currentUser!.id, project: { userId: r.currentUser!.id } }
     });
     if (!o) throw new HttpError(404, 'execution_not_found', 'Opération introuvable');
-    return o;
+    return { ...o, result: await loadOperationResult({ accountId: o.accountId, result: o.result }) };
   });
   app.post('/api/execution/:id/approve', auth, (r) =>
     approve(

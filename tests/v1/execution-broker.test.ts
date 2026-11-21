@@ -25,6 +25,8 @@ import {
   resolveIncident
 } from '../../apps/api/src/infrastructure/execution/broker';
 import { tools, type Tool } from '../../apps/api/src/infrastructure/execution/registry';
+import { loadOperationResult } from '../../apps/api/src/infrastructure/execution/operationResults';
+import { isResultPayloadReference } from '../../apps/api/src/infrastructure/execution/resultPayload';
 let actor: string, admin: string, project: string;
 const make = (key: string = randomUUID(), tool: Tool = 'sandbox.generate@1') =>
   propose(actor, project, { key, tool, revision: 1 });
@@ -462,4 +464,41 @@ it('records a paid but unusable provider output as an incident, never as a free 
   expect(await wallet()).toMatchObject({ reservedCents: 10, spentCents: 0 });
   const events = await prisma.auditEvent.findMany({ where: { targetId: o.id, action: 'execution.uncertain' } });
   expect(events).toHaveLength(1);
+});
+it('persists a result above the inline bound as an immutable payload and resolves it transparently', async () => {
+  const o = await make();
+  await approve(actor, o.id, o.digest);
+  // Transcription volumineuse : au-delà de 32 Kio, jamais remplacée par un marqueur tronqué.
+  const big = {
+    tool: 'audio.transcribe@1',
+    segments: Array.from({ length: 200 }, (_, index) => ({ start: index, end: index + 0.9, text: 'segment ' + index + ' ' + 'x'.repeat(150) }))
+  };
+  expect(JSON.stringify(big).length).toBeGreaterThan(32768);
+  await execute(o.id, {
+    async invoke() {
+      return { costCents: 2, costBasis: 'configured_estimate' as const, result: big };
+    }
+  });
+  const row = await prisma.executionOperation.findUniqueOrThrow({ where: { id: o.id } });
+  expect(row.state).toBe('SUCCEEDED');
+  expect(JSON.stringify(row.result).length).toBeLessThan(512);
+  expect(isResultPayloadReference(row.result)).toBe(true);
+  expect(JSON.stringify(row.result)).not.toContain('truncated');
+  expect(await loadOperationResult({ accountId: row.accountId, result: row.result })).toEqual(big);
+  expect(await wallet()).toMatchObject({ reservedCents: 0, spentCents: 2 });
+});
+it('keeps a paid large result resolvable when the provider amount exceeds the ceiling', async () => {
+  const o = await make();
+  await approve(actor, o.id, o.digest);
+  const big = { segments: Array.from({ length: 200 }, (_, index) => ({ start: index, end: index + 1, text: 'ligne ' + index + ' ' + 'y'.repeat(150) })) };
+  await execute(o.id, {
+    async invoke() {
+      return { costCents: 11, costBasis: 'provider_reported' as const, result: big };
+    }
+  });
+  const row = await prisma.executionOperation.findUniqueOrThrow({ where: { id: o.id } });
+  expect(row).toMatchObject({ state: 'UNKNOWN', costState: 'UNKNOWN', reportedCents: null });
+  expect(isResultPayloadReference(row.result)).toBe(true);
+  expect(await loadOperationResult({ accountId: row.accountId, result: row.result })).toEqual(big);
+  expect(await wallet()).toMatchObject({ reservedCents: 10, spentCents: 0 });
 });
