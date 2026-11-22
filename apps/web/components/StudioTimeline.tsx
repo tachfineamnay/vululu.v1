@@ -2,7 +2,7 @@
 import { useState, type DragEvent } from 'react';
 import { isVideoOutput, type CreativeSpec } from '@vululu/contracts';
 import type { StudioTimelineProps } from '../lib/studioComponentTypes';
-import { describeAudioTrim, trimAudioToDuration } from '../lib/studioAudio';
+import { describeAudioTrim, withSceneDuration, withoutScene } from '../lib/studioAudio';
 
 const MIN_SECONDS = 0.5;
 const MAX_SECONDS = 30;
@@ -63,10 +63,7 @@ export function StudioTimeline({ spec, sceneIndex, busy, sources, onSpec, onSele
     if (seconds === scene.seconds) return;
     // Une durée plus courte peut laisser des pistes ou des sous-titres au-delà de la fin :
     // on les ramène dans la durée et on annonce l'ajustement (aucune suppression silencieuse).
-    const trim = trimAudioToDuration({
-      ...spec,
-      scenes: spec.scenes.map((item, position) => (position === index ? { ...item, seconds } : item))
-    });
+    const trim = withSceneDuration(spec, index, seconds);
     onSpec(trim.spec);
     const message = describeAudioTrim(trim);
     if (message) onNotice(message);
@@ -95,7 +92,7 @@ export function StudioTimeline({ spec, sceneIndex, busy, sources, onSpec, onSele
   function removeScene() {
     if (!current || spec.scenes.length < 2) return;
     const scenes = spec.scenes.filter((_, position) => position !== sceneIndex);
-    const trim = trimAudioToDuration({ ...spec, scenes });
+    const trim = withoutScene(spec, sceneIndex);
     onSpec(trim.spec);
     onSelect(Math.min(sceneIndex, scenes.length - 1));
     const message = describeAudioTrim(trim);

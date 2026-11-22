@@ -102,3 +102,16 @@ export function describeAudioTrim(trim: Pick<AudioTrim, 'removedCues' | 'movedTr
     ? 'Durée raccourcie : ' + parts.join(' · ') + ' pour garder la composition valide.'
     : '';
 }
+
+/** Durée d'une scène modifiée, avec l'audio ramené dans la nouvelle durée. */
+export function withSceneDuration(spec: CreativeSpec, sceneIndex: number, seconds: number): AudioTrim {
+  return trimAudioToDuration({
+    ...spec,
+    scenes: spec.scenes.map((scene, index) => (index === sceneIndex ? { ...scene, seconds } : scene))
+  });
+}
+
+/** Retrait d'une scène, avec l'audio ramené dans la nouvelle durée totale. */
+export function withoutScene(spec: CreativeSpec, sceneIndex: number): AudioTrim {
+  return trimAudioToDuration({ ...spec, scenes: spec.scenes.filter((_, index) => index !== sceneIndex) });
+}

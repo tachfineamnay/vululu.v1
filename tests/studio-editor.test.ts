@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { creativeLayer, creativeSpec, subtitleCue, type CreativeSpec } from '@vululu/contracts';
-import { createTextLayer, moveLayerOrder, type TextRole } from '../apps/web/lib/studioGeometry';
+import { createTextLayer, moveLayerOrder, withSafeArea, type TextRole } from '../apps/web/lib/studioGeometry';
 import {
   describeAudioTrim,
   maxTrackStart,
   sceneTotalSeconds,
-  trimAudioToDuration
+  trimAudioToDuration,
+  withSceneDuration,
+  withoutScene
 } from '../apps/web/lib/studioAudio';
 import { appendCue, setCueTime } from '../apps/web/lib/studioSubtitles';
 import { previewSpecForScene } from '../apps/web/lib/studioPreview';
+import { applyChannelPreset, CHANNEL_PRESETS, compatiblePresets } from '../apps/web/lib/studioChannels';
 
 const text = (value: string, y: number) => ({
   type: 'text' as const,
@@ -196,5 +199,97 @@ describe('calques (studioGeometry)', () => {
     // Bornes : aucun changement, même référence (pas d'historique inutile).
     expect(moveLayerOrder(layers, 0, -1).layers).toBe(layers);
     expect(moveLayerOrder(layers, 2, 1).layers).toBe(layers);
+  });
+});
+
+describe('marge sûre et durées de scène', () => {
+  const audioSpec = (): CreativeSpec => ({
+    ...videoSpec(),
+    audio: {
+      tracks: [
+        { id: '33333333-3333-4333-8333-333333333333', kind: 'music', versionId: 'v1', start: 5, gain: 0.4, fadeIn: 0, fadeOut: 0 }
+      ],
+      subtitles: {
+        enabled: true,
+        language: 'fr-FR',
+        cues: [
+          { start: 0.5, end: 2.5, text: 'Début' },
+          { start: 5, end: 5.8, text: 'Fin' }
+        ]
+      }
+    }
+  } as CreativeSpec);
+
+  it('ramène les calques texte dans la nouvelle marge sûre', () => {
+    const spec = videoSpec();
+    const wide = withSafeArea(spec, 0.2);
+    expect(wide.safeArea).toBe(0.2);
+    for (const scene of wide.scenes) {
+      for (const layer of scene.layers) {
+        if (layer.type !== 'text') continue;
+        expect(layer.x).toBeGreaterThanOrEqual(0.2);
+        expect(layer.y).toBeGreaterThanOrEqual(0.2);
+        expect(layer.x + layer.w).toBeLessThanOrEqual(0.8 + 1e-9);
+        expect(layer.y + layer.h).toBeLessThanOrEqual(0.8 + 1e-9);
+      }
+    }
+    expect(creativeSpec.safeParse(wide).success).toBe(true);
+    expect(withSafeArea(spec, 0.5).safeArea).toBe(0.2); // borne contractuelle
+  });
+
+  it('raccourcit une scène en gardant la composition valide', () => {
+    const trim = withSceneDuration(audioSpec(), 0, 1);
+    expect(sceneTotalSeconds(trim.spec)).toBe(4);
+    expect(creativeSpec.safeParse(trim.spec).success).toBe(true);
+    expect(trim.spec.audio?.tracks[0].start).toBeLessThan(4);
+    expect(trim.spec.audio?.subtitles?.cues.every((cue) => cue.end <= 4)).toBe(true);
+  });
+
+  it('retire une scène en gardant la composition valide', () => {
+    const trim = withoutScene(audioSpec(), 1);
+    expect(trim.spec.scenes.map((scene) => scene.key)).toEqual(['SCENE-001']);
+    expect(creativeSpec.safeParse(trim.spec).success).toBe(true);
+    const total = sceneTotalSeconds(trim.spec);
+    for (const track of trim.spec.audio?.tracks ?? []) expect(track.start).toBeLessThan(total);
+    for (const cue of trim.spec.audio?.subtitles?.cues ?? []) expect(cue.end).toBeLessThanOrEqual(total);
+  });
+});
+
+describe('repères de canal (studioChannels)', () => {
+  it('retire les pistes et sous-titres quand la cible est une image', () => {
+    const spec: CreativeSpec = {
+      ...videoSpec(),
+      audio: {
+        tracks: [{ id: '44444444-4444-4444-8444-444444444444', kind: 'music', versionId: 'v1', start: 0, gain: 0.5, fadeIn: 0, fadeOut: 0 }],
+        subtitles: { enabled: true, language: 'fr-FR', cues: [{ start: 0, end: 2, text: 'Bonjour' }] }
+      }
+    } as CreativeSpec;
+    expect(creativeSpec.safeParse(spec).success).toBe(true);
+    const preset = CHANNEL_PRESETS.find((item) => item.id === 'ig-square')!;
+    const applied = applyChannelPreset(spec, preset);
+    expect(applied.spec.audio).toBeUndefined();
+    expect(applied.spec.scenes).toHaveLength(1);
+    expect(applied.spec.width).toBe(1080);
+    expect(applied.spec.height).toBe(1080);
+    const parsed = creativeSpec.safeParse(applied.spec);
+    expect(parsed.success).toBe(true);
+    expect(applied.note).toContain('sous-titres');
+  });
+
+  it('conserve audio et scènes en passant d’une vidéo verticale à une vidéo paysage', () => {
+    const spec = videoSpec({
+      audio: { tracks: [], subtitles: { enabled: false, language: 'fr-FR', cues: [] } }
+    });
+    const preset = CHANNEL_PRESETS.find((item) => item.id === 'li-landscape')!;
+    const applied = applyChannelPreset(spec, preset);
+    expect(applied.spec.scenes).toHaveLength(2);
+    expect(applied.spec.audio).toBeDefined();
+    expect(applied.spec.width).toBe(1920);
+    expect(creativeSpec.safeParse(applied.spec).success).toBe(true);
+  });
+
+  it('ne propose que des repères compatibles avec le nombre de scènes', () => {
+    expect(compatiblePresets(1).some((preset) => preset.kind === 'carousel')).toBe(false);
+    expect(compatiblePresets(3).every((preset) => preset.kind === 'carousel' || preset.kind === 'short' || preset.kind === 'landscape')).toBe(true);
   });
 });

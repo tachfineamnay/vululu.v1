@@ -15,7 +15,9 @@ import { useStudioPreview } from '../lib/useStudioPreview';
 import { useStudioVideoPreview } from '../lib/useStudioVideoPreview';
 import { clearCreativeDraft, readCreativeDraft, writeCreativeDraft, type CreativeDraft } from '../lib/studioDraftStore';
 import { applyChannelPreset, compatiblePresets, defaultPreset, CHANNEL_PRESETS } from '../lib/studioChannels';
-import { alignLayers, clampLayer, distributeLayers, specWithLayers } from '../lib/studioGeometry';
+import { alignLayers, clampLayer, distributeLayers, patchLayer, specWithLayers, withSafeArea } from '../lib/studioGeometry';
+import { describeAudioTrim, withSceneDuration, withoutScene } from '../lib/studioAudio';
+import { previewSpecForScene } from '../lib/studioPreview';
 import { outputSize, platformSchema, productionCapability, readableInk, studioExportExtension, creativeSpec, isVideoOutput, type CreativeSpec, type CreativeLayer } from '@vululu/contracts';
 import { api, apiResponse, postJson, type ProjectBundle } from '../lib/api';
 import type { StudioAlignMode, StudioLayerSpec, StudioRevision } from '../lib/studioTypes';
@@ -289,7 +291,10 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
     if (spec && scene) change(specWithLayers(spec, index, ls));
   }
   function update(i: number, patch: Partial<CreativeLayer>) {
-    if (scene) layers(scene.layers.map((l, j) => (j === i ? ({ ...l, ...patch } as CreativeLayer) : l)));
+    if (scene)
+      layers(
+        scene.layers.map((l, j) => (j === i ? clampLayer(patchLayer(l, patch), spec?.safeArea ?? 0) : l))
+      );
   }
   async function step(back: boolean) {
     const v = (back ? past : future)[0];
@@ -713,7 +718,7 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
                     void action(async () => {
                       const response = await apiResponse(base + '/preview', {
                         method: 'POST',
-                        body: JSON.stringify({ ...spec, scenes: [scene] })
+                        body: JSON.stringify(previewSpecForScene(spec, scene))
                       });
                       setScenePreview({ url: URL.createObjectURL(await response.blob()), spec, index });
                     })
@@ -751,7 +756,7 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
                     label="Marge sûre (0–0,2)"
                     value={spec.safeArea}
                     step={0.01}
-                    change={(safeArea) => change({ ...spec, safeArea })}
+                    change={(safeArea) => change(withSafeArea(spec, safeArea))}
                   />
                 </div>
                 {(['background', 'accent'] as const).map((k) => (
@@ -819,7 +824,10 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
                     type="button"
                     disabled={spec.scenes.length < 2}
                     onClick={() => {
-                      change({ ...spec, scenes: spec.scenes.filter((_, i) => i !== index) });
+                      const trim = withoutScene(spec, index);
+                      change(trim.spec);
+                      const message = describeAudioTrim(trim);
+                      if (message) notify(message);
                       setScene(0);
                     }}
                   >
@@ -830,9 +838,12 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
                   label="Durée (secondes)"
                   value={scene.seconds}
                   step={0.5}
-                  change={(seconds) =>
-                    change({ ...spec, scenes: spec.scenes.map((s, i) => (i === index ? { ...s, seconds } : s)) })
-                  }
+                  change={(seconds) => {
+                    const trim = withSceneDuration(spec, index, seconds);
+                    change(trim.spec);
+                    const message = describeAudioTrim(trim);
+                    if (message) notify(message);
+                  }}
                 />}
                 {isVideoOutput(spec.delivery?.kind) && (
                   <label>

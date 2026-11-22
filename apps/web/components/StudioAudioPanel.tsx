@@ -160,6 +160,9 @@ function drawWaveform(canvas: HTMLCanvasElement, buffer: AudioBuffer) {
   context.stroke();
 }
 
+/** Au-delà de cette taille, le décodage complet bloquerait l'onglet : métadonnées seules. */
+const MAX_WAVEFORM_BYTES = 12 * 1024 * 1024;
+
 /** Forme d'onde réelle uniquement : contenu décodé par AudioContext, sinon métadonnées seules. */
 function TrackWaveform({ source }: { source: StudioSource | undefined }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -171,6 +174,15 @@ function TrackWaveform({ source }: { source: StudioSource | undefined }) {
     const versionId = source?.id;
     if (!assetId || !versionId) {
       setState('unavailable');
+      return;
+    }
+    if ((source?.sizeBytes ?? 0) > MAX_WAVEFORM_BYTES) {
+      setState('error');
+      setMessage(
+        'Fichier trop volumineux pour une forme d’onde dans le navigateur (' +
+          Math.round((source?.sizeBytes ?? 0) / (1024 * 1024)) +
+          ' Mio) : métadonnées réelles uniquement, le rendu serveur reste inchangé.'
+      );
       return;
     }
     let cancelled = false;

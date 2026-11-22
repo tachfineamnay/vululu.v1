@@ -18,13 +18,14 @@ import {
   clampLayer,
   createTextLayer,
   isImageLayer,
+  withSafeArea,
   isTextLayer,
   moveLayerOrder,
   patchLayer,
   specWithLayers,
   type TextRole
 } from '../lib/studioGeometry';
-import { describeAudioTrim, trimAudioToDuration } from '../lib/studioAudio';
+import { describeAudioTrim, withSceneDuration } from '../lib/studioAudio';
 import type { ChannelZone, StudioLayerSpec, StudioScene, StudioSource } from '../lib/studioTypes';
 
 type TextLayer = Extract<StudioLayerSpec, { type: 'text' }>;
@@ -183,12 +184,7 @@ export function StudioInspector({
   }
 
   function changeSafeArea(value: number) {
-    const safeArea = Math.round(clamp(value, 0, 0.2) * 100) / 100;
-    onSpec({
-      ...spec,
-      safeArea,
-      scenes: spec.scenes.map((item) => ({ ...item, layers: item.layers.map((layer) => clampLayer(layer, safeArea)) }))
-    });
+    onSpec(withSafeArea(spec, value));
   }
 
   function changeBrand(key: 'background' | 'accent', value: string) {
@@ -211,9 +207,8 @@ export function StudioInspector({
 
   function changeSeconds(value: number) {
     const seconds = Math.round(clamp(value, 0.5, 30) * 2) / 2;
-    const next = specWithLayers(spec, sceneIndex, layers);
-    const changed = { ...next, scenes: next.scenes.map((item, index) => (index === sceneIndex ? { ...item, seconds } : item)) };
-    const trim = trimAudioToDuration(changed);
+    if (seconds === scene?.seconds) return;
+    const trim = withSceneDuration(spec, sceneIndex, seconds);
     onSpec(trim.spec);
     const message = describeAudioTrim(trim);
     if (message) onNotice(message);

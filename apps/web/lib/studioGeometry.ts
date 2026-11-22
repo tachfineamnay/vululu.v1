@@ -202,3 +202,16 @@ export function createTextLayer(role: TextRole, safeArea: number): StudioLayerSp
   };
   return clampLayer({ ...layer, y: preset.y }, m);
 }
+
+/**
+ * Marge sûre appliquée à toute la composition : chaque calque texte est ramené dans la
+ * nouvelle zone sûre (le contrat refuse un texte hors marge, sans tolérance).
+ */
+export function withSafeArea(spec: CreativeSpec, value: number): CreativeSpec {
+  const safeArea = clamp(Math.round(clamp(value, 0, 0.2) * 100) / 100, 0, 0.2);
+  return {
+    ...spec,
+    safeArea,
+    scenes: spec.scenes.map((scene) => ({ ...scene, layers: scene.layers.map((layer) => clampLayer(layer, safeArea)) }))
+  };
+}

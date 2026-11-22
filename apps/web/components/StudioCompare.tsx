@@ -3,15 +3,20 @@ import { useEffect, useRef, useState } from 'react';
 import { creativeSpec, type CreativeSpec } from '@vululu/contracts';
 import { api, apiResponse } from '../lib/api';
 import type { StudioCompareProps } from '../lib/studioComponentTypes';
+import { previewSpecForScene } from '../lib/studioPreview';
 
 type ComparePreview = { url: string; sceneKey: string };
 
 const stamp = (value: string) => new Date(value).toLocaleString('fr-FR');
 
-/** Réduit une composition à un seul cadre : le moteur d'aperçu serveur n'accepte qu'une scène. */
+/**
+ * Réduit une composition à un seul cadre : le moteur d'aperçu serveur n'accepte qu'une scène.
+ * L'audio est retiré par `previewSpecForScene` : l'image fixe ne le dessine pas et ses bornes
+ * de durée (sous-titres, pistes) ne concernent pas une scène isolée.
+ */
 function singleScene(spec: CreativeSpec, sceneKey: string) {
   const scene = spec.scenes.find((item) => item.key === sceneKey) ?? spec.scenes[0];
-  return scene ? { scene, single: { ...spec, scenes: [scene] } } : null;
+  return scene ? { scene, single: previewSpecForScene(spec, scene) } : null;
 }
 
 /** Aperçu d'un cadre rendu par le même moteur serveur que le master (aucun rendu navigateur approximatif). */
