@@ -1,7 +1,7 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { prisma } from '@vululu/db';
 import { contentChecksum } from '@vululu/domain';
-import { ApplicationError } from '@vululu/application';
+import { ApplicationError, qaPassedOrThrow } from '@vululu/application';
 import type {
   DurableProductionStore,
   DurableRunRecord,
@@ -192,6 +192,9 @@ export class PrismaDurableProductionStore implements DurableProductionStore {
     masterVersion: number;
     checksum: string;
   }> {
+    // Defense en profondeur : meme si un appelant oubliait le garde-fou du use
+    // case, une version d artefact non PASS ne peut jamais etre persistee.
+    qaPassedOrThrow(input.qa);
     try {
       return await this.db.$transaction(
         async (tx) => {

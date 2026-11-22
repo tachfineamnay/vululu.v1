@@ -41,11 +41,13 @@ export function sanitizeRequestId(value: string): string {
 
 /** Logs JSON structure, sans secret, sur stdout. */
 export function logEvent(level: LogLevel, event: string, fields: Record<string, unknown> = {}): void {
+  // Les champs systeme passent en dernier : un appelant ne peut jamais
+  // falsifier l horodatage, le niveau ou le nom de l evenement journalise.
   const line = {
+    ...(redact(fields) as Record<string, unknown>),
     timestamp: new Date().toISOString(),
     level,
-    event,
-    ...(redact(fields) as Record<string, unknown>)
+    event
   };
   try {
     process.stdout.write(JSON.stringify(line) + '\n');

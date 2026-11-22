@@ -26,7 +26,18 @@ export function configuredAccountMail(): AccountMailTransport | null {
 export function accountEmailOrigin(): string {
   const configured = process.env.ACCOUNT_EMAIL_ORIGIN;
   const production = process.env.APP_ENV === 'production';
-  const url = new URL(configured || (production ? '' : 'http://localhost:3100'));
+  const raw = configured || (production ? '' : 'http://localhost:3100');
+  // En production sans configuration, `new URL('')` leverait un TypeError opaque
+  // au montage des routes : refuser avec un message actionnable et deterministe.
+  if (!raw) {
+    throw new Error('ACCOUNT_EMAIL_ORIGIN doit être configuré en production (origine HTTPS).');
+  }
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error('ACCOUNT_EMAIL_ORIGIN doit être une origine web publique, HTTPS en production.');
+  }
   if (url.href !== url.origin + '/' || (url.protocol !== 'https:' && (production || url.protocol !== 'http:'))) {
     throw new Error('ACCOUNT_EMAIL_ORIGIN doit être une origine web publique, HTTPS en production.');
   }

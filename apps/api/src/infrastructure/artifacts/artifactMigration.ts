@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import { prisma } from '@vululu/db';
 import type { ArtifactPublisherPort, ArtifactStoragePort } from '@vululu/application';
 import { LocalFilesystemArtifactStorage } from '../storage/localArtifactStorage';
@@ -11,7 +11,13 @@ export type LegacyArtifactCandidate = {
   checksum: string;
   exists: boolean;
   checksumVerified: boolean;
+  /** Manifest historique a conserver : la migration ne doit rien effacer. */
+  previousManifest?: Record<string, unknown>;
 };
+
+function asManifest(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+}
 
 /**
  * Migration progressive legacy -> stockage durable.
@@ -38,7 +44,6 @@ export class ArtifactMigrationService {
     });
     const candidates: LegacyArtifactCandidate[] = [];
     for (const scene of scenes) {
-      const file = this.legacy.resolveKeyForLegacy(scene.imagePath);
       const head = await this.legacy.head(scene.imagePath).catch(() => null);
       candidates.push({
         kind: 'scene',
@@ -47,12 +52,11 @@ export class ArtifactMigrationService {
         legacyPath: scene.imagePath,
         checksum: scene.checksum,
         exists: Boolean(head),
-        checksumVerified: Boolean(head && head.sha256 === scene.checksum)
+        checksumVerified: Boolean(head && head.sha256 === scene.checksum),
+        previousManifest: asManifest(scene.manifest)
       });
-      void file;
     }
     for (const master of masters) {
-      const file = this.legacy.resolveKeyForLegacy(master.masterPath);
       const head = await this.legacy.head(master.masterPath).catch(() => null);
       candidates.push({
         kind: 'master',
@@ -61,9 +65,9 @@ export class ArtifactMigrationService {
         legacyPath: master.masterPath,
         checksum: master.checksum,
         exists: Boolean(head),
-        checksumVerified: Boolean(head && head.sha256 === master.checksum)
+        checksumVerified: Boolean(head && head.sha256 === master.checksum),
+        previousManifest: asManifest(master.manifest)
       });
-      void file;
     }
     return candidates;
   }
@@ -100,7 +104,7 @@ export class ArtifactMigrationService {
         filePath,
         contentType: item.kind === 'scene' ? 'image/png' : 'video/mp4',
         checksum: item.checksum,
-        manifest: { migration: 'legacy', sourcePath: item.legacyPath, sourceChecksum: item.checksum }
+        manifest: { ...item.previousManifest, migration: 'legacy', sourcePath: item.legacyPath, sourceChecksum: item.checksum }
       });
       await this.db.$transaction(async (tx) => {
         if (item.kind === 'scene') {
@@ -113,7 +117,7 @@ export class ArtifactMigrationService {
               sizeBytes: BigInt(published.sizeBytes),
               sha256: published.sha256,
               finalizationState: 'ready',
-              manifest: { migration: 'legacy', sourcePath: item.legacyPath }
+              manifest: { ...item.previousManifest, migration: 'legacy', sourcePath: item.legacyPath, sourceChecksum: item.checksum } as Prisma.InputJsonValue
             }
           });
           await tx.artifactObject.updateMany({
@@ -130,7 +134,7 @@ export class ArtifactMigrationService {
               sizeBytes: BigInt(published.sizeBytes),
               sha256: published.sha256,
               finalizationState: 'ready',
-              manifest: { migration: 'legacy', sourcePath: item.legacyPath }
+              manifest: { ...item.previousManifest, migration: 'legacy', sourcePath: item.legacyPath, sourceChecksum: item.checksum } as Prisma.InputJsonValue
             }
           });
           await tx.artifactObject.updateMany({

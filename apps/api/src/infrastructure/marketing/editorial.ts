@@ -6,19 +6,32 @@ import {
   type Recipe
 } from '@vululu/contracts';
 // Hints guide editorial choices; never present inferred occupation as a verified qualification.
+// Les accents sont optionnels dans les deux regles : les descriptions clientes
+// arrivent souvent sans accent (sante, therapie, dietetique...), et un secteur
+// regule ne doit jamais passer en `general` a cause d un accent manquant.
+const HEALTH = /th[ée]rap|psych|\bsoins?\b|sant[ée]|m[ée]dic|dentist|pharm|kin[ée]sith|ost[ée]o|infirmi|v[ée]t[ée]rin/i;
+const TRAINING = /formation|formateur|\bcours\b|p[ée]dagog|coach\b/i;
+const CRAFT = /artisan|poterie|c[ée]rami|menuis|[ée]b[ée]nis|couture/i;
+const CONSULTING = /consult|conseil|audit|strat[ée]g/i;
+const RETAIL = /boutique|commerce|magasin|[ée]picerie/i;
+const FINANCE_LEGAL = /juridi|avocat|financ|assurance|investiss|cr[ée]dit|notaire|comptab/i;
+const WELLNESS = /nutrition|di[ée]t[ée]t|bien-[ée]tre|esth[ée]tique/i;
+
 export function classify(description: string) {
   const d = description.toLocaleLowerCase('fr');
-  if (/thérap|therap|psycholog|psychoth|\bsoins?|santé/.test(d)) return 'therapeute';
-  if (/formation|formateur|\bcours\b|pédagog/.test(d)) return 'formation';
-  if (/artisan|poterie|cérami|menuis|ébénis|couture/.test(d)) return 'artisan';
-  if (/consult|conseil|audit|stratég/.test(d)) return 'consultant';
-  if (/boutique|commerce|magasin|épicerie/.test(d)) return 'boutique';
+  if (HEALTH.test(d)) return 'therapeute';
+  if (TRAINING.test(d)) return 'formation';
+  if (CRAFT.test(d)) return 'artisan';
+  if (CONSULTING.test(d)) return 'consultant';
+  if (RETAIL.test(d)) return 'boutique';
   return 'general';
 }
+/**
+ * Serieux reglementaire : un secteur regule force une revue humaine. Doit
+ * couvrir au minimum ce que `classify` peut ranger en `therapeute`.
+ */
 export function sensitive(text: string) {
-  return /th[ée]rap|psych|\bsoin|sant[ée]|m[ée]dic|dentist|pharm|juridi|avocat|financ|assurance|investiss|cr[ée]dit|nutrition|di[ée]t[ée]t/i.test(
-    text
-  );
+  return HEALTH.test(text) || FINANCE_LEGAL.test(text) || WELLNESS.test(text);
 }
 const guides = {
   artisan: ['le geste', 'un détail de fabrication', 'une matière ou un outil utilisé'],

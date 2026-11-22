@@ -1,9 +1,12 @@
-import type {
-  MediaRendererPort,
-  ProductionExecutionStore,
-  ProductionExecutorPort,
-  SceneRenderResult,
-  StoragePort
+import {
+  qaPassedOrThrow,
+  qaFailureReason,
+  type MediaRendererPort,
+  type ProductionExecutionStore,
+  type ProductionExecutorPort,
+  type QaReport,
+  type SceneRenderResult,
+  type StoragePort
 } from '@vululu/application';
 
 /**
@@ -63,6 +66,19 @@ export class LocalProductionExecutor implements ProductionExecutorPort {
     } else {
       await this.runCorrection(input, project);
     }
+  }
+
+  /**
+   * FIX01 : garde-fou QA autoritaire, identique au pipeline durable.
+   * Un rapport non PASS marque l etape QA en echec et leve : aucune version
+   * d artefact n est creee, aucun master ne devient approuvable.
+   */
+  private async guardQa(jobRunId: string, qa: QaReport): Promise<void> {
+    if (qa.status === 'PASS') return;
+    await this.store
+      .updateStep(jobRunId, 'qa', 'failed', qaFailureReason(qa.checks))
+      .catch(() => undefined);
+    qaPassedOrThrow(qa);
   }
 
   private async runProduction(
@@ -125,6 +141,7 @@ export class LocalProductionExecutor implements ProductionExecutorPort {
     await this.store.updateStep(input.jobRunId, 'qa', 'running');
     await this.store.updateJob(input.jobId, { step: 'qa', progress: 85 });
     const qa = await this.media.runQa(rendered.map((item) => item.result), master, project.render);
+    await this.guardQa(input.jobRunId, qa);
     await this.store.finalizeRun({
       jobRunId: input.jobRunId,
       jobId: input.jobId,
@@ -222,6 +239,7 @@ export class LocalProductionExecutor implements ProductionExecutorPort {
     await this.store.updateStep(input.jobRunId, 'qa', 'running');
     await this.store.updateJob(input.jobId, { step: 'qa', progress: 85 });
     const qa = await this.media.runQa(sceneResults, master, project.render);
+    await this.guardQa(input.jobRunId, qa);
     const outputs = project.scenes.map((scene) => {
       const isTarget = scene.id === target.id;
       return {
