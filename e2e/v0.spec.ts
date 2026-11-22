@@ -3,7 +3,8 @@ import fs from 'node:fs/promises';
 import { test, expect, Page } from '@playwright/test';
 
 test.describe.configure({ mode: 'serial' });
-test.setTimeout(300000);
+// Pipeline durable réel : production (~45 s) + approbation + second rendu après correction.
+test.setTimeout(480000);
 
 const demoEmail = process.env.V0_DEMO_EMAIL || 'demo@vululu.local';
 const demoPassword = process.env.V0_DEMO_PASSWORD || 'vululu-demo';
@@ -172,6 +173,12 @@ test('verticale Studio V1 complete (deterministe, correction ciblee, MOCK)', asy
   expect(createHash('sha256').update(await fs.readFile(downloadedPath!)).digest('hex')).toBe(before.master.checksum);
   await page.locator('[data-testid=approve]').click();
   await expect(page.locator('[data-testid=approval-status]')).toBeVisible();
+
+  // Le run durable reste « running » pendant ses étapes approbation puis transfert : une
+  // correction immédiate est refusée (409 job_running). Comportement réel de sérialisation.
+  await expect
+    .poll(async () => (await fetchBundle(page, projectId)).jobRun?.status ?? 'none', { timeout: 180000 })
+    .toMatch(/succeeded|failed|cancelled/);
 
   await page.getByTestId('scene-SCENE-002').click();
   await page.locator('[data-testid=correct-input]').fill('Rends le produit plus visible et garde le personnage.');

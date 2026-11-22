@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 vi.hoisted(() => {
-  const testDbUrl = 'postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public';
+  const testDbUrl = process.env.DATABASE_URL_TEST || 'postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public';
   process.env.V0_TEST_DB = '1';
   process.env.DATABASE_URL_TEST = testDbUrl;
   process.env.DATABASE_URL = testDbUrl;
@@ -19,7 +19,7 @@ import { OpsMetricsService } from '../../apps/api/src/infrastructure/operations/
 import { RuntimeReconciliationService } from '../../apps/api/src/infrastructure/operations/runtimeReconciliation';
 import { PrismaProductionRunRepository } from '../../apps/api/src/infrastructure';
 
-const TEST_DB_URL = 'postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public';
+const TEST_DB_URL = process.env.DATABASE_URL_TEST || 'postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public';
 const RUN_ID = 'f-' + Date.now();
 const sha = (value: string) => crypto.createHash('sha256').update(value).digest('hex');
 

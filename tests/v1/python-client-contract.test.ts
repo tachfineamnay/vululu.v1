@@ -22,6 +22,9 @@ const body = () => ({
 let server: Server;
 let port = 0;
 const calls: Array<{ path: string; authorization: string | undefined }> = [];
+// Jeton attendu par le stub : figé ici. Comparer au process.env mutable rendait le refus 401
+// impossible dès que le test changeait le jeton courant du client.
+const CONTRACT_TOKEN = 'contract-token-0123456789abcdef0123456789';
 
 beforeAll(async () => {
   server = createServer((request, response) => {
@@ -30,7 +33,7 @@ beforeAll(async () => {
     request.on('data', (chunk: Buffer) => chunks.push(chunk));
     request.on('end', () => {
       const payload = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
-      if (request.headers.authorization !== 'Bearer ' + process.env.PYTHON_TOOLS_TOKEN) {
+      if (request.headers.authorization !== 'Bearer ' + CONTRACT_TOKEN) {
         response.writeHead(401, { 'content-type': 'application/json' });
         response.end(JSON.stringify({ error: { code: 'unauthorized', message: 'refusé', retryable: false } }));
         return;
@@ -75,7 +78,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   calls.length = 0;
-  process.env.PYTHON_TOOLS_TOKEN = 'contract-token-0123456789abcdef0123456789';
+  process.env.PYTHON_TOOLS_TOKEN = CONTRACT_TOKEN;
   process.env.PYTHON_TOOLS_URL = 'http://127.0.0.1:' + port + '/';
   process.env.PYTHON_TOOLS_TIMEOUT_MS = '20000';
 });
@@ -112,7 +115,7 @@ describe('callPythonTool', () => {
     await expect(callPythonTool('image.analyze@1', body())).rejects.toMatchObject({
       name: 'PythonToolsError', code: 'unauthorized', retryable: false, status: 401
     });
-    process.env.PYTHON_TOOLS_TOKEN = 'contract-token-0123456789abcdef0123456789';
+    process.env.PYTHON_TOOLS_TOKEN = CONTRACT_TOKEN;
     const oversized = body();
     oversized.source.imageBase64 = Buffer.alloc(8192, 0x41).toString('base64');
     await expect(callPythonTool('image.analyze@1', oversized)).rejects.toMatchObject({ code: 'payload_too_large', retryable: false });

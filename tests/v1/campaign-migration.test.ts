@@ -8,8 +8,12 @@ import { expect, it } from 'vitest';
 
 it.each([{ migration: '20261104174000_v1_demo_campaigns', count: 12 }, { migration: '20261104190000_v1_demo_assets', count: 13 }, { migration: '20261104214500_v1_demo_brief_profiles', count: 14 }, { migration: '20261104221500_v1_demo_storyboard_binding', count: 15 }, { migration: '20261105094500_v1_demo_conversation_proposals', count: 16 }, { migration: '20261105101500_v1_demo_scene_duration_origin', count: 17 }, { migration: '20261105113000_mvp_provider_credentials', count: 18 }])('migre les $count versions precedentes sans perdre projet ni snapshot existants', async ({ migration, count }) => {
   const name = 'vululu_campaign_upgrade_' + crypto.randomBytes(6).toString('hex');
-  const url = `postgresql://vululu@127.0.0.1:55432/${name}?schema=public`;
-  const admin = new PrismaClient({ datasourceUrl: 'postgresql://vululu@127.0.0.1:55432/postgres?schema=public' });
+  // Base de test fournie (QA isolée) ou PostgreSQL local historique sur 55432.
+  const base = new URL(process.env.DATABASE_URL_TEST || 'postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public');
+  const auth = base.username ? base.username + (base.password ? ':' + base.password : '') + '@' : '';
+  const server = base.protocol + '//' + auth + base.host;
+  const url = server + '/' + name + '?schema=public';
+  const admin = new PrismaClient({ datasourceUrl: server + '/postgres?schema=public' });
   const client = new PrismaClient({ datasourceUrl: url });
   const root = path.join(process.cwd(), '.v1', name);
   const migrations = path.join(process.cwd(), 'packages/db/prisma/migrations');

@@ -11,7 +11,8 @@ import { inspectAsset } from '../packages/media/src/assetInspection';
 let png: Buffer;
 const sharp = createRequire(path.resolve('packages/media/package.json'))('sharp');
 beforeAll(async () => {
-  const output = await renderScene({ projectId: 'asset-fixture', artifactRoot: path.resolve('.v1/asset-inspection'), sceneKey: 'SCENE-001', position: 1, title: 'Fixture', description: 'Image de test', brandName: 'Marque fictive', colorPrimary: '#123456', colorSecondary: '#789abc', version: 1 });
+  // Racine unique : un rendu immuable existant ne doit pas faire échouer une nouvelle exécution.
+  const output = await renderScene({ projectId: 'asset-fixture', artifactRoot: path.resolve('.v1/asset-inspection-' + crypto.randomUUID()), sceneKey: 'SCENE-001', position: 1, title: 'Fixture', description: 'Image de test', brandName: 'Marque fictive', colorPrimary: '#123456', colorSecondary: '#789abc', version: 1 });
   png = fs.readFileSync(output.absolutePath);
 });
 describe('Inspection de fichiers : octets reels, pas extension declaree', () => {

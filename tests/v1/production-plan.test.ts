@@ -7,9 +7,13 @@ import { beforeAll, afterAll, expect, it, vi } from 'vitest';
 const fixture = vi.hoisted(() => {
   const name = 'vululu_plan_' + globalThis.crypto.randomUUID().replaceAll('-', '').slice(0, 12);
   process.env.APP_ENV = 'test'; process.env.V0_TEST_DB = '1';
-  process.env.DATABASE_URL_TEST = `postgresql://vululu@127.0.0.1:55432/${name}?schema=public`;
+  // Base jetable créée sur le serveur PostgreSQL fourni (QA isolée) ou le 55432 historique.
+  const base = new URL(process.env.DATABASE_URL_TEST || process.env.DATABASE_URL || 'postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public');
+  const auth = base.username ? base.username + (base.password ? ':' + base.password : '') + '@' : '';
+  const server = base.protocol + '//' + auth + base.host;
+  process.env.DATABASE_URL_TEST = server + '/' + name + '?schema=public';
   process.env.DATABASE_URL = process.env.DATABASE_URL_TEST; process.env.SESSION_SECRET = globalThis.crypto.randomUUID();
-  return { name, url: process.env.DATABASE_URL_TEST };
+  return { name, url: process.env.DATABASE_URL_TEST, server };
 });
 import { PrismaClient, prisma as db } from '@vululu/db';
 import { buildServer } from '../../apps/api/src/server';
@@ -18,7 +22,7 @@ import { PrismaSceneRepository } from '../../apps/api/src/infrastructure/prisma/
 
 let app: Awaited<ReturnType<typeof buildServer>>; let userId: string; let auth: Record<string, string>; let foreign: Record<string, string>;
 beforeAll(async () => {
-  const admin = new PrismaClient({ datasourceUrl: 'postgresql://vululu@127.0.0.1:55432/postgres?schema=public' });
+  const admin = new PrismaClient({ datasourceUrl: fixture.server + '/postgres?schema=public' });
   // Nom construit localement, sans entrée utilisateur ; base jetable conservée comme preuve.
   await admin.$executeRawUnsafe('CREATE DATABASE "' + fixture.name + '"'); await admin.$disconnect();
   const cli = createRequire(import.meta.url).resolve('prisma/build/index.js');

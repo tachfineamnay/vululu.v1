@@ -47,7 +47,8 @@ beforeEach(async () => {
       platform: 'Instagram', objective: 'objectif', assetsConfirmationDigest: 'a'.repeat(64)
     }
   });
-  const asset = await prisma.brandAsset.create({ data: { id: randomUUID(), userId: user, contextId: context, kind: 'image', name: 'photo' } });
+  // BrandAsset ne porte plus de nom : le libellé vit sur la version (photo v1).
+  const asset = await prisma.brandAsset.create({ data: { id: randomUUID(), userId: user, contextId: context, kind: 'image' } });
   store = path.join(os.tmpdir(), 'qa-agent-' + randomUUID());
   await fs.mkdir(store, { recursive: true });
   const file = path.join(store, 'source.png');
@@ -55,7 +56,7 @@ beforeEach(async () => {
   version = (await prisma.brandAssetVersion.create({
     data: {
       id: randomUUID(), assetId: asset.id, version: 1, state: 'ready', mimeType: 'image/png',
-      name: 'photo v1', sha256: 'b'.repeat(64), sizeBytes: 14, license: 'internal',
+      name: 'photo v1', provenance: 'Fixture locale QA', sha256: 'b'.repeat(64), sizeBytes: 14, license: 'internal',
       storageKey: 'qa/' + randomUUID() + '.png', storageProvider: 'local', metadata: { width: 64, height: 64 }
     }
   })).id;

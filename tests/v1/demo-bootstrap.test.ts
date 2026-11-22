@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { execSync } from 'node:child_process';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.hoisted(() => {
-  process.env.DATABASE_URL = 'postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public';
+  process.env.DATABASE_URL = process.env.DATABASE_URL_TEST || 'postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public';
   process.env.DATABASE_URL_TEST = process.env.DATABASE_URL;
   process.env.V0_TEST_DB = '1';
   process.env.APP_ENV = 'test';

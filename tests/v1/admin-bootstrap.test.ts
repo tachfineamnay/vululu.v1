@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import bcrypt from 'bcryptjs';
 import { afterAll, expect, it, vi } from 'vitest';
-vi.hoisted(() => { process.env.DATABASE_URL = 'postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public'; process.env.APP_ENV = 'test'; });
+vi.hoisted(() => { process.env.DATABASE_URL = process.env.DATABASE_URL_TEST || 'postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public'; process.env.APP_ENV = 'test'; });
 import { prisma as db } from '@vululu/db';
 const emails: string[] = [];
 function email() { const value = 'bootstrap-admin-' + crypto.randomUUID() + '@example.test'; emails.push(value); return value; }

@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 // Isolated test database: never the demo database. Must be set before apps/api env is imported.
-const testDbUrl = 'postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public';
+const testDbUrl = process.env.DATABASE_URL_TEST || 'postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public';
 process.env.V0_TEST_DB = '1';
 process.env.DATABASE_URL_TEST = testDbUrl;
 process.env.DATABASE_URL = testDbUrl;

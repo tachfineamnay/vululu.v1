@@ -46,7 +46,7 @@ export async function callPythonTool(
   if (text.length > maxResponseBytes) {
     throw new PythonToolsError('python_tools_response_too_large', 502, false, 'Réponse de la boîte à outils Python trop volumineuse.');
   }
-  let parsed: unknown = null;
+  let parsed: unknown;
   try { parsed = text ? JSON.parse(text) : null; } catch { parsed = null; }
   if (!response.ok) {
     const envelope = (parsed as Envelope | null)?.error;

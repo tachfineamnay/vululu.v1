@@ -129,9 +129,20 @@ test('parcours client QA : de la connexion au livrable approuvé, puis déconnex
   const textLayer = page.getByRole('button', { name: /^Calque \d+ · texte/ }).first();
   await textLayer.click();
   await page.getByRole('textbox', { name: /Texte à l/ }).fill('Réserver en atelier');
+  // Les aperçus automatiques de l'éditeur partagent un quota de 10 rendus/minute par compte :
+  // on laisse la fenêtre se réinitialiser avant l'aperçu explicite et le rendu qui suit.
+  await page.waitForTimeout(65_000);
   await page.getByRole('button', { name: 'Prévisualiser la scène' }).click();
   // Le canvas affiche l'aperçu exact rendu par le serveur (même moteur que le master).
-  await expect(page.getByRole('img', { name: /Aperçu exact de la scène SCENE-/ }).first()).toBeVisible();
+  // L'éditeur demande plusieurs aperçus natifs : un 429 « rendu en cours » est possible, et le
+  // bouton « Actualiser l'aperçu » est l'action prévue par l'interface pour réessayer.
+  const previewImage = page.getByRole('img', { name: /Aperçu exact de la scène SCENE-/ });
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (await previewImage.first().isVisible().catch(() => false)) break;
+    await page.getByRole('button', { name: 'Actualiser l’aperçu' }).click().catch(() => undefined);
+    await page.waitForTimeout(4000);
+  }
+  await expect(previewImage.first()).toBeVisible();
   await page.getByRole('button', { name: 'Enregistrer une nouvelle révision' }).click();
   await expect(page.getByText(/Révision v\d+ · brouillon/).first()).toBeVisible();
   const history = await (await page.request.get('/api/projects/' + projectId + '/creative')).json();

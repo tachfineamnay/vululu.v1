@@ -8,7 +8,7 @@ import { resetRecettePasswords } from '../../apps/api/src/infrastructure/demo/re
 
 const schema = 'recette_reset_' + crypto.randomBytes(8).toString('hex');
 const { PrismaClient } = createRequire(path.join(process.cwd(), 'packages/db/package.json'))('@prisma/client');
-const url = new URL('postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test');
+const url = new URL(process.env.DATABASE_URL_TEST || 'postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test');
 url.searchParams.set('schema', schema);
 const db = new PrismaClient({ datasources: { db: { url: url.toString() } } });
 const config = { DEMO_MODE: '1', RECETTE_RESET_PASSWORDS: '1', RECETTE_ALLOW_SHORT_PASSWORDS: '1', V1_BOOTSTRAP_EMAIL: 'admin@example.test', V1_BOOTSTRAP_PASSWORD: 'fixture-admin', DEMO_EMAIL: 'demo@example.test', DEMO_PASSWORD: 'fixture' };

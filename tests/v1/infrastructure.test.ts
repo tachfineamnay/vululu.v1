@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 // Doit etre hoiste avant les imports : force la base de test AVANT chargement de
 // @vululu/db et de l'env API (aucun acces a la base de demonstration).
 vi.hoisted(() => {
-  const testDbUrl = 'postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public';
+  const testDbUrl = process.env.DATABASE_URL_TEST || 'postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public';
   process.env.V0_TEST_DB = '1';
   process.env.DATABASE_URL_TEST = testDbUrl;
   process.env.DATABASE_URL = testDbUrl;
@@ -33,7 +33,7 @@ import {
   PrismaSceneRepository
 } from '../../apps/api/src/infrastructure/index';
 
-const TEST_DB_URL = 'postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public';
+const TEST_DB_URL = process.env.DATABASE_URL_TEST || 'postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public';
 const RUN_ID = 'infra-' + Date.now();
 const TEMP_ROOT = path.join(env.repoRoot, '.v1', 'test', RUN_ID);
 

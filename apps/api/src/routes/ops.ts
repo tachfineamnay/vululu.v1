@@ -170,7 +170,7 @@ export async function opsRoutes(app: FastifyInstance): Promise<void> {
       });
       const text = await response.text();
       if (text.length > 256 * 1024) throw new Error('python_tools_response_too_large');
-      let body: unknown = null;
+      let body: unknown;
       try {
         body = text ? JSON.parse(text) : null;
       } catch {
