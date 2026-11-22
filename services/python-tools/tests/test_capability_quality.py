@@ -10,18 +10,22 @@ import base64
 import hashlib
 import io
 import json
+import math
 import os
 import re
+import time
 import uuid
 from pathlib import Path
 
+import cv2
+import numpy as np
 import pytest
 
 os.environ.setdefault("PYTHON_TOOLS_TOKEN", "0123456789abcdef0123456789abcdef")
 os.environ.setdefault("PYTHON_TOOLS_TIMEOUT_SECONDS", "20")
 
 from fastapi.testclient import TestClient  # noqa: E402
-from PIL import Image  # noqa: E402
+from PIL import Image, ImageDraw  # noqa: E402
 from pydantic import ValidationError  # noqa: E402
 
 from app import __version__  # noqa: E402
@@ -292,13 +296,14 @@ def test_segmentation_without_subject_fails_explicitly(monkeypatch: pytest.Monke
 
 
 # --- 5. honnêteté : GrabCut n est pas une segmentation apprise --------------------------------
-def test_capabilities_are_classical_and_models_are_not_active(monkeypatch: pytest.MonkeyPatch) -> None:
-    import shutil
-
-    # Répertoire existant et ignoré par git (data/) : ce bac à sable refuse la création de
-    # fichiers dans un dossier tout juste créé. Le faux modèle est supprimé en fin de test.
-    models_dir = Path(os.getcwd()).parents[1] / "data"
-    models_dir.mkdir(parents=True, exist_ok=True)
+def test_capabilities_are_classical_and_models_are_not_active(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Répertoire temporaire fourni par pytest (TMPDIR) : le test n'écrit jamais dans
+    # l'arborescence du dépôt, donc il reste valide sur une racine en lecture seule (image de
+    # production read_only, où le code vit dans /app et /app/data ne saurait être créé).
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
     fake_model = models_dir / "u2netp.onnx"
     fake_model.write_bytes(b"not-a-real-onnx-model")
     app = app_with(monkeypatch, PYTHON_TOOLS_MAX_CONCURRENCY="1", PYTHON_TOOLS_MODELS_DIR=str(models_dir))
@@ -326,8 +331,6 @@ def test_capabilities_are_classical_and_models_are_not_active(monkeypatch: pytes
         assert entry["download"] == "forbidden"
         assert entry["sha256"] == hashlib.sha256(fake_model.read_bytes()).hexdigest()
         assert ready.json()["selfTest"]["ok"] is True
-    fake_model.unlink(missing_ok=True)
-    shutil.rmtree(models_dir / ".models-probe", ignore_errors=True)
 
 
 # --- 6. disponibilité et santé -----------------------------------------------------------------
@@ -506,3 +509,130 @@ def test_adapter_body_replay_satisfies_response_contract(monkeypatch: pytest.Mon
         assert segmented.status_code == 200, segmented.text
         SegmentData.model_validate(segmented.json()["data"])
         assert {item["kind"] for item in segmented.json()["data"]["outputs"]} == {"cutout", "mask"}
+
+# --- 10. détourage après réduction à 448 px : alignement, bords, dimensions, délai -------------
+def _subject_ellipse(width: int, height: int) -> np.ndarray:
+    """Vérité terrain de fixtures.subject : l'ellipse pleine dessinée au centre du cadre."""
+    box_w, box_h = int(width * 0.5), int(height * 0.6)
+    left, top = (width - box_w) // 2, (height - box_h) // 2
+    truth = Image.new("L", (width, height), 0)
+    ImageDraw.Draw(truth).ellipse((left, top, left + box_w, top + box_h), fill=255)
+    return np.asarray(truth) > 0
+
+
+def _mask_edge_metrics(mask: np.ndarray, truth: np.ndarray) -> dict[str, float]:
+    """Mesures réelles du contour : trous, pixels isolés, épaisseur et distance à la vérité.
+
+    Le masque est produit à 448 px puis remonté à la taille source : un défaut d'alignement
+    ou un bord dégradé se traduit par des trous, des pixels isolés, des pointes fines ou un
+    contour qui s'éloigne de l'ellipse du sujet.
+    """
+    subject = mask > 0
+    height, width = subject.shape
+    background = (~subject).astype(np.uint8)
+    components, _, stats, _ = cv2.connectedComponentsWithStats(background, 8)
+    hole_area = 0
+    for index in range(1, components):
+        left, top, component_width, component_height, area = stats[index]
+        touches_border = (
+            left <= 0
+            or top <= 0
+            or left + component_width >= width
+            or top + component_height >= height
+        )
+        if not touches_border:
+            hole_area += int(area)
+    kernel = np.ones((3, 3), np.uint8)
+    neighbours = cv2.filter2D(subject.astype(np.uint8), -1, kernel, borderType=cv2.BORDER_CONSTANT)
+    opened = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel) > 0
+    produced_boundary = cv2.morphologyEx(subject.astype(np.uint8), cv2.MORPH_GRADIENT, kernel) > 0
+    truth_boundary = cv2.morphologyEx(truth.astype(np.uint8), cv2.MORPH_GRADIENT, kernel) > 0
+    distance = cv2.distanceTransform((~truth_boundary).astype(np.uint8), cv2.DIST_L2, 3)
+    offsets = distance[produced_boundary]
+    return {
+        "hole_area": float(hole_area),
+        "isolated_pixels": float((subject & (neighbours == 1)).sum()),
+        "thin_pixels": float((opened != subject).sum()),
+        "boundary_p95": float(np.percentile(offsets, 95)),
+        "boundary_max": float(offsets.max()),
+        "coverage": float(subject.mean()),
+        "truth_coverage": float(truth.mean()),
+    }
+
+
+@pytest.mark.parametrize("width,height", [(900, 1200), (1600, 900)])
+def test_segmentation_downscaled_to_448_keeps_mask_aligned(
+    monkeypatch: pytest.MonkeyPatch, width: int, height: int
+) -> None:
+    """Régression DSH-02 : le travail GrabCut est borné à 448 px, le masque remonté à la source.
+
+    Quatre contrôles : dimensions de sortie exactes, alignement du masque sur le sujet (IoU et
+    couverture), bords exploitables (aucun trou ni pixel isolé, contour proche de la vérité) et
+    respect du budget de production de 25 s (une régression à 1024/2048 px retombe en 504).
+    Le délai du pool est porté à 60 s pour mesurer la durée réelle sans la tronquer.
+    """
+    raw = fixtures.encode(fixtures.subject(width, height), "PNG")
+    app = app_with(
+        monkeypatch, PYTHON_TOOLS_MAX_CONCURRENCY="1", PYTHON_TOOLS_TIMEOUT_SECONDS="60"
+    )
+    with TestClient(app) as client:
+        response = segment(client, raw, maxDimension=448)
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    outputs = {item["kind"]: item for item in payload["data"]["outputs"]}
+    assert set(outputs) == {"cutout", "mask"}
+
+    mask_item = outputs["mask"]
+    assert (mask_item["width"], mask_item["height"]) == (width, height)
+    mask = decode_png(mask_item["base64"])
+    assert mask.size == (width, height) and mask.mode == "L"
+    pixels = np.asarray(mask)
+    assert set(np.unique(pixels).tolist()) == {0, 255}
+
+    truth = _subject_ellipse(width, height)
+    produced = pixels > 0
+    intersection = int(np.logical_and(produced, truth).sum())
+    union = int(np.logical_or(produced, truth).sum())
+    iou = intersection / union
+    assert iou >= 0.90, "masque désaligné: IoU=" + str(round(iou, 4))
+
+    # Le masque remonté depuis 448 px doit rester propre : pas de trou, pas de pixel isolé,
+    # pas de pointe fine, et un contour à moins d'une marche d'agrandissement de la vérité.
+    tolerance = math.ceil(max(width, height) / 448) + 2
+    metrics = _mask_edge_metrics(pixels, truth)
+    assert metrics["hole_area"] == 0, "trous dans le masque: " + str(metrics["hole_area"])
+    assert metrics["isolated_pixels"] == 0, "pixels isolés: " + str(metrics["isolated_pixels"])
+    assert metrics["thin_pixels"] <= 0.001 * int(produced.sum()), "pointes fines"
+    assert metrics["boundary_p95"] <= tolerance, "contour décalé: p95=" + str(metrics["boundary_p95"])
+    assert metrics["boundary_max"] <= tolerance, "contour décalé: max=" + str(metrics["boundary_max"])
+    assert abs(metrics["coverage"] - metrics["truth_coverage"]) <= 0.02, "couverture " + str(metrics["coverage"])
+
+    cutout = decode_png(outputs["cutout"]["base64"])
+    assert cutout.mode == "RGBA"
+    assert cutout.size[0] <= width and cutout.size[1] <= height
+    alpha = np.asarray(cutout.getchannel("A"))
+    assert int((alpha == 0).sum()) > 0 and int((alpha == 255).sum()) > 0
+
+    # La réduction à 448 px garde le travail DANS le budget de production (25 s) : jamais un 504.
+    assert payload["durationMs"] < 25_000, "448 px trop lent: " + str(payload["durationMs"]) + " ms"
+
+
+def test_segmentation_timeout_is_enforced_and_service_recovers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Un budget trop court coupe réellement le travail natif, sans casser le service."""
+    raw = fixtures.encode(fixtures.subject(1600, 1600), "PNG")
+    app = app_with(
+        monkeypatch, PYTHON_TOOLS_MAX_CONCURRENCY="1", PYTHON_TOOLS_TIMEOUT_SECONDS="1.0"
+    )
+    with TestClient(app) as client:
+        started = time.perf_counter()
+        timed_out = segment(client, raw, maxDimension=448)
+        elapsed = time.perf_counter() - started
+        assert timed_out.status_code == 504, timed_out.text
+        error = timed_out.json()["error"]
+        assert error["code"] == "processing_timeout"
+        assert error["retryable"] is True
+        assert elapsed < 15  # le processus est tué, pas laissé tourner
+        # L'enfant tué est remplacé : la requête native suivante aboutit.
+        assert client.get("/readyz").json()["status"] == "ready"
+        follow = analyze(client, fixtures.png_photo(64, 48))
+        assert follow.status_code == 200, follow.text

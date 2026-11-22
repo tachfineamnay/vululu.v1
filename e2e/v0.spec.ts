@@ -49,54 +49,47 @@ test('verticale Studio V1 complete (deterministe, correction ciblee, MOCK)', asy
   await login(page);
 
   await shot(page, '01-dashboard');
-  await page.getByTestId('nav-catalog').click();
-  await expect(page.getByTestId('catalog-page')).toBeVisible();
+  // Le guide remplace l'ancien catalogue : il décrit les formats réellement proposés.
+  await page.getByRole('link', { name: 'Guide', exact: true }).click();
+  await expect(page).toHaveURL(/\/catalog$/);
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
   await shot(page, '02-catalog');
-  await expect(page.getByTestId('format-Video')).toContainText('DISPONIBLE');
-  await expect(page.getByTestId('format-Affiche')).toContainText('NON IMPLÉMENTÉ');
-  await expect(page.getByTestId('capability-audio')).toContainText('NON CONNECTÉ');
-  await page.getByTestId('nav-assets').click();
-  await expect(page.getByTestId('assets-page')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Ressources du contexte', exact: true })).toBeVisible();
-  await page.getByTestId('nav-home').click();
+  await page.getByRole('link', { name: 'Ressources', exact: true }).click();
+  await expect(page).toHaveURL(/\/assets/);
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  await page.getByRole('link', { name: 'Mes projets', exact: true }).click();
   await expect(page.getByTestId('new-context')).toBeVisible();
 
   await page.locator('[data-testid=new-context]').click();
   await expect(page).toHaveURL(/\/contexts\/new$/);
 
   await page.locator('[data-testid=context-name]').fill(contextName);
-  await page.getByText('Références et couleurs (facultatif)', { exact: true }).click();
-  await page.locator('[data-testid=context-website]').fill('https://example.com');
   await page.locator('[data-testid=context-description]').fill('Contexte de test E2E pour la verticale V0.');
   await page.getByText('Préciser le public et le ton (facultatif)', { exact: true }).click();
   await page.locator('[data-testid=context-audience]').fill('Createurs francais');
   await page.locator('[data-testid=context-tone]').fill('Premium, direct, chaleureux');
   await page.locator('[data-testid=context-submit]').click();
   await expect(page).toHaveURL(/\/contexts\?context=/);
-  await page.waitForLoadState('networkidle');
-  await page.waitForTimeout(600);
 
-  await page.getByTestId('nav-contexts').click();
-  await expect(page.getByTestId('contexts-page')).toBeVisible();
-  await expect(page.getByTestId('contexts-list')).toContainText(contextName);
+  // La liste des contextes (route conservée) affiche bien l'identité créée.
+  await page.goto('/contexts');
+  await expect(page.getByRole('main')).toContainText(contextName);
   await shot(page, '03-contexts');
-  await expect(page.getByTestId('context-detail')).toContainText(contextName);
-  await page.getByTestId('nav-home').click();
-  await expect(page.getByTestId('new-project')).toBeVisible();
 
+  await page.goto('/');
+  await expect(page.getByTestId('new-project')).toBeVisible();
   await page.locator('[data-testid=new-project]').click();
   await expect(page).toHaveURL(/\/projects\/new$/);
-  await page.waitForLoadState('networkidle');
-  await page.waitForTimeout(800);
+  // Ordre courant : objectif → canal et format → identité → vérification.
   await page.locator('[data-testid=project-title]').fill(projectTitle);
   await page.locator('[data-testid=project-objective]').fill('Faire connaitre la nouvelle offre et donner envie de decouvrir la marque.');
   await page.getByTestId('project-next').click();
-  await page.locator('[data-testid=project-context]').selectOption({ label: contextName });
-  await page.getByTestId('project-next').click();
-  await page.locator('[data-testid=project-platform]').selectOption('Instagram');
-  await page.locator('[data-testid=project-format]').selectOption('Video');
+  await page.getByTestId('project-channel-Instagram').click();
+  await page.getByTestId('project-format-Video').click();
   await page.getByText('Durée et réglages différables', { exact: true }).click();
   await page.locator('[data-testid=project-scene-duration]').selectOption('2');
+  await page.getByTestId('project-next').click();
+  await page.locator('[data-testid=project-context]').selectOption({ label: contextName });
   await page.getByTestId('project-next').click();
   await page.locator('[data-testid=project-submit]').click();
   await page.waitForURL((url) => url.pathname.startsWith('/projects/') && !url.pathname.endsWith('/new'), { timeout: 30000 });

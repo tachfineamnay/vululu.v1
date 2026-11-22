@@ -234,6 +234,24 @@ describe('project-scoped writes across the new columns', () => {
       data: { id: costId, projectId, provider: 'replicate', units: 2, amountCents: 7 }
     });
     expect(cost.amountCents).toBe(7);
+
+    // DSH-02B — la contrainte d'origine n'autorisait que marketing/creative : tout tour
+    // brainstorming ou agent échouait en 23514 sur une base construite par migrate deploy.
+    for (const kind of ['brainstorm', 'agent']) {
+      const turn = await db.assistantTurn.create({
+        data: { id: `qa-${randomUUID()}`, projectId, kind, revision: 1, request: { kind }, snapshot: {}, inputDigest: 'd' }
+      });
+      expect(turn.kind).toBe(kind);
+    }
+    let assistantSqlState: string | undefined;
+    try {
+      await db.$executeRaw`INSERT INTO "AssistantTurn" (id,"projectId",kind,revision,request,snapshot,"inputDigest")
+        VALUES (${randomUUID()}, ${projectId}, 'nope', 1, '{}'::jsonb, '{}'::jsonb, 'd')`;
+    } catch (error) {
+      const failure = error as { code?: string; meta?: { code?: string } };
+      assistantSqlState = failure.meta?.code ?? failure.code;
+    }
+    expect(assistantSqlState).toBe('23514');
   });
 });
 

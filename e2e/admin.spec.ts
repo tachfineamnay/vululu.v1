@@ -16,7 +16,7 @@ async function login(page: Page, email: string, password: string): Promise<void>
 }
 
 test.describe('Admin Vululu — super_admin, refus user et navigation', () => {
-  test('le super_admin utilise toutes les sections et un user est refuse', async ({ page, browser, context }) => {
+  test('le super_admin utilise toutes les sections et un user est refuse', async ({ page, browser, context, baseURL }) => {
     test.setTimeout(300000);
 
     await login(page, adminEmail, adminPassword);
@@ -58,7 +58,8 @@ test.describe('Admin Vululu — super_admin, refus user et navigation', () => {
     expect(activation.status()).toBe(201);
 
     // Un compte user ne doit jamais accéder à /admin ni aux routes admin.
-    const userContext = await browser.newContext({ baseURL: 'http://127.0.0.1:3100' });
+    // Même origine que la recette courante : la pile QA écoute sur 3190, pas sur le 3100 de dev.
+    const userContext = await browser.newContext({ baseURL });
     const userPage = await userContext.newPage();
     await login(userPage, invitedEmail, invitedPassword);
     await userPage.goto('/admin');
