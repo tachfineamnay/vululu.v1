@@ -5,7 +5,14 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 vi.hoisted(() => {
-  const testDbUrl = 'postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public';
+  // Base jetable locale, pilotée par DATABASE_URL_TEST quand elle est fournie (QA isolée, CI)
+  // et sinon par la base de test historique du dépôt. Le garde-fou reste identique : hôte local
+  // uniquement et nom suffixé `_test`, jamais la base de démonstration ni une base distante.
+  const testDbUrl = process.env.DATABASE_URL_TEST || 'postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public';
+  const parsed = new URL(testDbUrl);
+  if (!['127.0.0.1', 'localhost'].includes(parsed.hostname) || !parsed.pathname.endsWith('_test')) {
+    throw new Error('Disposable local test DB required');
+  }
   process.env.V0_TEST_DB = '1';
   process.env.DATABASE_URL_TEST = testDbUrl;
   process.env.DATABASE_URL = testDbUrl;
@@ -36,7 +43,7 @@ import {
   S3CompatibleArtifactStorage
 } from '../../apps/api/src/infrastructure';
 
-const TEST_DB_URL = 'postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public';
+const TEST_DB_URL = process.env.DATABASE_URL_TEST as string;
 const RUN_ID = 'e-' + Date.now();
 const ROOT = path.join(env.repoRoot, '.v1', 'test', RUN_ID);
 const S3_ENABLED = process.env.E_S3_TEST === '1';

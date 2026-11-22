@@ -20,6 +20,16 @@ from .errors import InvalidSource, PayloadTooLarge
 _ALLOWED_FORMATS = {"PNG", "JPEG", "WEBP"}
 _DCT_CACHE: np.ndarray | None = None
 
+# GrabCut est O(pixels x itérations) et s'exécute sur un seul thread (OMP_NUM_THREADS=1) :
+# mesuré dans l'image de production (cpus=1), 1024 px coûte ~91 s et 2048 px plusieurs minutes,
+# alors que le pool de processus coupe à 25 s : le détourage au maxDimension par défaut (2048)
+# ne pouvait donc jamais aboutir. La résolution de TRAVAIL est bornée ici, indépendamment de la
+# résolution demandée ; le masque est ensuite remonté à la taille source, donc les sorties
+# (masque, détourage) conservent leur résolution et le contrat `maxDimension` reste inchangé.
+# Mesures dans l'image de production sous charge : 448 px / 5 itérations = 2,4 à 10 s.
+_GRABCUT_WORK_DIMENSION = 448
+_GRABCUT_ITERATIONS = 5
+
 
 def decode_source(base64_text: str, expected_sha256: str, mime_type: str) -> bytes:
     """Décode et vérifie l'empreinte avant toute utilisation : l'octet traité est celui annoncé."""
@@ -171,7 +181,8 @@ class SegmentOutcome:
 def segment(raw: bytes, max_dimension: int, wanted: list[str]) -> SegmentOutcome:
     image = load_image(raw)
     width, height = image.size
-    scale = min(1.0, max_dimension / float(max(width, height)))
+    work_dimension = min(max_dimension, _GRABCUT_WORK_DIMENSION)
+    scale = min(1.0, work_dimension / float(max(width, height)))
     if scale < 1.0:
         work = image.convert("RGB").resize((max(8, int(round(width * scale))), max(8, int(round(height * scale)))), Image.Resampling.LANCZOS)
     else:
@@ -185,7 +196,7 @@ def segment(raw: bytes, max_dimension: int, wanted: list[str]) -> SegmentOutcome
         raise InvalidSource("image_too_small", "Image trop petite pour un détourage.")
     background_model = np.zeros((1, 65), dtype=np.float64)
     foreground_model = np.zeros((1, 65), dtype=np.float64)
-    cv2.grabCut(bgr, mask, rect, background_model, foreground_model, 5, cv2.GC_INIT_WITH_RECT)
+    cv2.grabCut(bgr, mask, rect, background_model, foreground_model, _GRABCUT_ITERATIONS, cv2.GC_INIT_WITH_RECT)
     binary = np.where((mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD), 1, 0).astype(np.uint8) * 255
     kernel = np.ones((3, 3), dtype=np.uint8)
     binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
