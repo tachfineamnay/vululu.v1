@@ -39,8 +39,17 @@ type StepTransfer = { transferId: string; status: string };
  * Il est persiste comme erreur du run et comme erreur des etapes non terminales
  * (voir DurableProductionStore.failRun), ce qui rend l echec relisible en base
  * sans avoir a rejouer le rendu.
+ *
+ * Le garde-fou est partage par les deux executeurs (local et durable) : aucun
+ * master dont la QA n est pas PASS ne peut creer de version d artefact.
  */
-function qaFailureReason(checks: QaReport['checks']): string {
+export function qaPassedOrThrow(qa: QaReport): void {
+  if (qa.status !== 'PASS') {
+    throw new ApplicationError('qa_failed', qaFailureReason(qa.checks), 409);
+  }
+}
+
+export function qaFailureReason(checks: QaReport['checks']): string {
   const failures = checks.filter((check) => check.status !== 'PASS');
   const detail = failures.map((check) => check.name + '=' + check.status + ' [' + check.detail + ']').join(' | ');
   const reason = 'qa_failed: controle qualite obligatoire en echec (' + failures.length + '/' + checks.length + '): ' + detail;
@@ -343,7 +352,7 @@ export class DurableProductionUseCases {
         reason: 'qa_failed',
         checks: qa.checks.filter((check) => check.status !== 'PASS')
       });
-      throw new ApplicationError('qa_failed', qaFailureReason(qa.checks), 409);
+      qaPassedOrThrow(qa);
     }
     await this.finishStep(jobRunId, 'qa', output);
     return output;
