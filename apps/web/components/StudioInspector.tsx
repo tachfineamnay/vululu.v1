@@ -16,11 +16,15 @@ import {
   MIN_LAYER_SIZE,
   clamp,
   clampLayer,
+  createTextLayer,
   isImageLayer,
   isTextLayer,
+  moveLayerOrder,
   patchLayer,
-  specWithLayers
+  specWithLayers,
+  type TextRole
 } from '../lib/studioGeometry';
+import { describeAudioTrim, trimAudioToDuration } from '../lib/studioAudio';
 import type { ChannelZone, StudioLayerSpec, StudioScene, StudioSource } from '../lib/studioTypes';
 
 type TextLayer = Extract<StudioLayerSpec, { type: 'text' }>;
@@ -192,14 +196,11 @@ export function StudioInspector({
   }
 
   function moveLayer(index: number, delta: 1 | -1) {
-    const target = index + delta;
-    if (target < 0 || target >= layers.length) return;
-    const next = [...layers];
-    const moved = next[index];
-    next[index] = next[target];
-    next[target] = moved;
-    updateLayers(next);
-    if (selectedIndexes.length === 1 && selectedIndexes[0] === index) onSelect(target, false);
+    // +1 = au-dessus (dernier indice du tableau = calque peint en dernier par le serveur).
+    const moved = moveLayerOrder(layers, index, delta);
+    if (moved.layers === layers) return;
+    updateLayers(moved.layers);
+    if (selectedIndexes.length === 1 && selectedIndexes[0] === index) onSelect(moved.index, false);
   }
 
   function removeLayer(index: number) {
@@ -209,7 +210,13 @@ export function StudioInspector({
   }
 
   function changeSeconds(value: number) {
-    changeScene({ seconds: Math.round(clamp(value, 0.5, 30) * 2) / 2 });
+    const seconds = Math.round(clamp(value, 0.5, 30) * 2) / 2;
+    const next = specWithLayers(spec, sceneIndex, layers);
+    const changed = { ...next, scenes: next.scenes.map((item, index) => (index === sceneIndex ? { ...item, seconds } : item)) };
+    const trim = trimAudioToDuration(changed);
+    onSpec(trim.spec);
+    const message = describeAudioTrim(trim);
+    if (message) onNotice(message);
   }
 
   function changeClipVersion(versionId: string) {
@@ -255,6 +262,16 @@ export function StudioInspector({
     updateLayers([...layers, layer]);
     onSelect(layers.length, false);
     onNotice('Ressource « ' + source.name + ' » insérée en haut de la pile.');
+  }
+
+  function addTextLayer(role: TextRole) {
+    if (layers.length >= MAX_LAYERS) {
+      onNotice('Limite de 16 calques atteinte : retirez un calque avant d’ajouter du texte.');
+      return;
+    }
+    updateLayers([...layers, createTextLayer(role, spec.safeArea)]);
+    onSelect(layers.length, false);
+    onNotice('Calque texte ajouté au-dessus de la pile : modifiez son contenu dans « Calque sélectionné ».');
   }
 
   function replaceSelectedSource(source: StudioSource) {
@@ -683,6 +700,20 @@ export function StudioInspector({
             <p className="hint">
               Ordre d’affichage : du calque le plus haut au plus bas. Ctrl ou Maj + clic pour sélectionner plusieurs calques.
             </p>
+            <div className="actions" role="group" aria-label="Ajouter un calque texte">
+              {ROLES.map((role) => (
+                <button
+                  key={role.value}
+                  type="button"
+                  className="btn btn-ghost btn-small"
+                  disabled={busy || layers.length >= MAX_LAYERS}
+                  aria-label={'Ajouter un calque texte · ' + role.label}
+                  onClick={() => addTextLayer(role.value)}
+                >
+                  + {role.label}
+                </button>
+              ))}
+            </div>
             <ol className="studio-layer-list">
               {layers
                 .map((layer, index) => ({ layer, index }))

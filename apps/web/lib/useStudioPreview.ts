@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { creativeSpec, type CreativeSpec } from '@vululu/contracts';
+import { previewSpecForScene } from './studioPreview';
 import { apiResponse } from './api';
 
 export type StudioPreviewState = {
@@ -36,7 +37,9 @@ export function useStudioPreview(base: string, spec: CreativeSpec | null, scene:
 
   useEffect(() => {
     if (!enabled || !spec || !scene) return;
-    const single: CreativeSpec = { ...spec, scenes: [scene] };
+    // L'audio (mixage et sous-titres) n'est pas consommé par l'image fixe : le retirer évite
+    // un faux refus de contrat quand un repère dépasse la durée de la seule scène affichée.
+    const single: CreativeSpec = previewSpecForScene(spec, scene);
     const parsed = creativeSpec.safeParse(single);
     if (!parsed.success) {
       setPreview((current) => ({

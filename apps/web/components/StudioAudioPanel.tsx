@@ -10,6 +10,7 @@ import {
 } from '@vululu/contracts';
 import { api, apiResponse, postJson } from '../lib/api';
 import type { StudioAudioPanelProps } from '../lib/studioComponentTypes';
+import { maxTrackStart } from '../lib/studioAudio';
 import type {
   StudioAudioCapabilities,
   StudioAudioCapability,
@@ -428,10 +429,11 @@ export function StudioAudioPanel({ spec, media, busy, operations, onSpec, onNoti
     writeTracks(tracks.map((track) => (track.id === id ? { ...track, ...patch } : track)));
   }
 
+  /** Le début d'une piste doit rester dans la durée réelle de la vidéo (contrat serveur). */
   function changeStart(id: string, raw: string) {
     const track = tracks.find((item) => item.id === id);
     if (!track) return;
-    updateTrack(id, { start: clampNumber(raw, 0, MAX_START, 0.1) });
+    updateTrack(id, { start: clampNumber(raw, 0, Math.min(MAX_START, maxTrackStart(totalSeconds)), 0.1) });
   }
 
   function changeFade(id: string, key: 'fadeIn' | 'fadeOut', raw: string) {
@@ -525,7 +527,7 @@ export function StudioAudioPanel({ spec, media, busy, operations, onSpec, onNoti
           '/api/projects/' + encodeURIComponent(project) + '/audio/jobs/' + encodeURIComponent(job.id) + '/apply',
           {
             expectedRevision: revision,
-            start: clampNumber(String(ttsStart), 0, MAX_START, 0.1),
+            start: clampNumber(String(ttsStart), 0, maxTrackStart(totalSeconds), 0.1),
             gain: clampNumber(String(ttsGain), 0, 1, 0.01)
           }
         );
@@ -631,11 +633,11 @@ export function StudioAudioPanel({ spec, media, busy, operations, onSpec, onNoti
                   className="input"
                   type="number"
                   min={0}
-                  max={MAX_START}
+                  max={maxTrackStart(totalSeconds)}
                   step={0.1}
                   value={ttsStart}
                   disabled={busy}
-                  onChange={(event) => setTtsStart(clampNumber(event.target.value, 0, MAX_START, 0.1))}
+                  onChange={(event) => setTtsStart(clampNumber(event.target.value, 0, maxTrackStart(totalSeconds), 0.1))}
                 />
               </label>
               <label className="label">
@@ -809,7 +811,7 @@ export function StudioAudioPanel({ spec, media, busy, operations, onSpec, onNoti
                       className="input"
                       type="number"
                       min={0}
-                      max={MAX_START}
+                      max={maxTrackStart(totalSeconds)}
                       step={0.1}
                       value={track.start}
                       disabled={busy}

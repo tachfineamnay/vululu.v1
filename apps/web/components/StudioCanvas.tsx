@@ -225,7 +225,10 @@ export function StudioCanvas({
             </div>
           )}
           <div className={'studio-canvas-layer' + (busy ? ' is-busy' : '')}>
-            {scene.layers.map((layer, index) => ({ layer, index })).reverse().map(({ layer, index }) => {
+            {/* Ordre de peinture du contrat : le dernier calque du tableau est au-dessus, comme
+                dans le compositeur serveur. Les boîtes de sélection suivent donc l'ordre du tableau,
+                sinon un clic sélectionne le calque masqué au lieu de celui qui est visible. */}
+            {scene.layers.map((layer, index) => ({ layer, index })).map(({ layer, index }) => {
               const isSelected = selected.includes(index);
               return (
                 <button

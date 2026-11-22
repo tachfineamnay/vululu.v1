@@ -10,6 +10,14 @@ import {
   type SubtitleStyle
 } from '@vululu/contracts';
 import type { StudioSubtitlesProps } from '../lib/studioComponentTypes';
+import {
+  appendCue,
+  cueEndLimit,
+  setCueTime,
+  MAX_CUES,
+  MAX_CUE_START,
+  MAX_CUE_TEXT
+} from '../lib/studioSubtitles';
 
 /**
  * P09B — sous-titres de la composition vidéo : repères horodatés, style réellement appliqué
@@ -17,10 +25,7 @@ import type { StudioSubtitlesProps } from '../lib/studioComponentTypes';
  * par onSpec (brouillon local) ; le contrat serveur reste l'autorité de validation.
  */
 
-const MAX_CUES = 200;
-const MAX_CUE_TEXT = 200;
-const MAX_START = 179.5;
-const MAX_END = 180;
+const MAX_START = MAX_CUE_START;
 const FORBIDDEN_TEXT = /[\\{}]|[\u0000-\u001f\u007f]/; // eslint-disable-line no-control-regex -- Refus explicite des contrôles et balises ASS.
 const LANGUAGE_LABELS: Record<string, string> = {
   'fr-FR': 'Français (fr-FR)',
@@ -84,12 +89,15 @@ export function StudioSubtitles({ spec, busy, base, approvedVersion, onSpec, onN
     write({ cues: cues.map((cue, position) => (position === index ? { ...cue, ...patch } : cue)) });
   }
 
+  /**
+   * Une borne ajustée déplace l'autre si nécessaire : la fenêtre minimale du contrat
+   * (fin > début + 0,2 s) reste toujours respectée, donc la composition reste valide.
+   */
   function changeCueTime(index: number, key: 'start' | 'end', raw: string) {
     const parsed = Number(raw);
-    if (!Number.isFinite(parsed)) return;
-    updateCue(index, {
-      [key]: roundTenth(clamp(parsed, key === 'start' ? 0 : 0.5, key === 'start' ? MAX_START : MAX_END))
-    });
+    const cue = cues[index];
+    if (!Number.isFinite(parsed) || !cue) return;
+    updateCue(index, setCueTime(cue, key, parsed, totalSeconds));
   }
 
   function changeCueText(index: number, value: string) {
@@ -107,23 +115,17 @@ export function StudioSubtitles({ spec, busy, base, approvedVersion, onSpec, onN
 
   function addCue() {
     if (cues.length >= MAX_CUES) {
-      onNotice('Maximum de 200 sous-titres atteint : retirez un repère avant d’en ajouter un.');
+      onNotice('Maximum de ' + MAX_CUES + ' sous-titres atteint : retirez un repère avant d’en ajouter un.');
       return;
     }
-    const sorted = [...cues].sort((left, right) => left.end - right.end);
-    const last = sorted[sorted.length - 1];
-    const start = last ? roundTenth(last.end) : 0;
-    const available = totalSeconds - start;
-    if (available <= 0.7) {
+    // Un repère vide rendrait toute la composition invalide (texte min(1) au contrat) :
+    // on part d'un libellé neutre, immédiatement éditable.
+    const next = appendCue(cues, totalSeconds);
+    if (!next) {
       onNotice('La durée totale ne laisse pas assez de place pour un nouveau sous-titre.');
       return;
     }
-    const end = roundTenth(Math.min(totalSeconds, start + 2));
-    if (end - start <= 0.2) {
-      onNotice('La durée totale ne laisse pas assez de place pour un nouveau sous-titre.');
-      return;
-    }
-    write({ cues: [...cues, { start, end, text: '' }] });
+    write({ cues: next });
     setTextError(null);
   }
 
@@ -393,7 +395,7 @@ export function StudioSubtitles({ spec, busy, base, approvedVersion, onSpec, onN
                       className="input"
                       type="number"
                       min={0.5}
-                      max={MAX_END}
+                      max={cueEndLimit(totalSeconds)}
                       step={0.1}
                       value={cue.end}
                       disabled={busy}
