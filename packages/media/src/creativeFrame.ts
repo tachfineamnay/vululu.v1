@@ -29,14 +29,39 @@ export async function creativeFrame(
       top = Math.round(l.y * height);
     const w = Math.min(width - left, Math.max(1, Math.round(l.w * width))),
       h = Math.min(height - top, Math.max(1, Math.round(l.h * height)));
-    let pixels: Buffer;
+    let pixels: Buffer,
+      offset = 0;
     if (l.type === 'image') {
-      pixels = await sharp(await resolve(l.versionId), { limitInputPixels: 16_000_000 })
-        .rotate()
-        .resize(w, h, { fit: l.fit, position: l.gravity, background: '#00000000' })
-        .ensureAlpha()
-        .png()
-        .toBuffer();
+      const input = await resolve(l.versionId),
+        source = sharp(input, { limitInputPixels: 16_000_000 }).rotate(),
+        crop = l.crop;
+      if (crop) {
+        // Crop coordinates are read from the displayed (EXIF-rotated) source.
+        const meta = await sharp(input, { limitInputPixels: 16_000_000 }).metadata(),
+          swapped = (meta.orientation ?? 1) >= 5,
+          sourceWidth = (swapped ? meta.height : meta.width) ?? 0,
+          sourceHeight = (swapped ? meta.width : meta.height) ?? 0;
+        if (!sourceWidth || !sourceHeight) throw new Error('creative_source_dimensions');
+        const cropWidth = Math.max(1, Math.round(sourceWidth / crop.zoom)),
+          cropHeight = Math.max(1, Math.round(sourceHeight / crop.zoom));
+        pixels = await source
+          .extract({
+            left: Math.min(sourceWidth - cropWidth, Math.max(0, Math.round(crop.focusX * sourceWidth - cropWidth / 2))),
+            top: Math.min(sourceHeight - cropHeight, Math.max(0, Math.round(crop.focusY * sourceHeight - cropHeight / 2))),
+            width: cropWidth,
+            height: cropHeight
+          })
+          // A manual crop always fills the layer box (cover), even when fit is contain.
+          .resize(w, h, { fit: 'cover', position: l.gravity, background: '#00000000' })
+          .ensureAlpha()
+          .png()
+          .toBuffer();
+      } else
+        pixels = await source
+          .resize(w, h, { fit: l.fit, position: l.gravity, background: '#00000000' })
+          .ensureAlpha()
+          .png()
+          .toBuffer();
     } else {
       const text = `<span foreground="${l.color}"${l.bold ? ' weight="bold"' : ''}>${escapeMarkup(l.text)}</span>`;
       const pad = l.plate ? Math.min(20, Math.floor(h * 0.12), Math.floor(w * 0.08)) : 0;
@@ -48,17 +73,27 @@ export async function creativeFrame(
             font: `${l.family ?? 'sans'} ${size}`,
             width: w - 2 * pad,
             wrap: 'word-char',
-            rgba: true
+            rgba: true,
+            ...(l.align ? { align: l.align } : {}),
+            ...(l.spacing === undefined ? {} : { spacing: l.spacing })
           }
         });
         const info = await layout.metadata();
         if (info.height <= h - 2 * pad && info.width <= w - 2 * pad) {
           pixels = await layout.png().toBuffer();
+          // The raster is only as wide as the text block: place it inside the layer box per align.
+          const shift =
+            l.align === 'center'
+              ? Math.floor((w - 2 * pad - info.width) / 2)
+              : l.align === 'right'
+                ? w - 2 * pad - info.width
+                : 0;
           if (l.plate)
             pixels = await sharp({ create: { width: w, height: h, channels: 4, background: l.plate } })
-              .composite([{ input: pixels, left: pad, top: Math.floor((h - info.height) / 2) }])
+              .composite([{ input: pixels, left: pad + shift, top: Math.floor((h - info.height) / 2) }])
               .png()
               .toBuffer();
+          else offset = shift;
           break;
         }
         if (size <= (l.minSize ?? l.size)) throw new MediaLayoutError(l.role);
@@ -67,7 +102,7 @@ export async function creativeFrame(
     }
     if (l.opacity !== 1)
       pixels = await sharp(pixels).ensureAlpha().linear([1, 1, 1, l.opacity], [0, 0, 0, 0]).png().toBuffer();
-    overlays.push({ input: pixels, left, top });
+    overlays.push({ input: pixels, left: left + offset, top });
   }
   const background = Buffer.from(
     `<svg width="${width}" height="${height}"><defs><linearGradient id="g"><stop stop-color="${brand.background}"/><stop offset="1" stop-color="${brand.accent}"/></linearGradient></defs><rect width="100%" height="100%" fill="url(#g)"/></svg>`

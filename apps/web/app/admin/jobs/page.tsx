@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import ConfirmDialog from '../../../components/admin/ConfirmDialog';
 import ErrorState from '../../../components/admin/ErrorState';
 import { CheckboxField, SelectField, TextField } from '../../../components/admin/Fields';
 import LoadingState from '../../../components/admin/LoadingState';
@@ -20,10 +21,23 @@ import {
   JOB_RUN_STATUSES,
   shortId,
   statusLabel,
+  type AdminExecutionDetail,
+  type AdminExecutionItem,
   type AdminRun,
   type AdminRunDetail,
   type ReconciliationReport
 } from '../../../lib/admin';
+
+const EXECUTION_STATE_ORDER = [
+  'PROPOSED',
+  'QUEUED',
+  'CLAIMED',
+  'POLLING',
+  'SUCCEEDED',
+  'FAILED',
+  'CANCELLED',
+  'UNKNOWN'
+];
 
 const STATUS_OPTIONS = [{ value: '', label: 'Tous les statuts' }].concat(
   JOB_RUN_STATUSES.map((status) => ({ value: status, label: statusLabel(status) }))
@@ -69,6 +83,23 @@ export default function AdminJobsPage() {
   const [reconcileError, setReconcileError] = useState('');
   const [reconcileResult, setReconcileResult] = useState<ReconciliationReport | null>(null);
 
+  // P11-C — operations outillees, sante Python et actions administratives sures.
+  const execution = useAdminResource(() => adminApi.opsExecution(), 'ops-execution');
+  const python = useAdminResource(() => adminApi.opsPython(), 'ops-python');
+  const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
+  const executionDetail = useAdminResource(
+    () =>
+      selectedExecutionId
+        ? adminApi.opsExecutionDetail(selectedExecutionId)
+        : Promise.resolve<AdminExecutionDetail | null>(null),
+    'execution:' + (selectedExecutionId ?? 'none')
+  );
+  const [execBusy, setExecBusy] = useState('');
+  const [execError, setExecError] = useState('');
+  const [execNotice, setExecNotice] = useState('');
+  const [cancelTarget, setCancelTarget] = useState<AdminExecutionItem | null>(null);
+  const [resolveDraft, setResolveDraft] = useState({ id: '', cents: '0', evidence: '' });
+
   async function runReconcile() {
     const staleSeconds = readInteger(staleSecondsDraft, 0, 604800);
     const stagedGraceHours = readInteger(stagedGraceDraft, 0, 8760);
@@ -92,10 +123,66 @@ export default function AdminJobsPage() {
     }
   }
 
+  async function confirmCancelOperation() {
+    if (!cancelTarget) {
+      return;
+    }
+    setExecBusy('cancel');
+    setExecError('');
+    setExecNotice('');
+    try {
+      const result = await adminApi.cancelExecution(cancelTarget.id);
+      setExecNotice('Operation ' + shortId(result.id, 10) + ' annulee (etat ' + result.state + ').');
+      setCancelTarget(null);
+      execution.reload();
+      if (selectedExecutionId === result.id) {
+        executionDetail.reload();
+      }
+    } catch (error) {
+      setExecError(errorMessage(error));
+    } finally {
+      setExecBusy('');
+    }
+  }
+
+  async function resolveIncidentOperation() {
+    const cents = Number(resolveDraft.cents);
+    if (!Number.isInteger(cents) || cents < 0) {
+      setExecError('Le cout constate doit etre un entier positif en centimes.');
+      return;
+    }
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resolveDraft.evidence.trim())) {
+      setExecError('Une reference de preuve au format UUID est requise.');
+      return;
+    }
+    setExecBusy('resolve');
+    setExecError('');
+    setExecNotice('');
+    try {
+      const result = await adminApi.resolveExecutionIncident(resolveDraft.id, {
+        cents,
+        evidence: resolveDraft.evidence.trim()
+      });
+      setExecNotice('Operation ' + shortId(result.id, 10) + ' resolue (etat ' + result.state + ').');
+      setResolveDraft({ id: '', cents: '0', evidence: '' });
+      execution.reload();
+      if (selectedExecutionId === result.id) {
+        executionDetail.reload();
+      }
+    } catch (error) {
+      setExecError(errorMessage(error));
+    } finally {
+      setExecBusy('');
+    }
+  }
+
   const healthData = health.data;
   const snapshotData = snapshot.data;
   const runsData = runs.data;
   const detailData = detail.data;
+  const executionData = execution.data;
+  const pythonData = python.data;
+  const executionDetailData = executionDetail.data;
 
   return (
     <div className="admin-page">
@@ -270,6 +357,7 @@ export default function AdminJobsPage() {
                         <th>Trace</th>
                         <th>Workflow</th>
                         <th>Erreur</th>
+                        <th>Duree</th>
                         <th>Date</th>
                         <th></th>
                       </tr>
@@ -310,6 +398,13 @@ export default function AdminJobsPage() {
                               '-'
                             )}
                           </td>
+                          <td className="admin-nowrap">
+                            {run.durationMs !== undefined && run.durationMs !== null
+                              ? Math.round(run.durationMs / 1000) + ' s'
+                              : run.stalled
+                                ? 'Bloque'
+                                : 'En cours'}
+                          </td>
                           <td className="admin-nowrap">{formatDateTime(run.createdAt)}</td>
                           <td>
                             <button
@@ -338,6 +433,366 @@ export default function AdminJobsPage() {
                 />
               </>
             )
+          ) : null}
+        </SectionCard>
+
+        <SectionCard
+          title="Executions outillees (ToolBroker)"
+          description="Etats reels des operations proposees, en file, en cours, terminees ou incertaines. Aucune relance aveugle d une operation payante : seules l annulation avant envoi et la resolution d une issue incertaine sont permises."
+          actions={
+            <button type="button" className="btn btn-ghost btn-small" onClick={execution.reload} disabled={execution.loading}>
+              Actualiser
+            </button>
+          }
+        >
+          {execution.loading && !executionData ? <LoadingState label="Chargement des executions..." /> : null}
+          {execution.error ? <ErrorState message={execution.error} onRetry={execution.reload} /> : null}
+          {executionData ? (
+            <div className="admin-sections">
+              <div className="admin-kv">
+                {EXECUTION_STATE_ORDER.map((state) => (
+                  <div key={state}>
+                    <span>{statusLabel(state)}</span>
+                    <strong>{executionData ? executionData.states[state] ?? 0 : 0}</strong>
+                  </div>
+                ))}
+              </div>
+              <p className="admin-meta">
+                Couts :{' '}
+                {Object.entries(executionData.costStates)
+                  .map(([state, count]) => state + ' ' + count)
+                  .join(' · ') || 'aucune operation'}
+              </p>
+              {executionData.items.length === 0 ? (
+                <p className="admin-empty">Aucune operation outillee.</p>
+              ) : (
+                <div className="admin-table-wrap">
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>Outil</th>
+                        <th>Etat</th>
+                        <th>Cout</th>
+                        <th>Correlation</th>
+                        <th>Age</th>
+                        <th>Projet</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {executionData.items.map((item) => (
+                        <tr key={item.id}>
+                          <td className="admin-mono">{item.tool}</td>
+                          <td>
+                            <StatusBadge status={item.state} />
+                            {item.approved ? <span className="admin-meta"> approuvee</span> : null}
+                          </td>
+                          <td className="admin-nowrap">
+                            {item.costState} · {item.reportedCents === null ? '-' : item.reportedCents}/{item.maxCents} c
+                          </td>
+                          <td className="admin-mono" title={item.correlationId}>
+                            {shortId(item.correlationId, 8)}
+                          </td>
+                          <td className="admin-nowrap">{Math.round(item.ageMs / 1000)} s</td>
+                          <td>{item.projectTitle}</td>
+                          <td>
+                            <div className="admin-actions">
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-small"
+                                onClick={() => setSelectedExecutionId(item.id)}
+                              >
+                                Details
+                              </button>
+                              <a
+                                className="btn btn-ghost btn-small"
+                                href={'/admin/audit?traceId=' + encodeURIComponent(item.correlationId)}
+                              >
+                                Audit
+                              </a>
+                              {item.cancelEligible ? (
+                                <button
+                                  type="button"
+                                  className="btn btn-danger btn-small"
+                                  onClick={() => setCancelTarget(item)}
+                                >
+                                  Annuler
+                                </button>
+                              ) : null}
+                              {item.resolveEligible ? (
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary btn-small"
+                                  onClick={() => setResolveDraft({ id: item.id, cents: String(item.maxCents), evidence: '' })}
+                                >
+                                  Resoudre
+                                </button>
+                              ) : null}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {resolveDraft.id ? (
+                <div className="admin-form">
+                  <p className="admin-meta">
+                    Resolution manuelle de l issue incertaine {shortId(resolveDraft.id, 10)} : le cout constate doit etre
+                    justifie par une preuve deja journalisee.
+                  </p>
+                  <div className="admin-form-grid">
+                    <TextField
+                      id="resolve-cents"
+                      label="Cout constate (centimes)"
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={resolveDraft.cents}
+                      onChange={(value) => setResolveDraft((previous) => ({ ...previous, cents: value }))}
+                    />
+                    <TextField
+                      id="resolve-evidence"
+                      label="Reference de preuve (UUID)"
+                      value={resolveDraft.evidence}
+                      onChange={(value) => setResolveDraft((previous) => ({ ...previous, evidence: value }))}
+                      hint="Identifiant d une preuve existante."
+                    />
+                  </div>
+                  <div className="admin-actions">
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={() => void resolveIncidentOperation()}
+                      disabled={execBusy === 'resolve'}
+                    >
+                      {execBusy === 'resolve' ? 'Resolution...' : 'Confirmer la resolution'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-small"
+                      onClick={() => setResolveDraft({ id: '', cents: '0', evidence: '' })}
+                    >
+                      Fermer
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              {execNotice ? (
+                <p className="admin-banner admin-banner--success" role="status">
+                  {execNotice}
+                </p>
+              ) : null}
+              {execError ? (
+                <p className="admin-banner admin-banner--danger" role="alert">
+                  {execError}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </SectionCard>
+
+        {selectedExecutionId ? (
+          <SectionCard
+            title={'Detail execution ' + shortId(selectedExecutionId, 12)}
+            description="Operation, cout, correlation et evenements d audit associes."
+            actions={
+              <button type="button" className="btn btn-ghost btn-small" onClick={() => setSelectedExecutionId(null)}>
+                Fermer
+              </button>
+            }
+          >
+            {executionDetail.loading && !executionDetailData ? (
+              <LoadingState label="Chargement de l operation..." />
+            ) : null}
+            {executionDetail.error ? <ErrorState message={executionDetail.error} onRetry={executionDetail.reload} /> : null}
+            {executionDetailData ? (
+              <div className="admin-sections">
+                <div className="admin-kv">
+                  <div>
+                    <span>Outil</span>
+                    <strong className="admin-mono">{executionDetailData.tool}</strong>
+                  </div>
+                  <div>
+                    <span>Etat</span>
+                    <strong>
+                      <StatusBadge status={executionDetailData.state} />
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Cout</span>
+                    <strong>
+                      {executionDetailData.costState} · {executionDetailData.reportedCents ?? '-'}/
+                      {executionDetailData.maxCents} c
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Correlation</span>
+                    <strong className="admin-mono">{executionDetailData.correlationId}</strong>
+                  </div>
+                  <div>
+                    <span>Projet</span>
+                    <strong>{executionDetailData.projectTitle}</strong>
+                  </div>
+                  <div>
+                    <span>Proprietaire</span>
+                    <strong>{executionDetailData.ownerEmail}</strong>
+                  </div>
+                  <div>
+                    <span>Cree le</span>
+                    <strong>{formatDateTime(executionDetailData.createdAt)}</strong>
+                  </div>
+                  <div>
+                    <span>Claim jusqu a</span>
+                    <strong>{formatDateTime(executionDetailData.claimUntil)}</strong>
+                  </div>
+                </div>
+                <details className="admin-details">
+                  <summary>Parametres</summary>
+                  <pre className="admin-pre">{formatJson(executionDetailData.params)}</pre>
+                </details>
+                <details className="admin-details">
+                  <summary>Resultat</summary>
+                  <pre className="admin-pre">{formatJson(executionDetailData.result)}</pre>
+                </details>
+                <h3 className="admin-subhead">Audit lie (correlation)</h3>
+                {executionDetailData.audit.length === 0 ? (
+                  <p className="admin-empty">Aucun evenement d audit pour cette correlation.</p>
+                ) : (
+                  <div className="admin-table-wrap">
+                    <table className="admin-table">
+                      <thead>
+                        <tr>
+                          <th>Action</th>
+                          <th>Acteur</th>
+                          <th>Cible</th>
+                          <th>Date</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {executionDetailData.audit.map((event) => (
+                          <tr key={event.id}>
+                            <td className="admin-mono">{event.action}</td>
+                            <td className="admin-mono">{event.actorId ? shortId(event.actorId, 10) : '-'}</td>
+                            <td className="admin-mono">
+                              {event.targetType}
+                              {event.targetId ? ' · ' + shortId(event.targetId, 10) : ''}
+                            </td>
+                            <td className="admin-nowrap">{formatDateTime(event.createdAt)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            ) : null}
+          </SectionCard>
+        ) : null}
+
+        <SectionCard
+          title="Service Python interne"
+          description="Disponibilite reelle lue sur /readyz et /v1/capabilities. Aucun jeton n est affiche ; une indisponibilite n est jamais masquee."
+          actions={
+            <button type="button" className="btn btn-ghost btn-small" onClick={python.reload} disabled={python.loading}>
+              Verifier
+            </button>
+          }
+        >
+          {python.loading && !pythonData ? <LoadingState label="Verification du service Python..." /> : null}
+          {python.error ? <ErrorState message={python.error} onRetry={python.reload} /> : null}
+          {pythonData ? (
+            <div className="admin-sections">
+              <div className="admin-kv">
+                <div>
+                  <span>Configure</span>
+                  <strong>{pythonData.configured ? 'Oui' : 'Non'}</strong>
+                </div>
+                <div>
+                  <span>Joignable</span>
+                  <strong>{pythonData.reachable ? 'Oui' : 'Non'}</strong>
+                </div>
+                <div>
+                  <span>Pret</span>
+                  <strong>{pythonData.ready ? 'Oui' : 'Non'}</strong>
+                </div>
+                <div>
+                  <span>Version</span>
+                  <strong>{pythonData.version ?? '-'}</strong>
+                </div>
+                <div>
+                  <span>Verifie le</span>
+                  <strong>{formatDateTime(pythonData.checkedAt)}</strong>
+                </div>
+              </div>
+              {pythonData.error ? (
+                <p className="admin-banner admin-banner--danger" role="alert">
+                  Code : {pythonData.error}
+                </p>
+              ) : null}
+              {pythonData.capabilitiesError ? (
+                <p className="admin-banner admin-banner--warn" role="status">
+                  Capacites indisponibles : {pythonData.capabilitiesError}
+                </p>
+              ) : null}
+              {pythonData.dependencies && Object.keys(pythonData.dependencies).length > 0 ? (
+                <>
+                  <h3 className="admin-subhead">Dependances</h3>
+                  <div className="admin-table-wrap">
+                    <table className="admin-table">
+                      <thead>
+                        <tr>
+                          <th>Paquet</th>
+                          <th>Present</th>
+                          <th>Version</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(pythonData.dependencies).map(([name, value]) => {
+                          const info =
+                            value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+                          return (
+                            <tr key={name}>
+                              <td className="admin-mono">{name}</td>
+                              <td>{info.present === true ? 'Oui' : 'Non'}</td>
+                              <td>{typeof info.version === 'string' ? info.version : '-'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : null}
+              <h3 className="admin-subhead">Capacites declarees</h3>
+              {pythonData.capabilities.length === 0 ? (
+                <p className="admin-empty">Aucune capacite retournee.</p>
+              ) : (
+                <div className="admin-table-wrap">
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>Capacite</th>
+                        <th>Action</th>
+                        <th>Moteur</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pythonData.capabilities.map((capability) => (
+                        <tr key={capability.key}>
+                          <td className="admin-mono">{capability.key}</td>
+                          <td>{capability.action}</td>
+                          <td>{capability.engine}</td>
+                          <td className="admin-meta">{capability.description}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           ) : null}
         </SectionCard>
 
@@ -573,6 +1028,29 @@ export default function AdminJobsPage() {
             ) : null}
           </div>
         </SectionCard>
+
+        <ConfirmDialog
+          open={cancelTarget !== null}
+          title="Annuler cette operation"
+          message={
+            cancelTarget
+              ? 'L operation ' +
+                cancelTarget.tool +
+                ' (' +
+                shortId(cancelTarget.id, 10) +
+                ') sera annulee. Seules les operations encore proposees ou en file peuvent l etre ; la reservation de cout est liberee par le broker.'
+              : ''
+          }
+          confirmLabel="Annuler l operation"
+          tone="danger"
+          busy={execBusy === 'cancel'}
+          onConfirm={() => void confirmCancelOperation()}
+          onCancel={() => {
+            if (execBusy !== 'cancel') {
+              setCancelTarget(null);
+            }
+          }}
+        />
       </div>
     </div>
   );

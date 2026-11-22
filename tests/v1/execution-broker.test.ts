@@ -25,6 +25,8 @@ import {
   resolveIncident
 } from '../../apps/api/src/infrastructure/execution/broker';
 import { catalogForAccount, tools, type Tool } from '../../apps/api/src/infrastructure/execution/registry';
+import { loadOperationResult } from '../../apps/api/src/infrastructure/execution/operationResults';
+import { isResultPayloadReference } from '../../apps/api/src/infrastructure/execution/resultPayload';
 let actor: string, admin: string, project: string;
 const make = (key: string = randomUUID(), tool: Tool = 'sandbox.generate@1') =>
   propose(actor, project, { key, tool, revision: 1 });
@@ -86,7 +88,7 @@ it('serializes duplicate proposals, competing reservations and worker redelivery
       execute(queued.id, {
         async invoke() {
           charges++;
-          return { costCents: 7 };
+          return { costCents: 7, costBasis: 'configured_estimate' };
         }
       })
     )
@@ -166,7 +168,7 @@ it('SIGKILL after charge, restart recovery and redelivery do not charge again', 
     await execute(o.id, {
       async invoke() {
         await fs.appendFile(file, 'duplicate\n');
-        return { costCents: 10 };
+        return { costCents: 10, costBasis: 'configured_estimate' };
       }
     });
     expect(await fs.readFile(file, 'utf8')).toBe(o.id + '\n');
@@ -189,7 +191,7 @@ it('times out an unresponsive provider and fences a delayed receipt', async () =
     {
       async invoke() {
         invocations++;
-        return new Promise((resolve) => setTimeout(() => resolve({ costCents: 2 }), 50));
+        return new Promise((resolve) => setTimeout(() => resolve({ costCents: 2, costBasis: 'configured_estimate' }), 50));
       }
     },
     10
@@ -347,7 +349,7 @@ it('redelivers a lost notification without redelivering a claimed effect', async
   const provider = {
     async invoke() {
       charges++;
-      return { costCents: 10 };
+      return { costCents: 10, costBasis: 'configured_estimate' };
     }
   };
   const deliveries: string[] = [];
@@ -365,6 +367,140 @@ it('redelivers a lost notification without redelivering a claimed effect', async
   expect(deliveries).toEqual([o.id, o.id]);
   await Promise.all(deliveries.map((id) => execute(id, provider)));
   expect(charges).toBe(1);
+});
+it('settles by provenance: configured estimate, provider amount and local work stay distinct', async () => {
+  await prisma.executionAccount.update({ where: { userId: actor }, data: { limitCents: 100 } });
+  const run = async (invoke: () => Promise<{ costCents: number; costBasis: 'none' | 'configured_estimate' | 'provider_reported' }>) => {
+    const o = await make();
+    await approve(actor, o.id, o.digest);
+    await execute(o.id, { invoke });
+    return prisma.executionOperation.findUniqueOrThrow({ where: { id: o.id } });
+  };
+  const estimated = await run(async () => ({ costCents: 3, costBasis: 'configured_estimate' }));
+  expect(estimated).toMatchObject({ state: 'SUCCEEDED', costState: 'ESTIMATED', reportedCents: 3 });
+  const reported = await run(async () => ({ costCents: 4, costBasis: 'provider_reported' }));
+  expect(reported).toMatchObject({ state: 'SUCCEEDED', costState: 'REPORTED', reportedCents: 4 });
+  const local = await run(async () => ({ costCents: 0, costBasis: 'none' }));
+  expect(local).toMatchObject({ state: 'SUCCEEDED', costState: 'RELEASED', reportedCents: 0 });
+  expect(await wallet()).toMatchObject({ reservedCents: 0, spentCents: 7 });
+  const audit = await prisma.auditEvent.findMany({ where: { targetId: estimated.id, action: 'execution.reported' } });
+  expect(audit).toHaveLength(1);
+  expect(audit[0]?.metadata).toMatchObject({ cents: 3, basis: 'configured_estimate' });
+});
+it('never settles a provider amount above the ceiling as a success and keeps the paid output', async () => {
+  const o = await make();
+  await approve(actor, o.id, o.digest);
+  await execute(o.id, {
+    async invoke() {
+      // Montant brut du fournisseur : l'adaptateur ne le rogne plus au plafond.
+      return { costCents: 11, costBasis: 'provider_reported' as const, result: { assetVersionId: 'v-paid' } };
+    }
+  });
+  expect(await prisma.executionOperation.findUniqueOrThrow({ where: { id: o.id } })).toMatchObject({
+    state: 'UNKNOWN',
+    costState: 'UNKNOWN',
+    reportedCents: null,
+    result: { assetVersionId: 'v-paid' }
+  });
+  expect(await wallet()).toMatchObject({ reservedCents: 10, spentCents: 0, enabled: false });
+  const events = await prisma.auditEvent.findMany({ where: { targetId: o.id } });
+  expect(events.map((event) => event.action)).toEqual(
+    expect.arrayContaining(['execution.invalid_provider_cost', 'execution.outcome_unknown'])
+  );
+  await resolveIncident(admin, o.id, 10, 'facture fournisseur #42');
+  expect(await prisma.executionOperation.findUniqueOrThrow({ where: { id: o.id } })).toMatchObject({
+    state: 'RESOLVED',
+    costState: 'RECONCILED',
+    reportedCents: 10,
+    result: { assetVersionId: 'v-paid' }
+  });
+  expect(await wallet()).toMatchObject({ reservedCents: 0, spentCents: 10 });
+});
+it('keeps the reservation when the provider reports no usage at all', async () => {
+  const o = await make();
+  await approve(actor, o.id, o.digest);
+  await execute(o.id, {
+    async invoke() {
+      throw Error('media_cost_unknown');
+    }
+  });
+  expect(await prisma.executionOperation.findUniqueOrThrow({ where: { id: o.id } })).toMatchObject({
+    state: 'UNKNOWN',
+    costState: 'UNKNOWN',
+    reportedCents: null
+  });
+  expect(await wallet()).toMatchObject({ reservedCents: 10, spentCents: 0 });
+});
+it('recovers an expired claim into an incident without replay or automatic release', async () => {
+  const o = await make();
+  await approve(actor, o.id, o.digest);
+  await prisma.executionOperation.update({
+    where: { id: o.id },
+    data: { state: 'CLAIMED', claimUntil: new Date(0) }
+  });
+  const engine = { invoke: vi.fn() };
+  await recover();
+  expect(engine.invoke).not.toHaveBeenCalled();
+  expect(await prisma.executionOperation.findUniqueOrThrow({ where: { id: o.id } })).toMatchObject({
+    state: 'UNKNOWN',
+    costState: 'UNKNOWN'
+  });
+  expect(await wallet()).toMatchObject({ reservedCents: 10, spentCents: 0 });
+});
+it('records a paid but unusable provider output as an incident, never as a free failure', async () => {
+  const o = await make();
+  await approve(actor, o.id, o.digest);
+  await execute(o.id, {
+    async invoke() {
+      // Le fournisseur a répondu (donc facturé) mais sa sortie est inexploitable.
+      return { uncertain: { code: 'image_output_invalid', message: 'Sortie inexploitable.' } };
+    }
+  });
+  expect(await prisma.executionOperation.findUniqueOrThrow({ where: { id: o.id } })).toMatchObject({
+    state: 'UNKNOWN',
+    costState: 'UNKNOWN',
+    reportedCents: null
+  });
+  expect(await wallet()).toMatchObject({ reservedCents: 10, spentCents: 0 });
+  const events = await prisma.auditEvent.findMany({ where: { targetId: o.id, action: 'execution.uncertain' } });
+  expect(events).toHaveLength(1);
+});
+it('persists a result above the inline bound as an immutable payload and resolves it transparently', async () => {
+  const o = await make();
+  await approve(actor, o.id, o.digest);
+  // Transcription volumineuse : au-delà de 32 Kio, jamais remplacée par un marqueur tronqué.
+  const big = {
+    tool: 'audio.transcribe@1',
+    segments: Array.from({ length: 200 }, (_, index) => ({ start: index, end: index + 0.9, text: 'segment ' + index + ' ' + 'x'.repeat(150) }))
+  };
+  expect(JSON.stringify(big).length).toBeGreaterThan(32768);
+  await execute(o.id, {
+    async invoke() {
+      return { costCents: 2, costBasis: 'configured_estimate' as const, result: big };
+    }
+  });
+  const row = await prisma.executionOperation.findUniqueOrThrow({ where: { id: o.id } });
+  expect(row.state).toBe('SUCCEEDED');
+  expect(JSON.stringify(row.result).length).toBeLessThan(512);
+  expect(isResultPayloadReference(row.result)).toBe(true);
+  expect(JSON.stringify(row.result)).not.toContain('truncated');
+  expect(await loadOperationResult({ accountId: row.accountId, result: row.result })).toEqual(big);
+  expect(await wallet()).toMatchObject({ reservedCents: 0, spentCents: 2 });
+});
+it('keeps a paid large result resolvable when the provider amount exceeds the ceiling', async () => {
+  const o = await make();
+  await approve(actor, o.id, o.digest);
+  const big = { segments: Array.from({ length: 200 }, (_, index) => ({ start: index, end: index + 1, text: 'ligne ' + index + ' ' + 'y'.repeat(150) })) };
+  await execute(o.id, {
+    async invoke() {
+      return { costCents: 11, costBasis: 'provider_reported' as const, result: big };
+    }
+  });
+  const row = await prisma.executionOperation.findUniqueOrThrow({ where: { id: o.id } });
+  expect(row).toMatchObject({ state: 'UNKNOWN', costState: 'UNKNOWN', reportedCents: null });
+  expect(isResultPayloadReference(row.result)).toBe(true);
+  expect(await loadOperationResult({ accountId: row.accountId, result: row.result })).toEqual(big);
+  expect(await wallet()).toMatchObject({ reservedCents: 10, spentCents: 0 });
 });
 
 // Le catalogue ne doit jamais proposer une opération que la politique refuse ensuite.

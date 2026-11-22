@@ -41,6 +41,9 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+pytest-cache-files-*/
+data/.models-*/
+services/python-tools/.models-*/
 .mypy_cache/
 .ruff_cache/
 *.egg-info/
@@ -88,3 +91,12 @@ apps/web/AGENTS.md
 # Preproduction locale (binaires, volumes, sauvegardes)
 infra/preprod/runtime/
 infra/preprod/backups/
+
+# Graphe de code graphify (généré localement, jamais commité)
+graphify-out/
+
+# Python toolbox (runtime local, jamais commité)
+__pycache__/
+*.pyc
+.pytest_cache/
+services/python-tools/.venv/

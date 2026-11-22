@@ -1,4 +1,4 @@
-import { api } from './api';
+import { api, patchJson } from './api';
 
 /**
  * Types et client des routes /api/admin/* et /api/ops/*.
@@ -65,16 +65,48 @@ export type AdminOverview = {
   recentErrors: AdminOverviewError[];
 };
 
+export type AdminUserStatus = 'active' | 'suspended';
+
 export type AdminUser = {
   id: string;
   email: string;
   name: string;
   role: string;
+  status: AdminUserStatus;
+  suspendedAt: string | null;
   createdAt: string;
   projectsCount: number;
   sessionsCount: number;
   lastSessionAt: string | null;
   lastSessionStatus: 'active' | 'expired' | 'revoked' | 'none';
+};
+
+export type AdminUserCounts = {
+  contexts: number;
+  projects: number;
+  contentItems: number;
+  sessions: number;
+  activeSessions: number;
+  publicationRequests: Record<string, number>;
+};
+
+export type AdminUserDetail = AdminUser & {
+  counts: AdminUserCounts;
+  recentAuditEvents: AdminAuditEvent[];
+  auditEventsTotal: number;
+};
+
+export type AdminUserMutationResult = {
+  user: {
+    id: string;
+    email: string;
+    role: string;
+    status: AdminUserStatus;
+    suspendedAt: string | null;
+  };
+  revokedSessions: number;
+  roleChanged: boolean;
+  statusChanged: boolean;
 };
 
 export type AdminInvitation = {
@@ -143,6 +175,40 @@ export type AdminModel = {
   createdAt: string;
 };
 
+/** P11-B — disponibilité réelle d'une capacité (configuration serveur, jamais une sonde). */
+export type AdminToolAvailability = 'configured' | 'disabled' | 'missing_credential' | 'local';
+
+/** Outil du registre FERMÉ : aucune définition arbitraire ne peut être ajoutée côté client. */
+export type AdminTool = {
+  key: string;
+  provider: string;
+  action: string;
+  scope: string;
+  approval: string;
+  maxCents: number;
+  agentProposable: boolean;
+  hasParams: boolean;
+  description: string;
+  availability: AdminToolAvailability;
+  availabilityReason: string | null;
+};
+
+/** Politique d'exécution d'un compte (plafond, état, outils autorisés). */
+export type AdminExecutionAccount = {
+  userId: string;
+  enabled: boolean;
+  limitCents: number;
+  reservedCents: number;
+  spentCents: number;
+  tools: string[];
+};
+
+export type AdminExecutionAccountInput = {
+  limitCents: number;
+  enabled: boolean;
+  tools: string[];
+};
+
 export type AdminRun = {
   id: string;
   projectId: string;
@@ -161,6 +227,10 @@ export type AdminRun = {
   error: string | null;
   productionStatus: string | null;
   progress: number | null;
+  ageMs?: number;
+  sinceUpdateMs?: number;
+  stalled?: boolean;
+  durationMs?: number | null;
 };
 
 export type AdminStep = {
@@ -326,6 +396,8 @@ export type AdminUserQuery = {
   page: number;
   pageSize: number;
   q?: string;
+  role?: string;
+  status?: AdminUserStatus;
 };
 
 export type AdminRunQuery = {
@@ -334,12 +406,161 @@ export type AdminRunQuery = {
   status?: string;
 };
 
+/** P11-C — operations outillees (ToolBroker) vues par l'administration. */
+export type AdminExecutionItem = {
+  id: string;
+  tool: string;
+  state: string;
+  costState: string;
+  maxCents: number;
+  reportedCents: number | null;
+  correlationId: string;
+  createdAt: string;
+  ageMs: number;
+  claimUntil: string | null;
+  approved: boolean;
+  accountId: string;
+  projectId: string;
+  projectTitle: string;
+  ownerEmail: string;
+  cancelEligible: boolean;
+  resolveEligible: boolean;
+};
+
+export type AdminExecutionOverview = {
+  generatedAt: string;
+  states: Record<string, number>;
+  costStates: Record<string, number>;
+  items: AdminExecutionItem[];
+};
+
+export type AdminExecutionDetail = AdminExecutionItem & {
+  params: unknown;
+  result: unknown;
+  audit: AdminAuditEvent[];
+};
+
+/** P11-C — etat reel du service Python interne et de ses capacites declarees. */
+export type AdminPythonCapability = {
+  key: string;
+  name: string;
+  action: string;
+  engine: string;
+  description: string;
+  limits: Record<string, unknown>;
+};
+
+export type AdminPythonStatus = {
+  configured: boolean;
+  reachable: boolean;
+  ready: boolean;
+  checkedAt: string;
+  error?: string;
+  version?: string | null;
+  dependencies?: Record<string, unknown>;
+  models?: unknown[];
+  capabilities: AdminPythonCapability[];
+  capabilitiesError?: string | null;
+};
+
+/** P11-D — budgets et coûts d'exécution par compte. */
+export type AdminExecutionBudgetAlert = 'ok' | 'warning' | 'critical' | 'exhausted' | 'unknown';
+
+export type AdminExecutionBudget = {
+  userId: string;
+  email: string;
+  name: string;
+  status: AdminUserStatus;
+  enabled: boolean;
+  limitCents: number;
+  reservedCents: number;
+  spentCents: number;
+  remainingCents: number;
+  percentUsed: number | null;
+  toolsCount: number;
+  uncertainOperations: number;
+  alert: AdminExecutionBudgetAlert;
+};
+
+export type AdminExecutionCostTool = {
+  tool: string;
+  provider: string;
+  operations: number;
+  maxCents: number;
+  confirmedCents: number;
+  uncertainCents: number;
+};
+
+export type AdminExecutionCostProvider = {
+  provider: string;
+  tools: number;
+  operations: number;
+  maxCents: number;
+  confirmedCents: number;
+  uncertainCents: number;
+  availability: AdminToolAvailability;
+  availabilityReason: string | null;
+};
+
+export type AdminExecutionUncertainCost = {
+  id: string;
+  tool: string;
+  provider: string;
+  state: string;
+  costState: string;
+  maxCents: number;
+  correlationId: string;
+  createdAt: string;
+  ageMs: number;
+  accountId: string;
+  ownerEmail: string | null;
+  projectTitle: string;
+};
+
+export type AdminCostsExecution = {
+  generatedAt: string;
+  commercial: {
+    betaMode: boolean;
+    mode: string;
+    paymentsFrozen: boolean;
+    checkout: string;
+    billingControlEnabled: boolean;
+    billingControlMode: string | null;
+    stripeLiveMode: boolean;
+    stripeCheckoutEnabled: boolean;
+  };
+  summary: {
+    estimatedCents: number;
+    reservedCents: number;
+    confirmedCents: number;
+    uncertainCents: number;
+    releasedCents: number;
+    maxExposureCents: number;
+    byCostState: Record<string, number>;
+  };
+  budgetTotals: {
+    accounts: number;
+    enabledAccounts: number;
+    limitCents: number;
+    reservedCents: number;
+    spentCents: number;
+    remainingCents: number;
+  };
+  budgets: AdminExecutionBudget[];
+  byTool: AdminExecutionCostTool[];
+  byProvider: AdminExecutionCostProvider[];
+  uncertain: AdminExecutionUncertainCost[];
+  ledger: { events: number; cents: number; providers: Array<{ provider: string; events: number; cents: number }> };
+  reconciliation: { route: string; requiresCents: boolean; requiresEvidence: boolean };
+};
+
 export type AdminAuditQuery = {
   page: number;
   pageSize: number;
   action?: string;
   actorId?: string;
   targetType?: string;
+  traceId?: string;
   from?: string;
   to?: string;
 };
@@ -400,7 +621,23 @@ export const adminApi = {
   overview: () => api<AdminOverview>('/api/admin/overview'),
 
   users: (input: AdminUserQuery) =>
-    api<AdminPage<AdminUser>>('/api/admin/users' + buildQuery({ page: input.page, pageSize: input.pageSize, q: input.q })),
+    api<AdminPage<AdminUser>>(
+      '/api/admin/users' +
+        buildQuery({
+          page: input.page,
+          pageSize: input.pageSize,
+          q: input.q,
+          role: input.role,
+          status: input.status
+        })
+    ),
+
+  user: (userId: string) => api<AdminUserDetail>('/api/admin/users/' + encodeURIComponent(userId)),
+
+  updateUser: (userId: string, input: { role?: string; status?: AdminUserStatus }) =>
+    patchJson<AdminUserMutationResult>('/api/admin/users/' + encodeURIComponent(userId), input),
+
+  me: () => api<{ user: { id: string; email: string; name: string; role: string } }>('/api/auth/me'),
 
   revokeUserSessions: (userId: string) =>
     postJsonAdmin<{ ok: boolean; revokedSessions: number }>(
@@ -417,6 +654,20 @@ export const adminApi = {
     deleteAdmin<{ invitation: AdminInvitation }>('/api/admin/invitations/' + encodeURIComponent(invitationId)),
 
   agents: () => api<{ items: AdminAgent[] }>('/api/admin/agents'),
+
+  // P11-B — catalogue fermé des outils et politique d'exécution par compte.
+  tools: () => api<{ items: AdminTool[] }>('/api/admin/tools'),
+
+  executionAccounts: () => api<{ items: AdminExecutionAccount[] }>('/api/admin/execution/accounts'),
+
+  executionAccount: (account: string) =>
+    api<AdminExecutionAccount>('/api/admin/execution/accounts/' + encodeURIComponent(account)),
+
+  setExecutionAccount: (account: string, input: AdminExecutionAccountInput) =>
+    api<AdminExecutionAccount>('/api/admin/execution/accounts/' + encodeURIComponent(account), {
+      method: 'PUT',
+      body: JSON.stringify(input)
+    }),
 
   agentConfigs: (agentId: string) =>
     api<{ items: AdminAgentConfig[] }>('/api/admin/agents/' + encodeURIComponent(agentId) + '/configs'),
@@ -489,6 +740,7 @@ export const adminApi = {
           action: input.action,
           actorId: input.actorId,
           targetType: input.targetType,
+          traceId: input.traceId,
           from: input.from,
           to: input.to
         })
@@ -508,6 +760,28 @@ export const adminApi = {
 
   runtime: () => api<AdminRuntime>('/api/admin/runtime'),
 
+  // P11-C — operations outillees, sante Python et actions administratives sures.
+  opsExecution: () => api<AdminExecutionOverview>('/api/admin/ops/execution'),
+
+  opsExecutionDetail: (operationId: string) =>
+    api<AdminExecutionDetail>('/api/admin/ops/execution/' + encodeURIComponent(operationId)),
+
+  cancelExecution: (operationId: string) =>
+    postJsonAdmin<{ id: string; state: string }>(
+      '/api/admin/ops/execution/' + encodeURIComponent(operationId) + '/cancel',
+      {}
+    ),
+
+  resolveExecutionIncident: (operationId: string, input: { cents: number; evidence: string }) =>
+    postJsonAdmin<{ id: string; state: string; costState: string }>(
+      '/api/admin/execution/' + encodeURIComponent(operationId) + '/resolve',
+      input
+    ),
+
+  opsPython: () => api<AdminPythonStatus>('/api/admin/ops/python'),
+
+  executionCosts: () => api<AdminCostsExecution>('/api/admin/costs/execution'),
+
   opsHealth: () => api<OpsHealth>('/api/ops/health'),
 
   opsSnapshot: () => api<OpsSnapshot>('/api/ops/snapshot'),
@@ -518,11 +792,27 @@ export const adminApi = {
   logout: () => api<{ ok: boolean }>('/api/auth/logout', { method: 'POST' })
 };
 
+export const TOOL_AVAILABILITY_LABELS: Record<AdminToolAvailability, string> = {
+  configured: 'Configuré (non sondé)',
+  disabled: 'Désactivé',
+  missing_credential: 'Identifiant manquant',
+  local: 'Local / déterministe'
+};
+
 export const ROLE_LABELS: Record<string, string> = {
   support: 'Assistance',
   user: 'Utilisateur',
   super_admin: 'Super administrateur'
 };
+
+export const USER_STATUS_LABELS: Record<string, string> = {
+  active: 'Actif',
+  suspended: 'Suspendu'
+};
+
+export function userStatusLabel(status: string): string {
+  return USER_STATUS_LABELS[status] ?? status;
+}
 
 export const JOB_RUN_STATUSES = [
   'queued',
@@ -539,6 +829,7 @@ export const LICENSE_OPTIONS: AdminLicense[] = ['internal', 'commercial', 'unkno
 
 const STATUS_LABELS: Record<string, string> = {
   active: 'Active',
+  suspended: 'Suspendu',
   expired: 'Expiree',
   revoked: 'Revoquee',
   none: 'Aucune',
@@ -587,6 +878,7 @@ export function statusTone(status: string): StatusTone {
     case 'failed':
     case 'revoked':
     case 'denied':
+    case 'suspended':
     case 'timed_out':
       return 'danger';
     case 'running':

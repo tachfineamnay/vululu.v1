@@ -131,3 +131,196 @@
     padding-inline: var(--v-space-8);
   }
 }
+
+/* P10 — hashtags éditables par déclinaison (format #tag, 10 maximum, sans doublon). */
+.cal-hashtags-editor {
+  display: grid;
+  gap: var(--v-space-8);
+  padding: var(--v-space-16);
+  border: 1px solid var(--v-color-border);
+  border-radius: var(--v-radius-control);
+  background: var(--v-color-background);
+}
+.cal-hashtags-editor .label {
+  margin: 0;
+}
+.cal-hashtags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--v-space-8);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.cal-hashtags li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--v-space-4);
+  padding: var(--v-space-4) var(--v-space-8);
+  border: 1px solid var(--v-color-border);
+  border-radius: var(--v-radius-small);
+  background: var(--v-color-surface);
+}
+.cal-hashtags .text-link {
+  font-size: var(--v-font-size-label);
+  padding: 0;
+}
+.cal-hashtag-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--v-space-8);
+  align-items: end;
+}
+.cal-hashtag-add label {
+  flex: 1 1 180px;
+}
+.cal-hashtag-add .input {
+  max-width: 100%;
+}
+.cal-error {
+  color: var(--v-color-danger);
+}
+.cal-item-tags {
+  color: var(--v-color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* P10 — publication : états réels, autorisation, reçus et journal. */
+.pub-panel {
+  min-width: 0;
+}
+.pub-panel :is(h2, h3) {
+  overflow-wrap: anywhere;
+}
+.pub-request {
+  display: grid;
+  gap: var(--v-space-8);
+  padding: var(--v-space-16) 0;
+  border-top: 1px solid var(--v-color-border);
+}
+.pub-request-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v-space-8);
+}
+.pub-request .hint {
+  margin: 0;
+}
+.pub-request .actions,
+.pub-authorize .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--v-space-8);
+}
+.pub-notice {
+  padding: var(--v-space-12) var(--v-space-16);
+  border-left: 4px solid var(--v-color-accent);
+  background: var(--v-color-background);
+  border-radius: var(--v-radius-small);
+}
+.pub-warning {
+  padding: var(--v-space-12) var(--v-space-16);
+  border-left: 4px solid var(--v-color-warning);
+  background: var(--v-color-warning-bg);
+  border-radius: var(--v-radius-small);
+}
+.pub-warning ul {
+  margin: var(--v-space-8) 0 0;
+  padding-left: var(--v-space-24);
+}
+.pub-error {
+  padding: var(--v-space-16);
+  color: var(--v-color-danger);
+  background: var(--v-color-danger-bg);
+  border: 1px solid var(--v-color-danger);
+  border-radius: var(--v-radius-control);
+}
+.pub-summary,
+.pub-confirm dl,
+.pub-detail dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: var(--v-space-12);
+  margin: 0;
+}
+.pub-summary > div,
+.pub-confirm dl > div,
+.pub-detail dl > div {
+  min-width: 0;
+  padding-inline-start: var(--v-space-8);
+  border-inline-start: 2px solid var(--v-color-border);
+}
+.pub-summary dt,
+.pub-confirm dt,
+.pub-detail dt {
+  color: var(--v-color-text-muted);
+  font-size: var(--v-font-size-label);
+}
+.pub-summary dd,
+.pub-confirm dd,
+.pub-detail dd {
+  margin: var(--v-space-4) 0 0;
+  overflow-wrap: anywhere;
+}
+.pub-confirm {
+  display: grid;
+  gap: var(--v-space-8);
+  padding: var(--v-space-16);
+  border: 1px solid var(--v-color-border);
+  border-radius: var(--v-radius-control);
+  background: var(--v-color-background);
+}
+.pub-confirm h3,
+.pub-detail h3 {
+  margin: 0;
+  font-size: var(--v-font-size-body);
+}
+.pub-authorize {
+  display: grid;
+  gap: var(--v-space-8);
+  padding: var(--v-space-16);
+  border: 1px solid var(--v-color-action);
+  border-radius: var(--v-radius-control);
+  background: var(--v-color-selected);
+}
+.pub-detail {
+  display: grid;
+  gap: var(--v-space-12);
+  padding: var(--v-space-16);
+  border: 1px solid var(--v-color-border);
+  border-radius: var(--v-radius-control);
+  background: var(--v-color-background);
+}
+.pub-events {
+  margin: 0;
+  padding-left: var(--v-space-24);
+}
+.pub-events li {
+  padding-block: var(--v-space-4);
+  overflow-wrap: anywhere;
+}
+.pub-guidance {
+  border-top: 1px solid var(--v-color-border);
+}
+.pub-guidance ol {
+  margin: 0;
+  padding-left: var(--v-space-24);
+}
+.pub-guidance li {
+  padding-block: var(--v-space-4);
+}
+@media (max-width: 639px) {
+  .cal-hashtag-add {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .cal-hashtag-add .btn {
+    width: 100%;
+  }
+  .pub-request .actions .btn,
+  .pub-authorize .actions .btn {
+    width: 100%;
+  }
+}

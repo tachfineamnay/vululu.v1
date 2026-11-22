@@ -7,13 +7,58 @@ export async function reauth(userId: string, password: string) {
   const u = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { passwordHash: true } });
   if (!(await bcrypt.compare(password, u.passwordHash))) return fail(403, 'reauth_required');
 }
-export const threads = (where: Prisma.ServiceTicketWhereInput) =>
-  prisma.serviceTicket.findMany({
-    where,
-    orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
-    take: 100,
-    include: { entries: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] } },
-  });
+import { THREAD_ENTRY_LIMIT, THREAD_PAGE_SIZE, threadView, type ThreadSourceRow } from './threadView';
+export { THREAD_ENTRY_LIMIT, THREAD_PAGE_SIZE, threadView };
+/**
+ * Projection bornée d'un dossier : métadonnées, contexte client minimal (email/état seulement),
+ * total réel de messages (`_count`) et **les plus récents** seulement. Aucun historique complet
+ * n'est chargé pour la file : voir `threadPage` pour lire un dossier.
+ */
+const threadSelect = {
+  id: true, userId: true, kind: true, subject: true, status: true, createdAt: true, updatedAt: true,
+  user: { select: { id: true, email: true, status: true } },
+  _count: { select: { entries: true } },
+  entries: {
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: THREAD_ENTRY_LIMIT,
+    select: { id: true, role: true, status: true, message: true, createdAt: true }
+  }
+} satisfies Prisma.ServiceTicketSelect;
+export type ThreadRow = ThreadSourceRow & Prisma.ServiceTicketGetPayload<{ select: typeof threadSelect }>;
+export const threads = async (where: Prisma.ServiceTicketWhereInput, options: { take?: number } = {}) =>
+  (
+    await prisma.serviceTicket.findMany({
+      where,
+      orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+      take: Math.min(Math.max(1, options.take ?? THREAD_PAGE_SIZE), 100),
+      select: threadSelect
+    })
+  ).map(threadView);
+/** Page de file : même filtre pour les lignes et pour le total, curseur stable par identifiant. */
+export async function threadsPage(
+  where: Prisma.ServiceTicketWhereInput,
+  options: { cursor?: string; pageSize?: number } = {}
+) {
+  const pageSize = Math.min(Math.max(1, options.pageSize ?? THREAD_PAGE_SIZE), 50);
+  const [total, rows] = await Promise.all([
+    prisma.serviceTicket.count({ where }),
+    prisma.serviceTicket.findMany({
+      where,
+      orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+      take: pageSize + 1,
+      ...(options.cursor ? { cursor: { id: options.cursor }, skip: 1 } : {}),
+      select: threadSelect
+    })
+  ]);
+  const page = rows.slice(0, pageSize);
+  return {
+    items: page.map(threadView),
+    total,
+    nextCursor: rows.length > pageSize ? page[page.length - 1].id : null,
+    pageSize,
+    entryLimit: THREAD_ENTRY_LIMIT
+  };
+}
 // BETA01 : `BETA_FEEDBACK` est un dossier d'assistance ordinaire, simplement
 // typé, afin de distinguer un retour de bêta d'un incident de facturation.
 // Aucune donnée supplémentaire n'est collectée.

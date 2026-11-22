@@ -20,7 +20,7 @@ export function checkEdit(before: Content | null, after: Content, now: number) {
         item.offerId,
         item.campaignId,
         item.projectId,
-        item.variants.map((v) => [v.platform, v.format, v.caption, v.cta])
+        item.variants.map((v) => [v.platform, v.format, v.caption, v.cta, v.hashtags ?? []])
       ]);
     if (locked && copy(before) !== copy(after)) conflict('Revenez au brouillon pour modifier le contenu.');
     if (

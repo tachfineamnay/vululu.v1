@@ -1,9 +1,13 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { prisma } from '@vululu/db';
 import type { ExecutionOperation as Op, Prisma } from '@prisma/client';
+import { contentChecksum } from '@vululu/domain';
 import { mediaApprovalDigest } from '../mediaGeneration/approval';
 import { HttpError } from '../../errors';
-import { tools, toolSchema, proposal, type EnginePort } from './registry';
+import { tools, toolSchema, toolPolicy, proposal, type EnginePort, type Tool } from './registry';
+import { checkAgentProposal } from '../../application/agentProposalPolicy';
+import { settlementFor, type CostBasis } from './costBasis';
+import { storeOperationResult } from './operationResults';
 import { holdTool,checkClaim,finishTool } from '../billing/service';
 import {demoDisabled} from '../../releaseMode';
 type Tx = Prisma.TransactionClient;
@@ -40,7 +44,7 @@ async function owned(tx: Tx, id: string, actor: string) {
     })) ?? missing()
   );
 }
-async function allowed(tx: Tx, actor: string, id: string, tool: keyof typeof tools, revision: number, key: string) {
+async function allowed(tx: Tx, actor: string, id: string, tool: Tool, revision: number, key: string) {
   if(tool.startsWith('sandbox.')&&demoDisabled()) deny(403,'tool_disabled');
   const a = await lock(tx, actor);
   if (!a.enabled || !a.tools.includes(tool)) deny(403, 'tool_disabled');
@@ -58,12 +62,27 @@ async function allowed(tx: Tx, actor: string, id: string, tool: keyof typeof too
       return missing();
     return a;
   }
+  const definition = tools[tool];
+  // Outils bornés aux ressources confirmées : exécutables avant toute révision créative (ADR-0036).
+  if (definition.scope === 'assets') {
+    const project = await tx.project.findFirst({
+      where: { id, userId: actor, context: { userId: actor } },
+      select: { assetsConfirmationDigest: true }
+    });
+    if (!project) return missing();
+    if (!project.assetsConfirmationDigest) deny(409, 'assets_required');
+    return a;
+  }
+  if (definition.scope === 'project') {
+    if (!(await tx.project.count({ where: { id, userId: actor } }))) return missing();
+    return a;
+  }
   const r = await tx.creativeRevision.findFirst({
     where: { projectId: id, version: revision, project: { userId: actor } },
     select: { approvedAt: true }
   });
   if (!r) return missing();
-  if (tools[tool].action === 'WRITE/PUBLISH' && !r.approvedAt) deny(409, 'content_approval_required');
+  if (definition.action === 'WRITE/PUBLISH' && !r.approvedAt) deny(409, 'content_approval_required');
   return a;
 }
 async function reserve(tx: Tx, o: Op, actor: string) {
@@ -85,10 +104,11 @@ async function reserve(tx: Tx, o: Op, actor: string) {
     }
   });
 }
-export async function propose(actor: string, projectId: string, input: unknown) {
-  return prisma.$transaction((tx) => proposeTx(tx, actor, projectId, input));
+export type AgentProposalMeta = { agentTurnId?: string; step?: number; params?: unknown };
+export async function propose(actor: string, projectId: string, input: unknown, meta?: AgentProposalMeta) {
+  return prisma.$transaction((tx) => proposeTx(tx, actor, projectId, input, meta));
 }
-export async function proposeTx(tx: Tx, actor: string, projectId: string, input: unknown) {
+export async function proposeTx(tx: Tx, actor: string, projectId: string, input: unknown, meta?: AgentProposalMeta) {
   const p = proposal.parse(input);
   const parts: unknown[] = [projectId, p.tool, p.revision];
   if (p.tool.startsWith('postiz.') || p.tool === 'marketing.plan@1') parts.push(p.key);
@@ -98,7 +118,36 @@ export async function proposeTx(tx: Tx, actor: string, projectId: string, input:
     if (!turn) return missing();
     digest = createHash('sha256').update(JSON.stringify([...parts, p.key, turn.inputDigest, tools[p.tool].maxCents])).digest('hex');
   }
-  if (p.tool.startsWith('media.')) {
+  // P12-06 — autorité serveur : une proposition issue de l'agent est vérifiée ici, pas seulement
+  // dans la route. Outil du catalogue agent, paramètres conformes au schéma du registre fermé,
+  // aucune cible de révision, ressource réellement confirmée.
+  let params = meta?.params;
+  if (meta?.agentTurnId !== undefined) {
+    const policy = checkAgentProposal(p.tool, toolPolicy(p.tool));
+    if (!policy.ok) deny(policy.code === 'agent_scope_unsupported' ? 409 : 403, policy.code);
+    if (params === undefined) deny(422, 'agent_params_missing');
+  }
+  if (params !== undefined) {
+    const definition = tools[p.tool];
+    const schema = definition.params;
+    if (!schema) throw new HttpError(403, 'tool_not_proposable', 'tool_not_proposable');
+    const parsed = schema.safeParse(params);
+    if (!parsed.success) deny(422, 'agent_params_invalid');
+    // Valeur validée : c'est elle qui est hachée puis exécutée (aucune divergence digest/params).
+    params = parsed.data;
+    const versionId = (parsed.data as { versionId?: unknown }).versionId;
+    if (definition.scope === 'assets' && typeof versionId === 'string') {
+      const confirmed = await tx.projectAssetSelection.count({
+        where: { projectId, assetVersionId: versionId, project: { userId: actor } }
+      });
+      if (!confirmed) deny(422, 'asset_not_confirmed');
+    }
+    digest = createHash('sha256')
+      .update(JSON.stringify([projectId, p.tool, p.revision, p.key, contentChecksum(params)]))
+      .digest('hex');
+  }
+  // Seuls les outils historiques de scène s'appuient sur une ligne MediaGeneration (P07 utilise meta.params).
+  if (p.tool === 'media.image@1' || p.tool === 'media.video@1') {
     const g = await tx.mediaGeneration.findFirst({
       where: {
         id: p.key,
@@ -134,7 +183,10 @@ export async function proposeTx(tx: Tx, actor: string, projectId: string, input:
       digest,
       maxCents: tools[p.tool].maxCents,
       state: 'PROPOSED',
-      costState: 'ESTIMATED'
+      costState: 'ESTIMATED',
+      ...(params !== undefined ? { params: JSON.parse(JSON.stringify(params)) as Prisma.InputJsonValue } : {}),
+      ...(meta?.agentTurnId ? { agentTurnId: meta.agentTurnId } : {}),
+      ...(meta?.step !== undefined ? { step: meta.step } : {})
     }
   });
   await audit(tx, o, actor, 'estimated');
@@ -182,36 +234,62 @@ async function transition<T>(id: string, fn: (tx: Tx, o: Op) => Promise<T>) {
     return fn(tx, await tx.executionOperation.findUniqueOrThrow({ where: { id } }));
   });
 }
-async function incident(tx: Tx, o: Op) {
+/**
+ * Issue incertaine : réservation CONSERVÉE (aucune libération automatique) et sortie éventuelle
+ * conservée — déjà bornée et persistée par `storeOperationResult` — pour permettre un
+ * rapprochement humain sans rejouer l'appel payé.
+ */
+async function incident(tx: Tx, o: Op, result?: Prisma.InputJsonValue) {
   await audit(tx, o, null, 'outcome_unknown');
   return tx.executionOperation.update({
     where: { id: o.id },
-    data: { state: 'UNKNOWN', costState: 'UNKNOWN' }
+    data: { state: 'UNKNOWN', costState: 'UNKNOWN', ...(result === undefined ? {} : { result }) }
   });
 }
-async function settle(tx: Tx, o: Op, cents: number, manual?: { actor: string; evidence: string }) {
-  if (!Number.isInteger(cents) || cents < 0 || cents > o.maxCents) {
-    if (manual) deny(409, 'invalid_cost');
+type Settlement = {
+  cents: number;
+  basis: CostBasis;
+  /** Rapprochement humain : preuve obligatoire, jamais automatique. */
+  manual?: { actor: string; evidence: string };
+  /** Valeur déjà bornée par storeOperationResult : valeur en ligne, ou référence de payload. */
+  result?: Prisma.InputJsonValue;
+};
+/**
+ * Règlement unique : le montant est pris tel qu'annoncé, jamais rogné au plafond. Un montant
+ * hors plafond n'est pas un succès — compte gelé, réservation conservée, incident, sortie gardée.
+ * L'état de coût suit la provenance : une estimation reste ESTIMATED et n'est jamais une facture.
+ */
+async function settle(tx: Tx, o: Op, settlement: Settlement) {
+  const { cents, basis } = settlement;
+  const outcome = settlementFor(cents, basis, o.maxCents);
+  if (!outcome.valid) {
+    if (settlement.manual) deny(409, 'invalid_cost');
     await tx.executionAccount.update({ where: { userId: o.accountId }, data: { enabled: false } });
-    await audit(tx, o, null, 'invalid_provider_cost', Number.isSafeInteger(cents) ? { cents } : {});
-    return incident(tx, o);
+    await audit(tx, o, null, 'invalid_provider_cost', {
+      basis,
+      ...(Number.isSafeInteger(cents) ? { cents } : {}),
+      ...(outcome.reason === 'above_ceiling' ? { maxCents: o.maxCents } : {})
+    });
+    return incident(tx, o, settlement.result);
   }
-  await finishTool(tx,o,manual?'manual':'success');
-  if (!manual) await audit(tx, o, null, 'reported', { cents });
+  await finishTool(tx, o, settlement.manual ? 'manual' : 'success');
+  if (!settlement.manual) await audit(tx, o, null, 'reported', { cents, basis });
   await tx.executionAccount.update({
     where: { userId: o.accountId },
     data: { reservedCents: { decrement: o.maxCents }, spentCents: { increment: cents } }
   });
-  await audit(tx, o, manual?.actor ?? null, 'reconciled', {
+  await audit(tx, o, settlement.manual?.actor ?? null, 'reconciled', {
     cents,
-    ...(manual ? { evidence: manual.evidence } : {})
+    basis,
+    ...(settlement.manual ? { evidence: settlement.manual.evidence } : {})
   });
   return tx.executionOperation.update({
     where: { id: o.id },
     data: {
-      state: manual ? 'RESOLVED' : 'SUCCEEDED',
-      costState: manual ? 'RECONCILED' : 'REPORTED',
-      reportedCents: cents
+      state: settlement.manual ? 'RESOLVED' : 'SUCCEEDED',
+      costState: settlement.manual ? 'RECONCILED' : outcome.costState,
+      reportedCents: cents,
+      ...(settlement.result === undefined ? {} : { result: settlement.result })
     }
   });
 }
@@ -220,7 +298,8 @@ export async function resolveIncident(actor: string, id: string, cents: number, 
     if ((await tx.user.findUnique({ where: { id: actor }, select: { role: true } }))?.role !== 'super_admin')
       deny(403, 'forbidden');
     if (o.state !== 'UNKNOWN') deny(409, 'not_unknown');
-    return settle(tx, o, cents, { actor, evidence });
+    // Constat humain : l'état RECONCILED atteste la vérification, jamais une estimation.
+    return settle(tx, o, { cents, basis: 'manual', manual: { actor, evidence } });
   });
 }
 // Commit the non-replayable boundary before invoking any engine. A crash on either side
@@ -258,7 +337,7 @@ export async function execute(id: string, engine: EnginePort, timeoutMs = 120000
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const result = await Promise.race([
-      engine.invoke({ ...o, tool: toolSchema.parse(o.tool) }, ctrl.signal),
+      engine.invoke({ ...o, tool: toolSchema.parse(o.tool), params: o.params ?? undefined }, ctrl.signal),
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => {
           ctrl.abort();
@@ -266,8 +345,32 @@ export async function execute(id: string, engine: EnginePort, timeoutMs = 120000
         }, timeoutMs);
       })
     ]);
+    // La sortie payante devient durable AVANT le règlement : un gros résultat part hors base,
+    // et un échec d'écriture est explicite (jamais un marqueur tronqué).
+    const stored = 'result' in result && result.result !== undefined
+      ? await storeOperationResult({ accountId: o.accountId, operationId: o.id, value: result.result })
+      : undefined;
     await transition(id, async (tx, row) => {
       if (row.state !== 'CLAIMED') return;
+      if ('failed' in result) {
+        await finishTool(tx, row, 'cancel');
+        await tx.executionAccount.update({
+          where: { userId: row.accountId },
+          data: { reservedCents: { decrement: row.maxCents } }
+        });
+        await audit(tx, row, null, 'failed', { code: result.failed.code });
+        await tx.executionOperation.update({
+          where: { id },
+          data: { state: 'FAILED', costState: 'RELEASED', reportedCents: 0,
+            result: { error: { code: result.failed.code, message: result.failed.message } } as Prisma.InputJsonValue }
+        });
+        return;
+      }
+      if ('uncertain' in result) {
+        await audit(tx, row, null, 'uncertain', { code: result.uncertain.code });
+        await incident(tx, row);
+        return;
+      }
       if ('pendingMedia' in result) {
         if (
           !row.tool.startsWith('media.') ||
@@ -280,7 +383,11 @@ export async function execute(id: string, engine: EnginePort, timeoutMs = 120000
           where: { id },
           data: { state: 'POLLING', claimUntil: null, notifyAfter: new Date(Date.now() + 10000) }
         });
-      } else await settle(tx, row, result.costCents);
+      } else await settle(tx, row, {
+        cents: result.costCents,
+        basis: result.costBasis,
+        result: stored
+      });
     });
   } catch {
     await transition(id, async (tx, row) => {
@@ -307,7 +414,8 @@ export async function recover() {
           return;
         }
         if (media && ['READY', 'FAILED', 'CANCELLED', 'INVALID_OUTPUT'].includes(media.state) && media.reportedCents !== null) {
-          await settle(tx, o, media.reportedCents);
+          // Reprise depuis le reçu déjà persisté : l'appel fournisseur n'est pas rejoué.
+          await settle(tx, o, { cents: media.reportedCents, basis: 'provider_reported' });
           return;
         }
       }

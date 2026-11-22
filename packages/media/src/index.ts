@@ -60,8 +60,13 @@ export type MasterInput = {
   scenePaths: string[];
   motion?: {
     width: number; height: number; dip: boolean; sceneDip?: boolean[];
-    clips: ({ path: string; overlay: string; start: number; height: number } | undefined)[];
+    /** Cadrage optionnel du clip : couverture/contenance et point de mire vertical. */
+    clips: ({ path: string; overlay: string; start: number; height: number; fit?: 'cover' | 'contain'; focusY?: number } | undefined)[];
     audio?: { path: string; gain: number };
+    /** Encodage plus rapide pour un apercu (defaut : veryfast). */
+    preset?: string;
+    /** Document ASS par scene (texte), ecrit dans le dossier des parties au moment de l'encodage. */
+    subtitles?: (string | undefined)[];
   };
   sceneDurationsSeconds: number[];
 };
@@ -74,6 +79,8 @@ export type MasterOutput = {
   expectedDurationSeconds: number;
   videoCodec: string;
   audioCodec: string;
+  /** Duree de la piste audio reelle (0 si le master est muet ou non sonde). */
+  audioDuration: number;
   width: number;
   height: number;
 };
@@ -160,8 +167,8 @@ function collect(child: ReturnType<typeof spawn>): {
   return { stdout, stderr, done };
 }
 
-function run(exe: string, args: string[]): Promise<string> {
-  const child = spawn(exe, args, { windowsHide: true });
+function run(exe: string, args: string[], cwd?: string): Promise<string> {
+  const child = spawn(exe, args, { windowsHide: true, ...(cwd ? { cwd } : {}) });
   const { stdout, stderr, done } = collect(child);
   return done.then((code) => {
     if (code !== 0) {
@@ -228,6 +235,24 @@ async function probe(file: string): Promise<{ duration: number; videoCodec: stri
   };
 }
 
+function findFfprobe(): string {
+  const configured = process.env.FFPROBE_PATH;
+  if (configured && fs.existsSync(configured)) return configured;
+  const ffmpeg = findFfmpeg();
+  const sibling = path.join(path.dirname(ffmpeg), path.extname(ffmpeg) === '.exe' ? 'ffprobe.exe' : 'ffprobe');
+  return fs.existsSync(sibling) ? sibling : 'ffprobe';
+}
+
+/** Duree de la premiere piste audio, en secondes. Echec explicite, jamais supposse. */
+async function probeAudioDuration(file: string): Promise<number> {
+  const result = await runCapture(findFfprobe(), [
+    '-v', 'error', '-protocol_whitelist', 'file,pipe', '-select_streams', 'a:0',
+    '-show_entries', 'stream=duration', '-of', 'default=noprint_wrappers=1:nokey=1', file
+  ]);
+  const value = Number(result.stdout.trim().split(String.fromCharCode(10))[0]);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
 export async function clipPoster(file: string, start: number, width: number, height: number, out: string) {
   await run(findFfmpeg(), ['-loglevel', 'error', '-y', '-ss', String(start), '-protocol_whitelist', 'file,pipe',
     '-i', file, '-vf', clipCrop(width, height), '-frames:v', '1', out]);
@@ -247,7 +272,7 @@ export async function assembleMaster(input: MasterInput): Promise<MasterOutput> 
   const file = path.join(masterDir, 'v' + input.version + '.mp4');
   const motion = input.motion;
   if (motion) {
-    await encodeMotion(input, motion, frameDir, file, expectedDurationSeconds, args => run(findFfmpeg(), args));
+    await encodeMotion(input, motion, frameDir, file, expectedDurationSeconds, (args, cwd) => run(findFfmpeg(), args, cwd));
   } else {
     for (let index = 0; index < input.scenePaths.length; index += 1) {
       const target = path.join(frameDir, 'frame-' + (index + 1) + '.png');
@@ -294,6 +319,11 @@ export async function assembleMaster(input: MasterInput): Promise<MasterOutput> 
     ]);
   }
   const meta = await probe(file);
+  // La synchronisation audio/video est verifiee sur le fichier reel, pas sur la demande.
+  const audioDuration = motion?.audio ? await probeAudioDuration(file) : 0;
+  if (motion?.audio && (audioDuration === 0 || Math.abs(audioDuration - expectedDurationSeconds) > masterDurationTolerance())) {
+    throw new Error('media_audio_duration_mismatch');
+  }
   return {
     relativePath: toPosix(path.relative(input.artifactRoot, file)),
     absolutePath: file,
@@ -302,6 +332,7 @@ export async function assembleMaster(input: MasterInput): Promise<MasterOutput> 
     expectedDurationSeconds,
     videoCodec: meta.videoCodec,
     audioCodec: meta.audioCodec,
+    audioDuration,
     width: meta.width,
     height: meta.height
   };
@@ -383,6 +414,27 @@ export async function runQa(scenes: SceneRenderOutput[], master: MasterOutput, e
 }
 
 export { creativeFrame, draftThumbnail } from './creativeFrame';
+
+/**
+ * P09B — exécuteur FFmpeg exposé aux compositions audio (mixage, sous-titres,
+ * extraction M4A, normalisation ASR). Le binaire reste imposé par FFMPEG_PATH.
+ */
+export function mediaRun(args: string[]): Promise<string> {
+  return run(findFfmpeg(), args);
+}
+
+export {
+  buildAssText,
+  buildSrtText,
+  buildMixArgs,
+  buildAudioExportArgs,
+  buildAsrNormalizeArgs,
+  extractAudio,
+  mixTracks,
+  normalizeForAsr,
+  type AudioMixTrack,
+  type MediaRun
+} from './audio';
 
 /** Encode the already approved render as a single opaque photo for publishing APIs. */
 export function publishingJpeg(png: Buffer) {

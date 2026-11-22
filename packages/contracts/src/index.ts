@@ -23,6 +23,8 @@ export const assetSelectionSchema = z.object({
   usage: z.enum(['organic', 'sponsored']).default('organic'),
   versionIds: z.array(z.string().min(1).max(128)).max(20)
 }).strict();
+/** Décision explicite : ressources choisies, ou absence de ressource confirmée. */
+export const assetDecisionConfirmSchema = z.strictObject({ noAssets: z.boolean() });
 
 export const loginSchema = z.object({
   email: z.string().email(),
@@ -106,6 +108,7 @@ export const providerCredentialInputSchema = z.object({ apiKey: z.string().max(4
 export * from './calendar';
 
 export * from './creative';
+export * from './audio';
 
 export * from './compositionGuide';
 

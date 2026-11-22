@@ -17,6 +17,8 @@ import type {
   AdminRunQuery,
   AdminRunRecord,
   AdminRuntimeRecord,
+  AdminUserDetailRecord,
+  AdminUserQuery,
   AdminUserRecord,
   ArtifactStoragePort
 } from '@vululu/application';
@@ -42,6 +44,16 @@ function pageOf<T>(items: T[], total: number, input: AdminPageInput): AdminPageR
     total,
     totalPages: Math.max(1, Math.ceil(total / input.pageSize))
   };
+}
+
+type LatestSessionRow = { lastUsedAt: Date; revokedAt: Date | null; expiresAt: Date };
+
+/** Statut de la derniere session connue d un utilisateur (aucun jeton). */
+function lastSessionStatusOf(session: LatestSessionRow | undefined): AdminUserRecord['lastSessionStatus'] {
+  if (!session) return 'none';
+  if (session.revokedAt) return 'revoked';
+  if (session.expiresAt.getTime() <= Date.now()) return 'expired';
+  return 'active';
 }
 
 function dateOrUndefined(value: string | undefined): Date | undefined {
@@ -341,15 +353,19 @@ export class PrismaAdminQuery implements AdminQueryPort {
     };
   }
 
-  async listUsers(input: AdminPageInput): Promise<AdminPageRecord<AdminUserRecord>> {
-    const where = input.q
-      ? {
-          OR: [
-            { email: { contains: input.q, mode: 'insensitive' as const } },
-            { name: { contains: input.q, mode: 'insensitive' as const } }
-          ]
-        }
-      : {};
+  async listUsers(input: AdminUserQuery): Promise<AdminPageRecord<AdminUserRecord>> {
+    const where = {
+      ...(input.q
+        ? {
+            OR: [
+              { email: { contains: input.q, mode: 'insensitive' as const } },
+              { name: { contains: input.q, mode: 'insensitive' as const } }
+            ]
+          }
+        : {}),
+      ...(input.role ? { role: input.role } : {}),
+      ...(input.status ? { status: input.status } : {})
+    };
     const [total, rows] = await Promise.all([
       this.db.user.count({ where }),
       this.db.user.findMany({
@@ -362,6 +378,8 @@ export class PrismaAdminQuery implements AdminQueryPort {
           email: true,
           name: true,
           role: true,
+          status: true,
+          suspendedAt: true,
           createdAt: true,
           _count: { select: { projects: true, sessions: true } },
           sessions: {
@@ -374,25 +392,99 @@ export class PrismaAdminQuery implements AdminQueryPort {
     ]);
     const items: AdminUserRecord[] = rows.map((row) => {
       const session = row.sessions[0];
-      let lastSessionStatus: AdminUserRecord['lastSessionStatus'] = 'none';
-      if (session) {
-        if (session.revokedAt) lastSessionStatus = 'revoked';
-        else if (session.expiresAt.getTime() <= Date.now()) lastSessionStatus = 'expired';
-        else lastSessionStatus = 'active';
-      }
       return {
         id: row.id,
         email: row.email,
         name: row.name,
         role: row.role,
+        status: row.status === 'suspended' ? 'suspended' : 'active',
+        suspendedAt: row.suspendedAt ? row.suspendedAt.toISOString() : null,
         createdAt: row.createdAt.toISOString(),
         projectsCount: row._count.projects,
         sessionsCount: row._count.sessions,
         lastSessionAt: session ? session.lastUsedAt.toISOString() : null,
-        lastSessionStatus
+        lastSessionStatus: lastSessionStatusOf(session)
       };
     });
     return pageOf(items, total, input);
+  }
+
+  async getUserDetail(userId: string): Promise<AdminUserDetailRecord | null> {
+    const user = await this.db.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        status: true,
+        suspendedAt: true,
+        createdAt: true,
+        sessions: {
+          orderBy: { lastUsedAt: 'desc' },
+          take: 1,
+          select: { lastUsedAt: true, revokedAt: true, expiresAt: true }
+        }
+      }
+    });
+    if (!user) {
+      return null;
+    }
+    const now = new Date();
+    const auditWhere = { OR: [{ targetType: 'user', targetId: userId }, { actorId: userId }] };
+    const [contexts, projects, contentItems, sessions, activeSessions, publicationStates, auditRows, auditEventsTotal] =
+      await Promise.all([
+        this.db.brandContext.count({ where: { userId } }),
+        this.db.project.count({ where: { userId } }),
+        this.db.contentItem.count({ where: { userId } }),
+        this.db.session.count({ where: { userId } }),
+        this.db.session.count({ where: { userId, revokedAt: null, expiresAt: { gt: now } } }),
+        this.db.publicationRequest.groupBy({
+          by: ['state'],
+          where: { connection: { ownerId: userId } },
+          _count: { _all: true }
+        }),
+        this.db.auditEvent.findMany({
+          where: auditWhere,
+          orderBy: { createdAt: 'desc' },
+          take: 20
+        }),
+        this.db.auditEvent.count({ where: auditWhere })
+      ]);
+    const lastSession = user.sessions[0];
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      status: user.status === 'suspended' ? 'suspended' : 'active',
+      suspendedAt: user.suspendedAt ? user.suspendedAt.toISOString() : null,
+      createdAt: user.createdAt.toISOString(),
+      projectsCount: projects,
+      sessionsCount: sessions,
+      lastSessionAt: lastSession ? lastSession.lastUsedAt.toISOString() : null,
+      lastSessionStatus: lastSessionStatusOf(lastSession),
+      counts: {
+        contexts,
+        projects,
+        contentItems,
+        sessions,
+        activeSessions,
+        publicationRequests: Object.fromEntries(publicationStates.map((row) => [row.state, row._count._all]))
+      },
+      recentAuditEvents: auditRows.map((row) => ({
+        id: row.id,
+        actorId: row.actorId,
+        action: row.action,
+        targetType: row.targetType,
+        targetId: row.targetId,
+        metadata: row.metadata,
+        traceId: row.traceId,
+        requestId: row.requestId,
+        createdAt: row.createdAt.toISOString()
+      })),
+      auditEventsTotal
+    };
   }
 
   async listProjects(input: AdminPageInput): Promise<AdminPageRecord<AdminProjectRecord>> {
@@ -466,10 +558,13 @@ export class PrismaAdminQuery implements AdminQueryPort {
         }
       })
     ]);
+    const now = Date.now();
+    const terminal = ['succeeded', 'failed', 'timed_out', 'cancelled'];
     const items: AdminRunRecord[] = rows.map((row) => {
       const failedStep = row.steps.find((step) => step.status === 'failed');
       const runningStep = row.steps.find((step) => step.status === 'running');
       const pendingStep = row.steps.find((step) => step.status === 'pending');
+      const sinceUpdateMs = Math.max(0, now - row.updatedAt.getTime());
       return {
         id: row.id,
         projectId: row.projectId,
@@ -487,7 +582,13 @@ export class PrismaAdminQuery implements AdminQueryPort {
         currentStep: (runningStep ?? pendingStep ?? row.steps[row.steps.length - 1])?.name ?? null,
         error: row.productionJob?.error ?? failedStep?.error ?? null,
         productionStatus: row.productionJob?.status ?? null,
-        progress: row.productionJob?.progress ?? null
+        progress: row.productionJob?.progress ?? null,
+        ageMs: Math.max(0, now - row.createdAt.getTime()),
+        sinceUpdateMs,
+        // Seuil aligne sur la reconciliation par defaut (300 s) : au-dela, un run non
+        // terminal est signale comme bloque, sans le declarer en echec.
+        stalled: !terminal.includes(row.status) && sinceUpdateMs > 300_000,
+        durationMs: terminal.includes(row.status) ? Math.max(0, row.updatedAt.getTime() - row.createdAt.getTime()) : null
       };
     });
     return pageOf(items, total, input);
@@ -586,6 +687,7 @@ export class PrismaAdminQuery implements AdminQueryPort {
       ...(input.action ? { action: input.action } : {}),
       ...(input.actorId ? { actorId: input.actorId } : {}),
       ...(input.targetType ? { targetType: input.targetType } : {}),
+      ...(input.traceId ? { traceId: input.traceId } : {}),
       ...(Object.keys(createdAt).length > 0 ? { createdAt } : {})
     };
     const [total, rows] = await Promise.all([

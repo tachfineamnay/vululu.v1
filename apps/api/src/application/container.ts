@@ -1,5 +1,7 @@
 import { CreativeStudio } from './creative';
+import { CreativeDirections } from './creativeDirections';
 import { PrismaCreativeRepository } from '../infrastructure/prisma/creativeRepository';
+import { PrismaCreativeDirectionRepository } from '../infrastructure/prisma/creativeDirectionRepository';
 import crypto from 'node:crypto';
 import { PrismaProviderCredentialStore } from '../infrastructure/prisma/providerCredentialStore';
 import { AesProviderCredentialCipher } from '../infrastructure/security/providerCredentialCipher';
@@ -10,6 +12,7 @@ import {
   BriefUseCases,
   ContextUseCases,
   CampaignUseCases,
+  AssetDecisionUseCases,
   AssetUseCases,
   ContextReviewUseCases,
   BriefConfirmationUseCases,
@@ -59,6 +62,7 @@ import {
 } from '../infrastructure';
 import { PrismaCampaignRepository } from '../infrastructure/prisma/campaignRepository';
 import { PrismaAssetRepository } from '../infrastructure/prisma/assetRepository';
+import { PrismaAssetDecisionRepository } from '../infrastructure/prisma/assetDecisionRepository';
 import { PrismaProductionPlanning } from '../infrastructure/prisma/productionPlanning';
 import { inspectAsset } from '@vululu/media';
 import { PrismaContextReviewStore } from '../infrastructure/prisma/contextReviewStore';
@@ -83,6 +87,7 @@ const storage = new LocalStoragePort();
 const artifactStorage = createArtifactStorage();
 const artifactStorages = createArtifactStorageRegistry();
 export const creativeStudio = new CreativeStudio(new PrismaCreativeRepository(),artifactStorage,artifactStorages);
+export const creativeDirections = new CreativeDirections(new PrismaCreativeDirectionRepository());
 export { artifactStorage, artifactStorages, PrismaArtifactPublisher };
 const durableMode = process.env.ORCHESTRATOR_MODE === 'hatchet';
 const orchestrator = durableMode ? new HatchetOrchestratorAdapter() : null;
@@ -103,6 +108,7 @@ export const contexts = new ContextUseCases(contextRepository, clock, ids);
 export const contextReview = new ContextReviewUseCases(new PrismaContextReviewStore(), new DeterministicContextAnalyzer(), audit, clock, ids);
 export const campaigns = new CampaignUseCases(new PrismaCampaignRepository(), projectRepository, audit, clock, ids);
 export const assets = new AssetUseCases(new PrismaAssetRepository(), contextRepository, projectRepository, { inspect: inspectAsset }, artifactStorage, artifactStorages, audit, clock, ids);
+export const assetDecisions = new AssetDecisionUseCases(new PrismaAssetDecisionRepository(), audit, clock);
 export const projects = new ProjectUseCases(projectRepository, contextRepository, clock, ids);
 export const briefs = new BriefUseCases(projectRepository, briefStore, clock, ids, audit);
 export const briefConfirmations = new BriefConfirmationUseCases(projectRepository, briefStore, audit, clock);

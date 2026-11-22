@@ -24,3 +24,5 @@ export * from './use-cases/assets';
 export * from './contextReviewPorts';
 export * from './use-cases/contextReview';
 export * from './use-cases/briefConfirmations';
+
+export * from './assetDecisionPorts';

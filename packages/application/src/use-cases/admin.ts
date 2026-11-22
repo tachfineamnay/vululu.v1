@@ -13,6 +13,8 @@ import type {
   AdminRunQuery,
   AdminRunRecord,
   AdminRuntimeRecord,
+  AdminUserDetailRecord,
+  AdminUserQuery,
   AdminUserRecord,
   AdminOverviewRecord,
   AdminAuditEventRecord
@@ -37,9 +39,18 @@ export class AdminQueryUseCases {
     return this.queries.overview();
   }
 
-  async listUsers(actor: Actor, input: AdminPageInput): Promise<AdminPageRecord<AdminUserRecord>> {
+  async listUsers(actor: Actor, input: AdminUserQuery): Promise<AdminPageRecord<AdminUserRecord>> {
     assertAdmin(actor);
     return this.queries.listUsers(input);
+  }
+
+  async getUserDetail(actor: Actor, userId: string): Promise<AdminUserDetailRecord> {
+    assertAdmin(actor);
+    const detail = await this.queries.getUserDetail(userId);
+    if (!detail) {
+      throw new ApplicationError('user_not_found', 'Utilisateur introuvable.', 404);
+    }
+    return detail;
   }
 
   async listProjects(actor: Actor, input: AdminPageInput): Promise<AdminPageRecord<AdminProjectRecord>> {

@@ -2,7 +2,7 @@
 
 Ce fichier s'applique à tout agent (DeepSeek Harness, Codex, Claude, Cursor, MCP client) qui travaille dans ce dépôt. Il prime sur les habitudes génériques de l'agent.
 
-> **Orientation produit actuelle (2026-11-20) :** pour toute mission touchant aux parcours client, au Studio ou à l'IA créative, lire [la vision d'expérience Vululu](docs/product/VULULU_EXPERIENCE_VISION_2026-11-20.md). L'IA doit simplifier les écrans ; la campagne démarre par intention, canal et format, puis brainstorming, assets, DA et validation. Le travail reste éditable en brouillon. Ce texte est un cadrage de conception et ne modifie pas les exigences de sécurité, d'autorisation, de capacités réelles ou de coût.
+> **Orientation produit actuelle (2026-11-20, révisée P00) :** pour toute mission touchant aux parcours client, au Studio ou à l'IA créative, lire [la vision d'expérience Vululu](docs/product/VULULU_EXPERIENCE_VISION_2026-11-20.md). L'IA doit simplifier les écrans ; la campagne suit l'ordre **objectif → canal → format → assets de l'utilisateur → brainstorming → directions artistiques → choix humain → création éditable → revue → approbation → export/publication → résultats**. Les assets sont disponibles **avant** le brainstorming principal. Le travail reste éditable en brouillon. Ce texte est un cadrage de conception et ne modifie pas les exigences de sécurité, d'autorisation, de capacités réelles ou de coût. Pour toute mission de la campagne de complétion P00–P13, lire aussi [le contrat de finition](docs/implementation/VULULU_FINISH_CONTRACT.md), [l'inventaire courant](docs/implementation/VULULU_FEATURE_INVENTORY.md) et la [carte des lots P01–P11](docs/implementation/VULULU_COMPLETION_PLAN.md) : ils font foi pour l'état courant et le mode BUILD-FIRST.
 
 ## 1. Autorité documentaire
 
@@ -17,6 +17,7 @@ Ordre de lecture obligatoire :
 7. docs/11_BACKLOG.md et docs/backlog/ROADMAP_V1.md
 8. docs/backlog/P0_0_AUDIT_FONDATIONS.md
 9. docs/INAUGURATION_REPORT.md
+10. docs/implementation/VULULU_FINISH_CONTRACT.md (règles de la campagne P00–P13), puis docs/implementation/VULULU_FEATURE_INVENTORY.md (état courant, qui remplace tout état daté antérieur).
 
 Les documents de docs/ sont fondateurs ou d'inauguration. Les documents importés (PRD, CDC, architecture, backlog, prompt, note V2) sont **verbatim** : ne jamais les modifier. Une évolution passe par un nouveau document, un ADR ou une révision explicite.
 
@@ -25,7 +26,8 @@ En cas de contradiction entre documents, **arrêter** et signaler le conflit. Ne
 ## 2. Périmètre
 
 - V1 uniquement : outil interne, invitations, contextes, workflow, agents, production média, correction par Scene ID, MCP, contrôle qualité, Postiz.
-- **V2 interdit** : Memory Bank, mémoire sémantique, embeddings, apprentissage des préférences, contextes hiérarchiques enrichis, monétisation, abonnements, crédits, marketplace, Everything LLM.
+- **V2 interdit** : Memory Bank, mémoire sémantique, embeddings, apprentissage des préférences, contextes hiérarchiques enrichis, marketplace, abonnements, Everything LLM.
+- **Exception encadrée F05** : le socle commercial (catalogue, ledger, Stripe) existe déjà dans le code, **gelé** par la bêta gratuite (`VULULU_BETA_MODE`, défaut `1`). Il ne peut être activé que sur GO humain séparé et ne doit pas être étendu pendant P00–P11.
 - Les points d'extension V2 sont documentés ; les implémenter serait une violation de périmètre.
 - Ne pas ajouter de fonctionnalité non demandée, même « utile ».
 - Ne pas créer de structure applicative avant le lot qui la justifie.
@@ -137,7 +139,9 @@ Arrêter et demander une décision si :
 - [Baseline R00](docs/delivery/VULULU_BASELINE.md) — état factuel du dépôt
 - [Règles de travail](docs/delivery/VULULU_WORKING_RULES.md) — règles de conduite détaillées
 - [Statut de livraison](docs/delivery/VULULU_DELIVERY_STATUS.md) — avancement et preuves
-- [Baseline Arena A00](docs/delivery/ARENA_BASELINE.md) — capacités réelles de la sandbox
+- [Baseline Arena A00](docs/delivery/ARENA_BASELINE.md) — capacités réelles de la sandbox (datée)
+- [Inventaire courant](docs/implementation/VULULU_FEATURE_INVENTORY.md) — état au HEAD, remplace les états datés
+- [Contrat de finition](docs/implementation/VULULU_FINISH_CONTRACT.md) — règles de la campagne P00–P13
 
 ---
 
@@ -146,6 +150,8 @@ Arrêter et demander une décision si :
 > Les sections 1 à 12 restent **intégralement en vigueur**. Cette partie B les **complète**
 > pour le travail mené dans la sandbox Arena Agent Mode. En cas de conflit, la section la plus
 > restrictive s'applique. Aucune règle existante n'est supprimée ni affaiblie.
+
+> **Note P00 (2026-11-20) :** les constats d'état de cette partie (§13.4, §14.2, §14.3 — démo déterministe, compteurs de modèles/migrations/routes) sont datés du 2026-11-19. L'état courant est décrit par `docs/implementation/VULULU_FEATURE_INVENTORY.md`. Les règles de conduite et les interdits de cette partie restent en vigueur.
 
 ## 13. Position produit : professionnel, jamais démo
 
@@ -164,7 +170,7 @@ commercialement **sans l'annoncer** dans la matrice de capacités.
 
 **13.4** L'état actuel est documenté dans `ARENA_BASELINE.md` : le socle produit un **diaporama
 typographique déterministe** avec mentions `DÉMO MOCK`, sans génération IA, sans composition
-d'assets, sans publication ni facturation. **Aucune de ces limites ne doit être masquée.**
+d'assets, sans publication ni facturation. **Aucune de ces limites ne doit être masquée.** (Constat daté du 2026-11-19 ; l'état courant est décrit par `docs/implementation/VULULU_FEATURE_INVENTORY.md`.)
 
 ## 14. Préservation du code et des contrats existants
 
@@ -173,10 +179,10 @@ ou changement de signature d'un port passe par un **ADR**.
 
 **14.2** Avant d'écrire du code neuf, chercher l'existant (voir `VULULU_WORKING_RULES.md` R1).
 Le socle contient déjà : 20 cas d'usage, 39 modèles Prisma, 19 migrations, 10 fichiers de routes,
-23 modules de domaine, 4 ports média/orchestration réutilisables.
+23 modules de domaine, 4 ports média/orchestration réutilisables. (Compteurs du 2026-11-19 ; au 2026-11-20 : 66 modèles Prisma, 34 migrations, 22 fichiers de routes.)
 
 **14.3** Les **contrats publics** à ne pas casser sans ADR : `packages/application/src/ports.ts`,
-`packages/contracts/src/`, les routes HTTP de `apps/api/src/routes/`, les 19 migrations appliquées.
+`packages/contracts/src/`, les routes HTTP de `apps/api/src/routes/`, les migrations appliquées (34 au 2026-11-20).
 
 **14.4** **Migrations additives uniquement** : `ADD COLUMN` nullable ou avec défaut, `CREATE TABLE`,
 `CREATE INDEX`. Interdit sans ADR : `DROP`, `RENAME`, rétrécissement de type, `NOT NULL` sans défaut
@@ -266,7 +272,7 @@ qui expire.
 
 **19.2** **Aucune publication externe** : réseau social, Postiz, déploiement public. Le dépôt est
 explicitement conçu pour ne pas pouvoir le faire par accident (`PostizMockAdapter`, `externalId: null`) :
-**ne pas dégrader cette propriété**.
+**ne pas dégrader cette propriété**. Depuis F04, un provider Postiz réel existe derrière `POSTIZ_PUBLISH_ENABLED` (désactivé par défaut) : la sûreté repose sur le flag, l'approbation et l'audit, pas sur le mock.
 
 **19.3** Le premier branchement d'un fournisseur facturé est un **point de bascule** : ADR + budget
 dur + autorisation écrite **avant** la première ligne de code.
@@ -286,7 +292,7 @@ suppression de branche distante, suppression de commit.
 (`git push origin <branche-de-session>`).
 
 **20.4** L'historique local ne contient qu'**un commit** (voir `ARENA_BASELINE.md`) : ne pas tenter
-de le reconstruire, et justifier tout état par le **code présent** et des **commandes rejouées**.
+de le reconstruire, et justifier tout état par le **code présent** et des **commandes rejouées**. (Constat de la sandbox A00 du 2026-11-19 ; le dépôt courant compte plus de 140 commits. Ne pas réécrire l'historique.)
 
 ## 21. CI externe non obligatoire
 
@@ -320,3 +326,42 @@ Arrêter et demander une décision, **en plus** de la section 11, si :
 - une preuve demandée ne peut pas être produite honnêtement ;
 - la seule façon de faire avancer le lot serait d'utiliser SQLite à la place de PostgreSQL ;
 - un coût ou une publication externe serait engagé sans autorisation écrite.
+
+---
+
+# PARTIE C — PROGRAMME DE COMPLÉTION BUILD-FIRST (P00–P13, 2026-11-20)
+
+> Cette partie **complète** les parties A et B pour la campagne de complétion produit. Les parties A et B restent en vigueur ; la plus restrictive s'applique. Elle permet de construire vite sans jamais fabriquer de preuve.
+
+## 24. Objet et branche
+
+- La campagne P00–P13 vise un produit complet conforme à la vision d'expérience, **sur le code existant** (aucune réécriture).
+- Une seule branche d'intégration : `campaign/vululu-completion`, créée depuis `main` (HEAD `f5d515b`, 2026-11-20). `main` reste intacte ; aucun push, merge ou déploiement sans GO explicite.
+- Contrat de référence : `docs/implementation/VULULU_FINISH_CONTRACT.md`. Inventaire courant : `docs/implementation/VULULU_FEATURE_INVENTORY.md`. Carte des lots : `docs/implementation/VULULU_COMPLETION_PLAN.md`.
+- Les documents d'état datés (`ARENA_BASELINE.md`, `VULULU_BASELINE.md`, `VULULU_DELIVERY_STATUS.md`, rapports C/F, certification) sont des **preuves historiques** : ne pas les réécrire ; pour l'état courant, utiliser l'inventaire. Un écart est signalé, pas arbitré en silence.
+
+## 25. Cadence build-first (P00–P11)
+
+1. Un lot = un incrément livrable, commit unique sur la branche d'intégration, message `feat(pXX): ...` avec mention `BUILD_UNVERIFIED`.
+2. Un lot n'est pas certifié : il est **construit**, pas prouvé. Toute mention publique reste « bêta gratuite », capacités réelles et limites visibles.
+3. Aucun test complet pendant P00–P11 : pas de `pnpm test` global, pas de Playwright, pas de pytest, pas de lint/typecheck/build complets, pas de gates de certification ou de release. Les vérifications manuelles minimales de développement sont autorisées et ne sont jamais présentées comme certification.
+4. Interdits maintenus : fournisseur payant activé, appel IA payant, publication externe, déploiement, changement de tarif, achat, secret commité.
+5. Étendre, ne pas remplacer : contrats publics, migrations appliquées et travail existant préservés ; migrations **additives** uniquement.
+6. Les invariants de sécurité, isolation locataire, budgets, approbations, immutabilité des artefacts et audit restent obligatoires à chaque lot.
+
+## 26. Preuves et étiquetage
+
+- Statuts de la campagne : `BUILD_UNVERIFIED` (code écrit, non vérifié), `BUILD_VERIFIED` (vérifié en P12 avec preuve rejouée), `NOT_RUN` (jamais exécuté), `MOCK` / `PROVIDER_DEPENDENT` (dépend d'un fournisseur/config non activé).
+- Aucun `PASS` n'est déclaré en P00–P11. Le mot `PASS` est réservé à une commande réellement exécutée en P12–P13.
+- Les vérifications manuelles minimales sont datées et décrites comme telles ; elles ne valent jamais certification.
+
+## 27. Vérification finale (P12–P13)
+
+- P12 exécute les gates réels (voir `vululu-quality-gates`), y compris PostgreSQL local, FFmpeg et Playwright selon disponibilité réelle de l'environnement ; tout échec est classé `FAIL réel` / `NOT_RUN environnemental`.
+- P13 produit la décision de release (GO/NO-GO) ; un GO staging ou une activation provider exige une autorisation humaine explicite et séparée. Aucun GO automatique.
+
+## 28. Ce qui ne change pas
+
+- Les offres commerciales existantes, le gel des paiements en bêta gratuite (`VULULU_BETA_MODE`, défaut `1`) et l'absence de déploiement public sont maintenus.
+- Les documents importés (PRD, CDC, architecture, backlog, prompt, note V2) restent VERBATIM.
+- Un désaccord entre ce contrat et les parties A/B se tranche en faveur de la règle la plus restrictive ou remonte à l'humain.

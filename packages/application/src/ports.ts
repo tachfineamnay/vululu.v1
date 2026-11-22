@@ -195,6 +195,8 @@ export type MasterRenderResult = {
   expectedDurationSeconds: number;
   videoCodec: string;
   audioCodec: string;
+  /** Durée de la piste audio réelle du master (0 si le master est muet ou non sondé). */
+  audioDuration: number;
   width: number;
   height: number;
 };
@@ -919,6 +921,8 @@ export type RenderedMaster = {
   expectedDurationSeconds: number;
   videoCodec: string;
   audioCodec: string;
+  /** Durée de la piste audio réelle du master (0 si le master est muet ou non sondé). */
+  audioDuration: number;
   width: number;
   height: number;
 };
@@ -1149,10 +1153,13 @@ export type AdminPageInput = {
 };
 
 export type AdminRunQuery = AdminPageInput & { status?: string };
+export type AdminUserQuery = AdminPageInput & { role?: string; status?: 'active' | 'suspended' };
 export type AdminAuditQuery = AdminPageInput & {
   action?: string;
   actorId?: string;
   targetType?: string;
+  /** Identifiant de correlation/trace (P11-C) pour relier audit et operation. */
+  traceId?: string;
   from?: string;
   to?: string;
 };
@@ -1218,11 +1225,30 @@ export type AdminUserRecord = {
   email: string;
   name: string;
   role: string;
+  /** Statut de compte : "active" ou "suspended". */
+  status: 'active' | 'suspended';
+  suspendedAt: string | null;
   createdAt: string;
   projectsCount: number;
   sessionsCount: number;
   lastSessionAt: string | null;
   lastSessionStatus: 'active' | 'expired' | 'revoked' | 'none';
+};
+
+/** Compteurs bornes de la fiche utilisateur (aucun contenu metier). */
+export type AdminUserCountsRecord = {
+  contexts: number;
+  projects: number;
+  contentItems: number;
+  sessions: number;
+  activeSessions: number;
+  publicationRequests: Record<string, number>;
+};
+
+export type AdminUserDetailRecord = AdminUserRecord & {
+  counts: AdminUserCountsRecord;
+  recentAuditEvents: AdminAuditEventRecord[];
+  auditEventsTotal: number;
 };
 
 export type AdminProjectRecord = {
@@ -1257,6 +1283,11 @@ export type AdminRunRecord = {
   error: string | null;
   productionStatus: string | null;
   progress: number | null;
+  /** P11-C — metriques operationnelles calculees (jamais inventees). */
+  ageMs?: number;
+  sinceUpdateMs?: number;
+  stalled?: boolean;
+  durationMs?: number | null;
 };
 
 export type AdminStepRecord = {
@@ -1351,7 +1382,8 @@ export type AdminRuntimeRecord = {
 /** Lectures agrégées d'administration. Aucune écriture, aucun secret. */
 export interface AdminQueryPort {
   overview(): Promise<AdminOverviewRecord>;
-  listUsers(input: AdminPageInput): Promise<AdminPageRecord<AdminUserRecord>>;
+  listUsers(input: AdminUserQuery): Promise<AdminPageRecord<AdminUserRecord>>;
+  getUserDetail(userId: string): Promise<AdminUserDetailRecord | null>;
   listProjects(input: AdminPageInput): Promise<AdminPageRecord<AdminProjectRecord>>;
   listRuns(input: AdminRunQuery): Promise<AdminPageRecord<AdminRunRecord>>;
   getRun(jobRunId: string): Promise<AdminRunDetailRecord | null>;

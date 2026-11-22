@@ -1,6 +1,7 @@
 import { findAccountsForEmail, lockAccountEmail } from '../security/accountIdentity';
 import type { FastifyInstance } from 'fastify';
 import type { Invitation } from '@prisma/client';
+import { adminUserUpdateSchema } from '@vululu/contracts';
 import { prisma } from '@vululu/db';
 import { HttpError } from '../errors';
 import { recordAuditEvent } from '../security/audit';
@@ -99,6 +100,127 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       metadata: { revokedSessions: count }
     });
     return { ok: true, revokedSessions: count };
+  });
+
+  /**
+   * Mutation administrateur du role et/ou du statut d un compte.
+   * Garde-fous : super_admin (preHandler), pas d auto-modification, dernier
+   * super_admin actif preserve, audit systematique, revocation des sessions
+   * sur changement de role et sur suspension.
+   */
+  app.patch('/api/admin/users/:id', superAdminOnly, async (request) => {
+    const params = request.params as { id: string };
+    const input = adminUserUpdateSchema.parse(request.body);
+    const actor = request.currentUser!;
+    if (params.id === actor.id) {
+      throw new HttpError(409, 'self_change_forbidden', 'Vous ne pouvez pas modifier votre propre role ou statut.');
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      // Serialise les mutations de comptes : deux admins ne peuvent pas retirer
+      // simultanement les deux derniers super_admin actifs.
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended('admin:user_administration', 61704))`;
+      const target = await tx.user.findUnique({
+        where: { id: params.id },
+        select: { id: true, email: true, role: true, status: true, suspendedAt: true }
+      });
+      if (!target) {
+        throw new HttpError(404, 'user_not_found', 'Utilisateur introuvable.');
+      }
+      const nextRole = input.role ?? target.role;
+      const nextStatus = input.status ?? target.status;
+      const roleChanged = nextRole !== target.role;
+      const statusChanged = nextStatus !== target.status;
+      if (!roleChanged && !statusChanged) {
+        return { user: target, revokedSessions: 0, roleChanged: false, statusChanged: false };
+      }
+      const removesActiveSuperAdmin =
+        target.role === 'super_admin' &&
+        target.status === 'active' &&
+        (nextRole !== 'super_admin' || nextStatus !== 'active');
+      if (removesActiveSuperAdmin) {
+        const otherActiveSuperAdmins = await tx.user.count({
+          where: { role: 'super_admin', status: 'active', id: { not: target.id } }
+        });
+        if (otherActiveSuperAdmins === 0) {
+          throw new HttpError(
+            409,
+            'last_super_admin',
+            'Impossible de retirer le dernier super administrateur actif.'
+          );
+        }
+      }
+      const updated = await tx.user.update({
+        where: { id: target.id },
+        data: {
+          ...(roleChanged ? { role: nextRole } : {}),
+          ...(statusChanged
+            ? { status: nextStatus, suspendedAt: nextStatus === 'suspended' ? new Date() : null }
+            : {})
+        },
+        select: { id: true, email: true, role: true, status: true, suspendedAt: true }
+      });
+      let revokedSessions = 0;
+      const revokeReason =
+        statusChanged && nextStatus === 'suspended'
+          ? 'admin_suspend'
+          : roleChanged
+            ? 'admin_role_change'
+            : null;
+      if (revokeReason) {
+        revokedSessions = await revokeAllUserSessions(target.id, revokeReason, tx);
+      }
+      if (roleChanged) {
+        await recordAuditEvent(
+          {
+            actorId: actor.id,
+            action: 'user.role_changed',
+            targetType: 'user',
+            targetId: target.id,
+            metadata: {
+              email: target.email,
+              fromRole: target.role,
+              toRole: nextRole,
+              fromStatus: target.status,
+              toStatus: nextStatus,
+              revokedSessions
+            }
+          },
+          tx
+        );
+      }
+      if (statusChanged) {
+        await recordAuditEvent(
+          {
+            actorId: actor.id,
+            action: nextStatus === 'suspended' ? 'user.suspended' : 'user.reactivated',
+            targetType: 'user',
+            targetId: target.id,
+            metadata: {
+              email: target.email,
+              fromStatus: target.status,
+              toStatus: nextStatus,
+              revokedSessions
+            }
+          },
+          tx
+        );
+      }
+      return { user: updated, revokedSessions, roleChanged, statusChanged };
+    });
+
+    return {
+      user: {
+        id: result.user.id,
+        email: result.user.email,
+        role: result.user.role,
+        status: result.user.status === 'suspended' ? 'suspended' : 'active',
+        suspendedAt: result.user.suspendedAt ? result.user.suspendedAt.toISOString() : null
+      },
+      revokedSessions: result.revokedSessions,
+      roleChanged: result.roleChanged,
+      statusChanged: result.statusChanged
+    };
   });
 
   app.post('/api/admin/sessions/purge', superAdminOnly, async (request) => {

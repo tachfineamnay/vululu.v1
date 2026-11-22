@@ -18,12 +18,22 @@ Sources d'autorité : `AGENTS.md` (règles), `docs/PROMPT_DEEPSEEK_HARNESS.md` (
 
 **Ne pas l'utiliser pour** : une simple question de lecture (voir `vululu-project-orientation`) ou l'exécution d'un test isolé (voir `vululu-quality-gates`).
 
+## 0. Campagne P00–P13 : mode BUILD-FIRST (prioritaire)
+
+Depuis le 2026-11-20, la complétion produit suit le [contrat de finition](../../../docs/implementation/VULULU_FINISH_CONTRACT.md) et la [carte des lots P01–P11](../../../docs/implementation/VULULU_COMPLETION_PLAN.md). Pour tout lot de cette campagne :
+
+1. **Pas de tests, lint, typecheck, build ni gates complets pendant P00–P11** : ils appartiennent à P12–P13. Ne pas les lancer « pour vérifier » et ne jamais les présenter comme certification.
+2. Un lot = **un commit** sur la branche d'intégration `campaign/vululu-completion`, message `feat(pXX): ... [BUILD_UNVERIFIED]`.
+3. Statut par défaut `BUILD_UNVERIFIED` ; `PASS` est interdit pendant la construction. Vérification manuelle minimale autorisée, jamais appelée certification.
+4. Points de départ fichier par fichier dans la carte des lots ; ne pas recréer un concept existant (voir l'[inventaire](../../../docs/implementation/VULULU_FEATURE_INVENTORY.md)).
+5. Les sections 1 à 8 ci-dessous restent la procédure de référence pour un lot **vérifié** (P12–P13, maintenance hors campagne).
+
 ## 1. Cadrer le lot (avant tout code)
 
 1. **Exigences** : identifier les IDs PRD/CDC concernés (ex. `CDC-F-040`, `CDC-N-001`) et les épics/backlog liés. Sans exigence identifiable, demander une clarification — ne pas inventer un besoin.
-2. **Périmètre** : V1 uniquement. Interdit : Memory Bank, mémoire sémantique/embeddings, apprentissage des préférences, contextes hiérarchiques enrichis, monétisation/abonnements/crédits/marketplace, Everything LLM. Les points d'extension V2 sont documentés, pas implémentés.
+2. **Périmètre** : V1 uniquement. Interdit : Memory Bank, mémoire sémantique/embeddings, apprentissage des préférences, contextes hiérarchiques enrichis, marketplace, abonnements, Everything LLM. Le socle commercial F05 (catalogue, ledger, Stripe) existe déjà dans le code mais reste **gelé** par la bêta gratuite : ne pas l'activer, ne pas l'étendre sans décision explicite. La « monétisation » au sens V2 reste interdite.
 3. **Contrat d'acceptation** : écrire (même brièvement) interfaces, contrats, critères d'acceptation et preuves attendues avant d'implémenter.
-4. **État de preuve existant** : lire `docs/reports/ANALYSE_EXISTANT_2026-11-04.md`, `docs/certification/` et les rapports du domaine concerné. Ne pas refaire un travail déjà livré ; ne pas recycler une preuve historique comme preuve du jour.
+4. **État de preuve existant** : lire `docs/implementation/VULULU_FEATURE_INVENTORY.md` (état courant), les rapports `docs/delivery/` du domaine concerné et, pour l'historique, `docs/certification/`. Ne pas refaire un travail déjà livré ; ne pas recycler une preuve historique comme preuve du jour.
 5. **Décision ouverte ?** Si le lot tranche une décision structurante (stack, topologie, contrat, périmètre, sécurité), il exige un **ADR** avant ou avec le code. Les décisions `D-xx` encore ouvertes ne se tranchent pas silencieusement.
 6. **Arrêt immédiat** si : spécification contradictoire ou manquante ; action destructive ; secret détecté ; fonctionnalité V2 demandée ; dépense fournisseur sans budget ; push/merge/déploiement/publication sans GO humain explicite.
 
@@ -67,7 +77,7 @@ Règles : une étape non exécutée s'écrit **NOT_RUN**, jamais PASS ; un fourn
 
 ## 5. Git et documentation
 
-- Branche de référence : `main`. Pas de force push, pas de réécriture d'historique partagé, pas de suppression de commit/fichier non demandée.
+- Branche de référence : `main`. Campagne P00–P13 : branche d'intégration `campaign/vululu-completion` uniquement, aucun push/merge sans GO explicite. Pas de force push, pas de réécriture d'historique partagé, pas de suppression de commit/fichier non demandée.
 - Commits courts au présent, préfixés : `feat`, `fix`, `docs`, `chore`, `test`, `refactor`, `adr`. Un commit relisible et réversible.
 - Ne pas commiter : `.env*` (hors modèles), secrets, `node_modules`, `data/`, `.v0/`, `.v1/`, `test-results/`, artefacts générés.
 - ADR : nouvelle décision ⇒ `docs/adr/NNNN-titre.md` (template `docs/adr/template.md`), index `docs/adr/README.md` mis à jour. Ne jamais modifier un ADR accepté (en créer un qui le remplace).
@@ -75,6 +85,8 @@ Règles : une étape non exécutée s'écrit **NOT_RUN**, jamais PASS ; un fourn
 - Roadmap/backlog : mettre à jour `docs/backlog/ROADMAP_V1.md` ou le document de statut prévu si le lot change un jalon — sans réécrire l'historique.
 
 ## 6. Definition of Done (contrôle final)
+
+> En campagne P00–P11, la DoD applicable est celle du contrat de finition §8 (`BUILD_UNVERIFIED`), pas celle-ci : les tests ne tournent pas pendant la construction. Cette section s'applique aux lots vérifiés (P12–P13 et travaux hors campagne).
 
 - [ ] Exigences PRD/CDC et critères d'acceptation couverts.
 - [ ] Code typé, documenté ; migration si nécessaire, additive.

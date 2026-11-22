@@ -48,6 +48,22 @@ Chaque décision suit [template.md](template.md) :
 | [0025](0025-invocations-mock-bornees-et-validees.md) | Invocations MOCK bornées et validées | Acceptée pour la tranche 6F | 2026-11-05 |
 | [0026](0026-composition-native-et-texte-integral.md) | Composition native et texte intégral | Acceptée pour la tranche 7A / MVP 01 | 2026-11-05 |
 | [0027](0027-mvp-coolify-et-cles-ia.md) | MVP Coolify et clés IA optionnelles | Acceptée pour mise en œuvre du MVP | 2026-11-05 |
+| [0035](0035-directions-artistiques-creative-revision.md) | Directions artistiques comme brouillons CreativeRevision | Acceptée pour la campagne P04 | 2026-11-20 |
+| [0036](0036-execution-outillee-agentique.md) | Exécution outillée agentique contrôlée (registre, scopes, résultats) | Acceptée pour la campagne P05 | 2026-11-20 |
+| [0037](0037-boite-outils-python-interne.md) | Boîte à outils Python interne (FastAPI, registre, réseau privé) | Acceptée pour la campagne P06 | 2026-11-20 |
+| [0038](0038-edition-image-ia-gemini-vertex.md) | Édition d’image IA via Gemini Image (Vertex) | Acceptée pour la campagne P07 | 2026-11-20 |
+| [0039](0039-atelier-visuel-canvas-et-brouillons.md) | Atelier visuel : canvas rendu serveur, historique local et brouillons | Acceptée pour la campagne P08 | 2026-11-20 |
+| [0040](0040-production-video-multiscene.md) | Production vidéo multiscène éditable (timeline, aperçu, progression, régénération ciblée) | Acceptée pour la mission P09A | 2026-11-21 |
+| [0041](0041-audio-sous-titres-voix.md) | Audio : pistes, mixage, sous-titres et voix off fournisseur | Acceptée pour la mission P09B | 2026-11-21 |
+| [0042](0042-administration-comptes-et-suspension.md) | Administration des comptes : rôles, suspension et révocation immédiate | Acceptée pour la mission P11-A | 2026-11-21 |
+| [0043](0043-administration-agents-outils-capacites.md) | Administration des agents, outils et capacités | Acceptée pour la mission P11-B | 2026-11-21 |
+| [0044](0044-observabilite-operations-administration.md) | Observabilité des opérations et actions administratives sûres | Acceptée pour la mission P11-C | 2026-11-21 |
+| [0045](0045-administration-couts-budgets.md) | Administration des coûts et budgets d'exécution | Acceptée pour la mission P11-D | 2026-11-21 |
+| [0046](0046-provenance-des-couts-et-reglement.md) | Provenance des coûts et règle de règlement (aucun rognage, estimation ≠ facture) | Acceptée pour la mission P12-01 | 2026-11-21 |
+| [0047](0047-resultats-outils-volumineux-hors-base.md) | Résultats d'outils volumineux stockés hors base, référence bornée et résolution transparente | Acceptée pour la mission P12-02 | 2026-11-21 |
+| [0048](0048-isolation-python-tools.md) | Isolation process-level et réseau privé du service python-tools | Acceptée pour la mission P12-03 | 2026-11-21 |
+| [0049](0049-selected-creative-direction.md) | Pointeur de direction artistique retenue et continuité du Studio | Acceptée pour la mission P12-05 | 2026-11-21 |
+| [0050](0050-agent-proposal-authority.md) | Autorité serveur sur les propositions d'outils de l'agent | Acceptée pour la mission P12-06 | 2026-11-21 |
 
 ## Décisions encore ouvertes
 

@@ -3,7 +3,14 @@ import crypto from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 vi.hoisted(() => {
-  const testDbUrl = 'postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public';
+  // Base jetable locale, pilotée par DATABASE_URL_TEST quand elle est fournie (QA isolée, CI)
+  // et sinon par la base de test historique du dépôt. Le garde-fou reste identique : hôte local
+  // uniquement et nom suffixé `_test`, jamais la base de démonstration ni une base distante.
+  const testDbUrl = process.env.DATABASE_URL_TEST || 'postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public';
+  const parsed = new URL(testDbUrl);
+  if (!['127.0.0.1', 'localhost'].includes(parsed.hostname) || !parsed.pathname.endsWith('_test')) {
+    throw new Error('Disposable local test DB required');
+  }
   process.env.V0_TEST_DB = '1';
   process.env.DATABASE_URL_TEST = testDbUrl;
   process.env.DATABASE_URL = testDbUrl;
@@ -34,7 +41,7 @@ import {
   PrismaProductionRunRepository
 } from '../../apps/api/src/infrastructure';
 
-const TEST_DB_URL = 'postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public';
+const TEST_DB_URL = process.env.DATABASE_URL_TEST as string;
 const RUN_ID = 'd-' + Date.now();
 
 function sha(value: string): string {
@@ -62,6 +69,7 @@ class FakeMedia implements MediaRendererPort {
       expectedDurationSeconds: duration,
       videoCodec: 'h264',
       audioCodec: 'aac',
+      audioDuration: 0,
       width: 1080,
       height: 1920
     };

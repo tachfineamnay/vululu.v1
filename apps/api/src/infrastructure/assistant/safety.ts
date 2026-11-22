@@ -1,4 +1,4 @@
-import { assistantCopy, assistantEdit } from '@vululu/contracts';
+import { agentOutput, assistantCopy, assistantEdit, brainstormOutput } from '@vululu/contracts';
 
 // Conservative rejection for promotional claims, contact details and injected control text.
 // Not a fact checker: there is always a separate human fact-review step.
@@ -11,6 +11,22 @@ export function vettedCopy(value: unknown) {
   if (!r.success) return null;
   const { campaign, strategy, posts } = r.data;
   if (![campaign, strategy, ...posts.flatMap((p) => [p.headline, p.caption, p.cta, ...p.storyboard.flatMap((s) => [s.shot, s.onScreen])])].every(safeCopy)) return null;
+  return r.data;
+}
+/** Valide et nettoie un résultat de brainstorming : structure stricte + textes sans affirmation promotionnelle. */
+export function vettedBrainstorm(value: unknown) {
+  const r = brainstormOutput.safeParse(value);
+  if (!r.success) return null;
+  const { ack, questions, angles, decisions } = r.data;
+  if (![ack, ...questions, ...angles.flatMap((a) => [a.title, a.reasoning, a.premise, ...a.assets]), ...decisions.map((d) => d.fact)].every(safeCopy)) return null;
+  return r.data;
+}
+/** Recommandations d'outils : structure stricte, textes sans affirmation promotionnelle, aucune exécution. */
+export function vettedAgentOutput(value: unknown) {
+  const r = agentOutput.safeParse(value);
+  if (!r.success) return null;
+  const texts = [r.data.reply, ...r.data.tools.map((tool) => tool.reason)];
+  if (!texts.every(safeCopy)) return null;
   return r.data;
 }
 export function vettedChanges(value: unknown) {

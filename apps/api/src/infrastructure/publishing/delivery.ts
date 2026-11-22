@@ -55,7 +55,9 @@ export async function preview(owner: string, itemId: string, revision: number, t
   const v = content.shape.variants.parse(item.variants).find((x) => x.platform === d.platform);
   if (!v) return problem(409, 'variant_missing');
   const platform = target ?? d.platform;
-  const caption = [v.caption, v.cta].join('\n\n');
+  // Les hashtags éditables font partie de la légende publiée et du paquet manuel.
+  const tags = v.hashtags ?? [];
+  const caption = [v.caption, tags.length ? tags.join(' ') : '', v.cta].filter((part) => part !== '').join('\n\n');
   const issues: string[] = [];
   if (item.archived || !['APPROVED', 'SCHEDULED'].includes(item.status))
     issues.push('editorial_approval_required');

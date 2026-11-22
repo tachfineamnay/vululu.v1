@@ -45,6 +45,17 @@ x-api-env: &api-env
   ASSISTANT_VERTEX_OUTPUT_MICROUSD: ${ASSISTANT_VERTEX_OUTPUT_MICROUSD:-}
   RATE_LIMIT_ENABLED: "1"
   LOG_LEVEL: info
+  # P06 — boîte à outils Python interne, jamais exposée publiquement.
+  PYTHON_TOOLS_URL: http://python-tools:8090
+  PYTHON_TOOLS_TOKEN: ${PYTHON_TOOLS_TOKEN:-}
+  PYTHON_TOOLS_TIMEOUT_MS: ${PYTHON_TOOLS_TIMEOUT_MS:-30000}
+  # P07 — édition d'image IA (Gemini Image via Vertex). Désactivé par défaut, aucun essai facturé.
+  IMAGE_EDITING_ENABLED: ${IMAGE_EDITING_ENABLED:-0}
+  GEMINI_IMAGE_PROJECT: ${GEMINI_IMAGE_PROJECT:-}
+  GEMINI_IMAGE_LOCATION: ${GEMINI_IMAGE_LOCATION:-global}
+  GEMINI_IMAGE_MODEL: ${GEMINI_IMAGE_MODEL:-gemini-2.5-flash-image}
+  GEMINI_IMAGE_MAX_CENTS: ${GEMINI_IMAGE_MAX_CENTS:-8}
+  GEMINI_IMAGE_COST_CENTS: ${GEMINI_IMAGE_COST_CENTS:-4}
 
 services:
   db:
@@ -155,6 +166,54 @@ services:
       start_period: 20s
     networks:
       - internal
+      - python
+
+  # P06/P12-03 — capacités de vision locales (FastAPI). Réseau PRIVÉ sans passerelle, non-root,
+  # rootfs en lecture seule, limites mémoire/CPU/PID, aucun modèle téléchargé, aucun port publié.
+  python-tools:
+    build:
+      context: ../../services/python-tools
+      dockerfile: Dockerfile
+    image: vululu-python-tools:${VULULU_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      PYTHON_TOOLS_TOKEN: ${PYTHON_TOOLS_TOKEN:?PYTHON_TOOLS_TOKEN requis (32+ caracteres)}
+      PYTHON_TOOLS_MAX_SOURCE_BYTES: "16777216"
+      PYTHON_TOOLS_MAX_PIXELS: "24000000"
+      PYTHON_TOOLS_MAX_DIMENSION: "4096"
+      PYTHON_TOOLS_MAX_OUTPUT_BYTES: "8388608"
+      PYTHON_TOOLS_MAX_AUDIO_SAMPLES: "16000000"
+      PYTHON_TOOLS_TIMEOUT_SECONDS: "25"
+      PYTHON_TOOLS_MAX_CONCURRENCY: "2"
+      PYTHON_TOOLS_WORKER_START_SECONDS: "20"
+      # Un seul thread par bibliothèque native : les processus du pool ne multiplient pas les threads.
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    expose:
+      - "8090"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid
+    user: "10001:10001"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 64
+    mem_limit: 1g
+    memswap_limit: 1g
+    cpus: "1.0"
+    stop_grace_period: 15s
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8090/readyz',timeout=3); sys.exit(0 if json.load(r).get('status')=='ready' else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - python
 
   web:
     build:
@@ -208,6 +267,7 @@ services:
         condition: service_completed_successfully
     networks:
       - internal
+      - python
 
   # Profil durable : moteur Hatchet embedded + PostgreSQL dedie (preprod uniquement).
   hatchet-pg:
@@ -273,5 +333,11 @@ volumes:
   s3data:
 
 networks:
+  # Réseau applicatif : accès sortant (fournisseurs) + services internes.
   internal:
     driver: bridge
+  # P12-03 — réseau PRIVÉ du service python-tools : aucune passerelle, donc aucun accès Internet,
+  # et aucun autre service que l'API/le worker n'y est attaché (db, web et s3 en sont absents).
+  python:
+    driver: bridge
+    internal: true

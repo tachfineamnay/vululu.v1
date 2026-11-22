@@ -4,8 +4,16 @@ Ce dossier contient le corpus fondateur V1.2 et les documents d'inauguration. Il
 
 ## Vision d'expérience actuelle (20 novembre 2026)
 
-- [Vululu — partenaire créatif, brouillon permanent et IA qui simplifie les écrans](product/VULULU_EXPERIENCE_VISION_2026-11-20.md) : vision produit récente, modèle intention → canal → format → brainstorming → assets → directions artistiques → validation, progression image puis vidéo puis TTS.
+- [Vululu — partenaire créatif, brouillon permanent et IA qui simplifie les écrans](product/VULULU_EXPERIENCE_VISION_2026-11-20.md) : vision produit récente, modèle intention → canal → format → **assets de l'utilisateur** → brainstorming → directions artistiques → choix humain → validation, progression image puis vidéo puis TTS. Révisé P00 le 2026-11-20 : les assets précèdent le brainstorming principal.
 - Ce cadrage de conception complète les décisions UX et le corpus fondateur **sans modifier les documents importés verbatim**. Il ne déclenche aucune modification de code ni aucun paiement.
+
+## Implémentation courante (P00, 2026-11-20)
+
+Ces documents pilotent la campagne de complétion P00–P13. Ils font foi pour l'état courant et remplacent les états datés antérieurs (`docs/delivery/VULULU_DELIVERY_STATUS.md`, `VULULU_BASELINE.md`, rapports de certification) qui restent des preuves historiques.
+
+- [Contrat de finition BUILD-FIRST](implementation/VULULU_FINISH_CONTRACT.md) : règles du programme, cadence des lots, statut `BUILD_UNVERIFIED`, vérification finale P12–P13.
+- [Inventaire courant des fonctionnalités](implementation/VULULU_FEATURE_INVENTORY.md) : ce qui est IMPLEMENTED / PARTIAL / MISSING / PROVIDER_DEPENDENT / MOCK au HEAD courant, avec preuves fichier par fichier.
+- [Carte des lots P01–P11](implementation/VULULU_COMPLETION_PLAN.md) : périmètres, points de départ fichier par fichier et critères d'acceptation.
 
 ## 1. Corpus fondateur
 
@@ -79,6 +87,9 @@ Aucun de ces documents n'a été inventé. Les lacunes sont tracées dans le [ra
 | preprod/ | Runbook de préproduction Hatchet, PostgreSQL, S3-compatible et sauvegardes |
 | coolify/ | Runbook d'installation Coolify sans GitHub Actions (build, Compose, migrations, rollback) |
 | studio/ | Walkthrough du Studio V1, preuves E2E et limites assumees |
+| delivery/ | Rapports de livraison datés C02–C13, F01–F07 et BETA01 : preuves historiques, pas l'état courant. |
+| implementation/ | Contrat de finition, inventaire courant et carte des lots P01–P11. |
+| delivery/C13.md | Revue de livraison du 2026-11-20 : maintenir le blocage de mise en production ; dernière preuve de recette datée. |
 
 ## 7. Vérification
 
@@ -87,4 +98,4 @@ Depuis la racine du dépôt :
     pwsh -File scripts/verify-foundation-docs.ps1
     pwsh -File scripts/check-secrets.ps1
 
-- [C13 · Revue de livraison, qualification et blocages](delivery/C13.md)
+Les preuves de livraison et la revue la plus récente sont dans [docs/delivery/](delivery/), notamment [C13 · Revue de livraison, qualification et blocages](delivery/C13.md).

@@ -16,9 +16,12 @@ import {
   errorMessage,
   formatDateTime,
   roleLabel,
+  userStatusLabel,
   type AdminInvitation,
-  type AdminUser
+  type AdminUser,
+  type AdminUserStatus
 } from '../../../lib/admin';
+import UserDetailPanel from './UserDetailPanel';
 
 type Tab = 'users' | 'invitations';
 
@@ -26,6 +29,19 @@ const ROLE_OPTIONS = [
   { value: 'user', label: 'Utilisateur' },
   {value:'support',label:'Assistance (sans administration)'},
   { value: 'super_admin', label: 'Super administrateur' }
+];
+
+const USER_ROLE_FILTER_OPTIONS = [
+  { value: '', label: 'Tous les roles' },
+  { value: 'user', label: 'Utilisateurs' },
+  { value: 'support', label: 'Assistance' },
+  { value: 'super_admin', label: 'Super administrateurs' }
+];
+
+const USER_STATUS_FILTER_OPTIONS = [
+  { value: '', label: 'Tous les statuts' },
+  { value: 'active', label: 'Comptes actifs' },
+  { value: 'suspended', label: 'Comptes suspendus' }
 ];
 
 export default function AdminUsersPage() {
@@ -36,7 +52,7 @@ export default function AdminUsersPage() {
       <PageHeader
         eyebrow="Administration"
         title="Utilisateurs"
-        description="Comptes, sessions actives et invitations en cours."
+        description="Comptes, statuts, roles, sessions actives et invitations en cours."
       />
       <div className="admin-tabs" role="tablist" aria-label="Sections utilisateurs">
         <button
@@ -81,20 +97,36 @@ function UsersPanel() {
   const pageSize = 20;
   const [searchDraft, setSearchDraft] = useState('');
   const [search, setSearch] = useState('');
+  const [roleDraft, setRoleDraft] = useState('');
+  const [roleFilter, setRoleFilter] = useState('');
+  const [statusDraft, setStatusDraft] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detailReloadToken, setDetailReloadToken] = useState(0);
   const resource = useAdminResource(
-    () => adminApi.users({ page, pageSize, q: search.length > 0 ? search : undefined }),
-    'users:' + search + ':' + page
+    () =>
+      adminApi.users({
+        page,
+        pageSize,
+        q: search.length > 0 ? search : undefined,
+        role: roleFilter.length > 0 ? roleFilter : undefined,
+        status: statusFilter.length > 0 ? (statusFilter as AdminUserStatus) : undefined
+      }),
+    'users:' + search + ':' + roleFilter + ':' + statusFilter + ':' + page
   );
+  const meResource = useAdminResource(() => adminApi.me(), 'me');
   const [revokeTarget, setRevokeTarget] = useState<AdminUser | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState('');
   const [notice, setNotice] = useState('');
 
-  function submitSearch(event: FormEvent<HTMLFormElement>) {
+  function submitFilters(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const next = searchDraft.trim();
-    if (next === search) {
+    const nextSearch = searchDraft.trim();
+    const unchanged =
+      nextSearch === search && roleDraft === roleFilter && statusDraft === statusFilter;
+    if (unchanged) {
       if (page !== 1) {
         setPage(1);
       } else {
@@ -102,13 +134,19 @@ function UsersPanel() {
       }
       return;
     }
-    setSearch(next);
+    setSearch(nextSearch);
+    setRoleFilter(roleDraft);
+    setStatusFilter(statusDraft);
     setPage(1);
   }
 
-  function resetSearch() {
+  function resetFilters() {
     setSearchDraft('');
     setSearch('');
+    setRoleDraft('');
+    setRoleFilter('');
+    setStatusDraft('');
+    setStatusFilter('');
     setPage(1);
   }
 
@@ -129,6 +167,9 @@ function UsersPanel() {
       );
       setRevokeTarget(null);
       resource.reload();
+      if (selectedId === target.id) {
+        setDetailReloadToken((token) => token + 1);
+      }
     } catch (error) {
       setActionError(errorMessage(error));
     } finally {
@@ -142,7 +183,7 @@ function UsersPanel() {
     <div className="admin-sections">
       <SectionCard
         title="Comptes"
-        description="Recherche par email ou nom, pagination serveur."
+        description="Recherche serveur par email ou nom, filtres par role et statut, pagination serveur."
         actions={
           <button
             type="button"
@@ -154,7 +195,7 @@ function UsersPanel() {
           </button>
         }
       >
-        <form className="admin-controls" role="search" onSubmit={submitSearch}>
+        <form className="admin-controls" role="search" onSubmit={submitFilters}>
           <TextField
             id="users-search"
             label="Recherche"
@@ -164,10 +205,24 @@ function UsersPanel() {
             placeholder="Email ou nom"
             className="admin-control-grow"
           />
+          <SelectField
+            id="users-role-filter"
+            label="Role"
+            value={roleDraft}
+            onChange={setRoleDraft}
+            options={USER_ROLE_FILTER_OPTIONS}
+          />
+          <SelectField
+            id="users-status-filter"
+            label="Statut du compte"
+            value={statusDraft}
+            onChange={setStatusDraft}
+            options={USER_STATUS_FILTER_OPTIONS}
+          />
           <button type="submit" className="btn btn-primary">
-            Rechercher
+            Filtrer
           </button>
-          <button type="button" className="btn btn-ghost" onClick={resetSearch}>
+          <button type="button" className="btn btn-ghost" onClick={resetFilters}>
             Reinitialiser
           </button>
         </form>
@@ -188,7 +243,7 @@ function UsersPanel() {
 
         {data ? (
           data.items.length === 0 ? (
-            <p className="admin-empty">Aucun utilisateur ne correspond a cette recherche.</p>
+            <p className="admin-empty">Aucun utilisateur ne correspond a ces criteres.</p>
           ) : (
             <>
               <div className="admin-table-wrap">
@@ -198,6 +253,7 @@ function UsersPanel() {
                       <th>Email</th>
                       <th>Nom</th>
                       <th>Role</th>
+                      <th>Statut du compte</th>
                       <th>Projets</th>
                       <th>Sessions</th>
                       <th>Derniere activite</th>
@@ -211,6 +267,17 @@ function UsersPanel() {
                         <td>{user.email}</td>
                         <td>{user.name}</td>
                         <td className="admin-nowrap">{roleLabel(user.role)}</td>
+                        <td>
+                          <StatusBadge
+                            status={user.status}
+                            label={userStatusLabel(user.status)}
+                            title={
+                              user.suspendedAt
+                                ? 'Suspendu le ' + formatDateTime(user.suspendedAt)
+                                : 'Connexion autorisee'
+                            }
+                          />
+                        </td>
                         <td>{user.projectsCount}</td>
                         <td>{user.sessionsCount}</td>
                         <td className="admin-nowrap">{formatDateTime(user.lastSessionAt)}</td>
@@ -218,17 +285,26 @@ function UsersPanel() {
                           <StatusBadge status={user.lastSessionStatus} />
                         </td>
                         <td>
-                          <button
-                            type="button"
-                            className="btn btn-danger btn-small"
-                            onClick={() => {
-                              setActionError('');
-                              setNotice('');
-                              setRevokeTarget(user);
-                            }}
-                          >
-                            Revoquer les sessions
-                          </button>
+                          <div className="admin-actions">
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-small"
+                              onClick={() => setSelectedId(user.id)}
+                            >
+                              Ouvrir la fiche
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-danger btn-small"
+                              onClick={() => {
+                                setActionError('');
+                                setNotice('');
+                                setRevokeTarget(user);
+                              }}
+                            >
+                              Revoquer les sessions
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -247,6 +323,16 @@ function UsersPanel() {
           )
         ) : null}
       </SectionCard>
+
+      {selectedId ? (
+        <UserDetailPanel
+          key={selectedId + ':' + detailReloadToken}
+          userId={selectedId}
+          currentUserId={meResource.data ? meResource.data.user.id : null}
+          onClose={() => setSelectedId(null)}
+          onChanged={() => resource.reload()}
+        />
+      ) : null}
 
       <ConfirmDialog
         open={revokeTarget !== null}

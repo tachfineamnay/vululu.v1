@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import ErrorState from '../../../components/admin/ErrorState';
 import { TextField } from '../../../components/admin/Fields';
 import LoadingState from '../../../components/admin/LoadingState';
@@ -14,11 +14,12 @@ type Filters = {
   action: string;
   actorId: string;
   targetType: string;
+  traceId: string;
   from: string;
   to: string;
 };
 
-const EMPTY_FILTERS: Filters = { action: '', actorId: '', targetType: '', from: '', to: '' };
+const EMPTY_FILTERS: Filters = { action: '', actorId: '', targetType: '', traceId: '', from: '', to: '' };
 
 export default function AdminAuditPage() {
   const pageSize = 25;
@@ -34,6 +35,7 @@ export default function AdminAuditPage() {
         action: filters.action.length > 0 ? filters.action : undefined,
         actorId: filters.actorId.length > 0 ? filters.actorId : undefined,
         targetType: filters.targetType.length > 0 ? filters.targetType : undefined,
+        traceId: filters.traceId.length > 0 ? filters.traceId : undefined,
         from: filters.from.length > 0 ? filters.from + 'T00:00:00.000Z' : undefined,
         to: filters.to.length > 0 ? filters.to + 'T23:59:59.999Z' : undefined
       }),
@@ -50,6 +52,7 @@ export default function AdminAuditPage() {
       action: draft.action.trim(),
       actorId: draft.actorId.trim(),
       targetType: draft.targetType.trim(),
+      traceId: draft.traceId.trim(),
       from: draft.from,
       to: draft.to
     });
@@ -61,6 +64,18 @@ export default function AdminAuditPage() {
     setFilters(EMPTY_FILTERS);
     setPage(1);
   }
+
+  // P11-C : depuis une operation (jobs), le lien `?traceId=<correlation>` pre-remplit le filtre.
+  useEffect(() => {
+    const traceId = new URLSearchParams(window.location.search).get('traceId');
+    if (!traceId) {
+      return;
+    }
+    const next = { ...EMPTY_FILTERS, traceId };
+    setDraft(next);
+    setFilters(next);
+    setPage(1);
+  }, []);
 
   const data = resource.data;
 
@@ -82,7 +97,7 @@ export default function AdminAuditPage() {
         }
       />
 
-      <SectionCard title="Filtres" description="Action, acteur, type de cible et plage de dates (UTC).">
+      <SectionCard title="Filtres" description="Action, acteur, type de cible, correlation d operation et plage de dates (UTC).">
         <form className="admin-form" onSubmit={submitFilters}>
           <div className="admin-form-grid">
             <TextField
@@ -105,6 +120,13 @@ export default function AdminAuditPage() {
               value={draft.targetType}
               onChange={(value) => updateField('targetType', value)}
               placeholder="invitation, user, session..."
+            />
+            <TextField
+              id="audit-trace"
+              label="Correlation / trace"
+              value={draft.traceId}
+              onChange={(value) => updateField('traceId', value)}
+              placeholder="identifiant de correlation d une operation"
             />
             <TextField
               id="audit-from"

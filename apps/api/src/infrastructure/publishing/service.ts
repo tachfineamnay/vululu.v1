@@ -72,7 +72,7 @@ export async function dispatchPublication(
   studio: CreativeStudio,
   provider: PublishingProvider,
   signal: AbortSignal
-) {
+): Promise<{ costCents: number; costBasis: 'none' }> {
   const op = await prisma.executionOperation.findFirst({
     where: {
       id: job.id,
@@ -160,7 +160,7 @@ export async function dispatchPublication(
       );
       await prisma.publicationRequest.update({ where: { id: r.id }, data: { state: 'SUBMITTED', remoteId, scheduledAt: new Date(p.when) } });
     }
-    return { costCents: 0 };
+    return { costCents: 0, costBasis: 'none' };
   } catch (e) {
     const ambiguous = e instanceof ProviderFailure ? e.ambiguous : invoked;
     await prisma.publicationRequest.updateMany({
@@ -172,7 +172,7 @@ export async function dispatchPublication(
     });
     // eslint-disable-next-line preserve-caught-error -- Remote exceptions may contain headers or credentials.
     if (ambiguous) throw new Error('publication_not_confirmed');
-    return { costCents: 0 };
+    return { costCents: 0, costBasis: 'none' };
   }
 }
 export async function reconcilePublication(owner: string, id: string, provider: PublishingProvider = new PostizProvider()) {

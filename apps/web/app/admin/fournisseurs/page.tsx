@@ -19,7 +19,9 @@ import {
   LICENSE_OPTIONS,
   shortId,
   statusLabel,
+  TOOL_AVAILABILITY_LABELS,
   type AdminCapabilityRequirement,
+  type AdminTool,
   type AdminLicense,
   type AdminModel,
   type AdminProvider,
@@ -832,6 +834,80 @@ export default function AdminProvidersPage() {
           ) : null}
         </SectionCard>
       </div>
+      <ProviderAvailabilitySection />
     </div>
+  );
+}
+
+/**
+ * P11-B — disponibilité réelle des capacités par fournisseur, lue depuis le catalogue
+ * serveur. Aucune sonde payante : « configure » ne signifie pas « appel verifie », et un
+ * fournisseur desactive n'est jamais affiche disponible.
+ */
+function ProviderAvailabilitySection() {
+  const tools = useAdminResource(() => adminApi.tools(), 'provider-availability');
+  const groups = new Map<string, { availability: AdminTool['availability']; reason: string | null; keys: string[] }>();
+  for (const tool of tools.data ? tools.data.items : []) {
+    const current = groups.get(tool.provider);
+    if (current) {
+      current.keys.push(tool.key);
+    } else {
+      groups.set(tool.provider, { availability: tool.availability, reason: tool.availabilityReason, keys: [tool.key] });
+    }
+  }
+  return (
+    <SectionCard
+      title="Disponibilite reelle des capacites"
+      description="Lecture de la configuration serveur, sans test fournisseur. 'Configure' ne vaut pas 'appel verifie' ; un fournisseur desactive reste indisponible."
+      actions={
+        <button type="button" className="btn btn-ghost btn-small" onClick={tools.reload} disabled={tools.loading}>
+          Actualiser
+        </button>
+      }
+    >
+      {tools.loading && !tools.data ? <LoadingState label="Chargement des capacites..." /> : null}
+      {tools.error ? <ErrorState message={tools.error} onRetry={tools.reload} /> : null}
+      {tools.data ? (
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>Fournisseur</th>
+                <th>Outils concernes</th>
+                <th>Disponibilite</th>
+                <th>Motif</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...groups.entries()].map(([provider, state]) => (
+                <tr key={provider}>
+                  <td className="admin-mono">{provider}</td>
+                  <td className="admin-meta">{state.keys.join(', ')}</td>
+                  <td>
+                    <StatusBadge
+                      status={
+                        state.availability === 'configured'
+                          ? 'ok'
+                          : state.availability === 'local'
+                            ? 'active'
+                            : state.availability === 'disabled'
+                              ? 'none'
+                              : 'pending'
+                      }
+                      label={TOOL_AVAILABILITY_LABELS[state.availability]}
+                    />
+                  </td>
+                  <td className="admin-meta">{state.reason ?? 'Aucun motif : capacite locale.'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+      <p className="admin-meta">
+        L activation d'un fournisseur ou d'un modele reste explicite ci-dessus ; la qualification d'un modele est un
+        prealable distinct. Les capacites Python internes apparaissent dans le catalogue des agents.
+      </p>
+    </SectionCard>
   );
 }

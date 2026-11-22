@@ -11,16 +11,21 @@ import {
   actionScope,
   creativeAction,
   creativeApproval,
+  creativeAssetApply,
+  creativeDirectionInput,
+  directionSelectionInput,
   creativeSpec,
   creativeWrite,
+  directionDecisionInput,
+  isVideoOutput,
   studioExportExtension,
 } from '@vululu/contracts';
-import { creativeStudio as service } from '../application/container';
+import { creativeDirections, creativeStudio as service } from '../application/container';
 import {draftThumbnail} from '@vululu/media';
 import { sendArtifact } from './production';
 import { rateLimitPreHandler, RATE_LIMITS } from '../infrastructure/security/rateLimiter';
 import { HttpError } from '../errors';
-import { queueRender, renderStatus } from '../infrastructure/creative/renderJobs';
+import { cancelRender, queueRender, renderStatus } from '../infrastructure/creative/renderJobs';
 
 export async function creativeRoutes(app: FastifyInstance) {
   const auth = { preHandler: [app.authenticate] };
@@ -32,8 +37,12 @@ export async function creativeRoutes(app: FastifyInstance) {
     if (scope.target.projectId !== project)
       throw new HttpError(404, 'creative_not_found', 'Projet introuvable.');
     const row = await service.get(user, project, scope.expectedRevision);
-    if ((await service.history(user, project))[0]?.version !== scope.expectedRevision)
-      throw new HttpError(409, 'creative_conflict', 'Rechargez la dernière révision.');
+    // P12-05 — l'édition porte sur la composition courante : la dernière révision OU la direction
+    // explicitement retenue (qui peut être plus ancienne que la tête).
+    const head = (await service.history(user, project))[0]?.version;
+    const selection = (await creativeDirections.selection(user, project)).selectedVersion;
+    if (scope.expectedRevision !== head && scope.expectedRevision !== selection)
+      throw new HttpError(409, 'creative_conflict', 'Rechargez la composition courante.');
     return row;
   };
   app.post(base + '/actions/translate', auth, async (r) => {
@@ -84,9 +93,27 @@ export async function creativeRoutes(app: FastifyInstance) {
     return service.save(user, project, a.expectedRevision, editScene(row.spec, a));
   });
   app.get(base, auth, (r) => service.history(r.currentUser!.id, id.parse(r.params).id));
+  // Directions artistiques = brouillons CreativeRevision enrichis (ADR-0035), jamais une approbation.
+  app.get(base + '/directions', auth, (r) =>
+    creativeDirections.list(r.currentUser!.id, id.parse(r.params).id));
+  app.post(base + '/directions', auth, (r) =>
+    creativeDirections.create(r.currentUser!.id, id.parse(r.params).id, creativeDirectionInput.parse(r.body)));
+  // P12-05 — choix explicite de la direction retenue (verrou projet + concurrence optimiste).
+  app.post(base + '/directions/select', auth, (r) =>
+    creativeDirections.select(r.currentUser!.id, id.parse(r.params).id, directionSelectionInput.parse(r.body)));
+  app.post(base + '/:version/direction', auth, (r) => {
+    const p = revision.parse(r.params);
+    const { decision } = directionDecisionInput.parse(r.body);
+    return creativeDirections.decide(r.currentUser!.id, p.id, p.version, decision);
+  });
   app.post(base, auth, (r) => {
     const b = creativeWrite.parse(r.body);
     return service.save(r.currentUser!.id, id.parse(r.params).id, b.expectedVersion, b.spec);
+  });
+  // Applique une ressource de marque existante à un calque image (nouvelle révision, jamais d'écrasement).
+  app.post(base + '/asset', auth, (r) => {
+    const b = creativeAssetApply.parse(r.body);
+    return service.applyAsset(r.currentUser!.id, id.parse(r.params).id, b);
   });
   app.get(base + '/:version', auth, (r) => {
     const p = revision.parse(r.params);
@@ -198,10 +225,26 @@ export async function creativeRoutes(app: FastifyInstance) {
         return (await prisma.billingControl.findUniqueOrThrow({where:{id:'commercial'}})).enabled ? draftThumbnail(frame) : frame;
       }));
   });
+  // Aperçu vidéo borné (20 s) : même compositeur que le master, aucune révision créée.
+  app.post(base + '/preview/video', renderAuth, async (r, reply) => {
+    const spec = creativeSpec.refine((s) => !s.delivery || isVideoOutput(s.delivery.kind)).parse(r.body);
+    const out = await withSlot(() => service.previewVideo(r.currentUser!.id, id.parse(r.params).id, spec));
+    return reply
+      .header('Cache-Control', 'private, no-store')
+      .header('X-Preview-Seconds', out.seconds.toFixed(2))
+      .header('X-Preview-Bounded', out.bounded ? '1' : '0')
+      .type('video/mp4')
+      .send(out.bytes);
+  });
   app.post(base + '/:version/render', renderAuth, async (r, reply) => {
     const p = revision.parse(r.params);
     const job = await queueRender(r.currentUser!.id, p.id, p.version);
     return reply.code(job.state === 'succeeded' ? 200 : 202).send(job);
+  });
+  // Annulation : immédiate si le job est en file, coopérative (fin de scène) s'il est en cours.
+  app.post(base + '/:version/render/cancel', renderAuth, async (r) => {
+    const p = revision.parse(r.params);
+    return cancelRender(r.currentUser!.id, p.id, p.version);
   });
   app.get(base + '/:version/render', auth, async (r, reply) => {
     const p = revision.parse(r.params);
@@ -247,6 +290,31 @@ export async function creativeRoutes(app: FastifyInstance) {
     const p = revision.parse(r.params);
     if((r.query as {export?:string}).export==='1')markExport(r,reply,p.id,p.version,'Master créatif');
     return sendArtifact(r, reply, await service.file(r.currentUser!.id, p.id, p.version));
+  });
+  // P09B — sous-titres SRT et piste audio M4A, uniquement depuis une révision approuvée.
+  app.get(base + '/:version/subtitles', auth, async (r, reply) => {
+    const p = revision.parse(r.params), user = r.currentUser!.id;
+    const row = await service.get(user, p.id, p.version);
+    if (!row.approvedAt || !row.manifest)
+      throw new HttpError(409, 'creative_unapproved', 'Approuvez cette révision avant de télécharger ses sous-titres.');
+    const file = await service.subtitleFile(user, p.id, p.version);
+    reply.header('Cache-Control', 'private, no-store');
+    return reply
+      .header('Content-Disposition', `attachment; filename="${file.filename}"`)
+      .type('text/plain; charset=utf-8')
+      .send(file.text);
+  });
+  app.get(base + '/:version/audio', auth, async (r, reply) => {
+    const p = revision.parse(r.params), user = r.currentUser!.id;
+    const row = await service.get(user, p.id, p.version);
+    if (!row.approvedAt || !row.manifest)
+      throw new HttpError(409, 'creative_unapproved', 'Approuvez cette révision avant de télécharger la piste audio.');
+    const file = await service.audioFile(user, p.id, p.version);
+    reply.header('Cache-Control', 'private, no-store');
+    return reply
+      .header('Content-Disposition', `attachment; filename="audio-v${p.version}.m4a"`)
+      .type('audio/mp4')
+      .send(file.bytes);
   });
   app.get(base + '/:version/scenes/:key', auth, async (r, reply) => {
     const p = revision.extend({ key: z.string() }).parse(r.params);

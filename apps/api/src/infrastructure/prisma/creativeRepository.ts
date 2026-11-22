@@ -44,18 +44,23 @@ export class PrismaCreativeRepository implements CreativeRepository {
     return { ...row, spec: creativeSpec.parse(row.spec), manifest: readManifest(row.manifest) };
   }
   async append(userId: string, id: string, expectedVersion: number, spec: CreativeSpec) {
-    await prisma.$transaction(async (tx) => {
+    const createdVersion = await prisma.$transaction(async (tx) => {
       const locked = await tx.$queryRaw<
-        { id: string }[]
-      >`SELECT id FROM "Project" WHERE id=${id} AND "userId"=${userId} FOR UPDATE`;
+        { id: string; selectedCreativeVersion: number | null }[]
+      >`SELECT id, "selectedCreativeVersion" FROM "Project" WHERE id=${id} AND "userId"=${userId} FOR UPDATE`;
       if (!locked.length) throw missing();
       const last = await tx.creativeRevision.findFirst({
         where: { projectId: id },
         orderBy: { version: 'desc' },
         select: { version: true }
       });
-      if ((last?.version ?? 0) !== expectedVersion)
+      const head = last?.version ?? 0;
+      // P12-05 — une sauvegarde part soit de la tête, soit de la direction retenue (qui peut être
+      // plus ancienne que la tête). Toute autre base est périmée : 409 explicite, jamais d'écrasement.
+      const selected = locked[0].selectedCreativeVersion;
+      if (expectedVersion !== head && expectedVersion !== selected)
         throw new HttpError(409, 'creative_conflict', 'Révision dépassée. Rechargez avant de sauvegarder.');
+      const nextVersion = head + 1;
       const link = spec.delivery?.calendar;
       if (link) {
         const rev = await tx.contentRevision.findFirst({
@@ -69,14 +74,33 @@ export class PrismaCreativeRepository implements CreativeRepository {
       await tx.creativeRevision.create({
         data: {
           projectId: id,
-          version: expectedVersion + 1,
+          version: nextVersion,
           contentItemId: link?.itemId,
           contentVersion: link?.version,
           spec
         }
       });
+      // P12-05 — éditer la direction retenue avance le pointeur vers la nouvelle révision, dans la
+      // même transaction : le Studio recharge donc la composition éditée, pas l'ancienne version.
+      // Éditer une autre révision ne déplace jamais la sélection.
+      if (selected === expectedVersion && selected !== null) {
+        await tx.project.update({
+          where: { id },
+          data: { selectedCreativeVersion: nextVersion, selectedCreativeAt: new Date() }
+        });
+        await tx.auditEvent.create({
+          data: {
+            actorId: userId,
+            action: 'creative.direction_selected',
+            targetType: 'project',
+            targetId: id,
+            metadata: { version: nextVersion, previous: selected, reason: 'edited' }
+          }
+        });
+      }
+      return nextVersion;
     });
-    return this.get(userId, id, expectedVersion + 1);
+    return this.get(userId, id, createdVersion);
   }
   async approve(userId: string, id: string, version: number) {
     await prisma.creativeRevision.updateMany({

@@ -187,6 +187,22 @@ export type CampaignSummary = {
   createdAt: string;
 };
 
+export type AssetDecisionItem = {
+  assetId: string; versionId: string; version: number; name: string; kind: string;
+  mimeType: string; sha256: string; license: string; provenance: string;
+};
+export type AssetDecisionSnapshot = {
+  schemaVersion: 1; decision: 'assets' | 'none'; format: string; usage: 'organic' | 'sponsored';
+  confirmedAt: string; items: AssetDecisionItem[];
+};
+export type ProjectAssetDecision = {
+  confirmed: boolean; stale: boolean;
+  reason: 'not_confirmed' | 'selection_changed' | 'version_unavailable' | 'format_incompatible' | 'license_usage_restricted' | null;
+  compatibleKinds: string[] | null;
+  confirmedAt: string | null; digest: string | null; usage: 'organic' | 'sponsored';
+  versionIds: string[]; noAssets: boolean; snapshot: AssetDecisionSnapshot | null;
+};
+
 function readCookie(name: string): string {
   if (typeof document === 'undefined') {
     return '';

@@ -109,7 +109,16 @@ export default function CampaignsPage() {
               <>
                 <h2>{detail.campaign.name}</h2>
                 {detail.campaign.description ? <p className="muted">{detail.campaign.description}</p> : null}
+                <Link className="btn btn-secondary" href={'/projects/new?campaign=' + encodeURIComponent(detail.campaign.id)}>Nouvelle création dans cette campagne</Link>
                 <a className="text-link" href={`/api/campaigns/${detail.campaign.id}/creative-package`} download>Exporter les déclinaisons rendues (ZIP)</a>
+                <p className="campaign-result-link">
+                  <Link className="text-link" href={'/results#campaign-' + encodeURIComponent(detail.campaign.id)}>
+                    Voir le bilan de cette campagne dans Résultats
+                  </Link>{' '}
+                  <span className="muted small">
+                    Compteurs du relevé serveur uniquement : aucun chiffre n’est estimé sur cette page.
+                  </span>
+                </p>
                 <h3>Projets rattachés</h3>
                 {detail.projects.length === 0 ? <p className="muted">Aucun projet dans cette campagne.</p> : (
                   <ul className="list campaign-projects">

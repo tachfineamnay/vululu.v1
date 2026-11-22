@@ -18,7 +18,9 @@ Sources d'autorité : `AGENTS.md` (règles et conditions d'arrêt) ; `docs/certi
 
 **Ne pas l'utiliser pour** : exécuter la pile locale (voir `vululu-local-stack`), lancer les tests/gates (voir `vululu-quality-gates`), livrer un lot de code (voir `vululu-lot-delivery`), modifier l'architecture (voir `vululu-architecture-change`).
 
-## État vérifié (2026-11-04, HEAD `bb0bc3a`)
+## État vérifié — HISTORIQUE (2026-11-04, HEAD `bb0bc3a`)
+
+> **État courant au 2026-11-20 (HEAD `f5d515b`)** : les verdicts de non-déploiement ci-dessous n'ont pas été améliorés — aucun staging, aucun déploiement public, aucun fournisseur activé. Depuis, C02–C13 et F01–F07 ont livré calendrier, compositions, formats multiples, assistant, génération média, publication Postiz, facturation Stripe (gelée), comptes clients, résultats et bêta gratuite ; 34 migrations additives. La dernière revue de livraison est `docs/delivery/C13.md` (2026-11-20) : **maintenir le blocage de mise en production** ; activations fournisseur et commerciales décrites dans `docs/delivery/F03_*`, `F04_*`, `F05_*`. Ne jamais transformer ces constats en GO : une activation exige une autorisation humaine explicite et séparée.
 
 | Élément | Verdict / état |
 |---|---|
@@ -54,7 +56,7 @@ API/worker -> PostgreSQL (réseau Compose), S3-compatible TLS, Hatchet (gRPC 170
 | PostgreSQL | **55432** en local portable ; **5432** interne au réseau Compose (`db`) |
 | Hatchet | gRPC **17077** + API **18243** exposés par socat ; sidecar embedded en loopback 7077/28243 |
 | S3-compatible TLS | **9443** en local hôte (rclone) ; **9000** interne au conteneur |
-| Migrations | service one-shot `migrate` ; 12 migrations additives, jamais `db push`/reset/drop |
+| Migrations | service one-shot `migrate` ; 34 migrations additives au 2026-11-20, jamais `db push`/reset/drop |
 
 - **Compose préprod** (`infra/preprod/docker-compose.yml`) : `postgres`, `cert-init`, `s3` (rclone), `hatchet-pg`, `hatchet` (sidecar + socat). API/worker tournent hors compose sur l'hôte.
 - **Compose Coolify** (`infra/coolify/docker-compose.yml`) : `db`, `migrate`, `artifacts-init`, `api`, `web` + profils `worker`, `durable` (`hatchet-pg`, `hatchet`), `s3` (MinIO optionnel). Un conteneur ne mélange jamais API, Web et worker.
@@ -102,7 +104,7 @@ Statut : **DOCUMENTÉ / NON REJOUÉ** sauf mention historique contraire. À exé
 3. Tester redémarrage contrôlé API/Web/worker, persistance DB/S3, sauvegarde/restauration sur ressources de test.
 4. Valider le rollback (image précédente + schéma compatible + restauration testée).
 5. Faire signer une **décision humaine explicite** d'accès privé ; aucune activation publique automatique.
-6. Maintenir les badges MOCK et ne présenter aucun contenu généré comme IA.
+6. Maintenir la distinction MOCK / PROVIDER_DEPENDENT (providers réels désactivés, appels réels `NOT_VERIFIED`) et ne présenter aucun contenu généré comme IA.
 
 Conditions d'arrêt `AGENTS.md` (arrêter et demander une décision) : spécification contradictoire ou manquante ; dépôt distant non vide au premier push ; action destructive ; secret détecté ; fonctionnalité V2 demandée ; coût fournisseur sans budget ; test obligatoire inexécutable.
 
@@ -123,7 +125,7 @@ Conditions d'arrêt `AGENTS.md` (arrêter et demander une décision) : spécific
 - **Ne pas réparer** le disque Docker/WSL ni toucher aux services existants sans accord explicite : risque pour les autres projets de la machine.
 - **Ne jamais exécuter `down -v`** ni supprimer un volume sans backup vérifié ; ne jamais restaurer par-dessus la source.
 - **Ne jamais afficher un secret** ni le commiter ; un fichier `.env` local n'est jamais versionné.
-- **Ne pas confondre** « transféré vers Postiz MOCK » et « publié » ; maintenir les badges MOCK.
+- **Ne pas confondre** « transféré via le pipeline Postiz MOCK historique » ou « programmé via Postiz (flag off) » avec « publié » ; maintenir la distinction MOCK / PROVIDER_DEPENDENT.
 
 ## Pièges connus
 
@@ -148,7 +150,7 @@ Chaque case exige une **preuve liée à un run réel, daté, sur l'environnement
 - [ ] Redémarrage contrôlé + persistance DB/S3 + backup/restore sur ressources de test (`BACKUP_PASS`/`RESTORE_PASS`).
 - [ ] Rollback validé (image précédente + schéma compatible + restauration testée).
 - [ ] Crash/reprise Hatchet rejoué avec assertions d'unicité (`JobRun`, `RunArtifact`, `Transfer`).
-- [ ] Décision humaine signée, badges MOCK maintenus, aucune activation publique automatique.
+- [ ] Décision humaine signée, distinction MOCK / PROVIDER_DEPENDENT maintenue, aucune activation publique automatique.
 
 ## Références
 

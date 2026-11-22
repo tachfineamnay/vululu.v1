@@ -4,6 +4,8 @@ import { actorOf, agentConfigs, providerCatalog, providerCredentials, routing } 
 import { ApplicationError } from '@vululu/application';
 import { providerCredentialInputSchema } from '@vululu/contracts';
 import { rateLimitPreHandler, RATE_LIMITS } from '../infrastructure/security/rateLimiter';
+import { tools } from '../infrastructure/execution/registry';
+import { availabilityOf } from '../infrastructure/execution/availability';
 
 const capabilityRequirementSchema = z.object({
   capabilityKey: z.string().min(1),
@@ -106,6 +108,32 @@ export async function adminAgentRoutes(app: FastifyInstance): Promise<void> {
       input.configVersionId
     );
     return { agent };
+  });
+
+  /**
+   * Catalogue FERMÉ des outils exécutables (registre serveur, aucune définition arbitraire),
+   * avec permissions, restrictions et disponibilité réelle de la capacité sous-jacente.
+   * Les capacités Python (image.analyze/segment, audio.analyze) figurent dans ce même
+   * catalogue ; aucun second registre n'est créé.
+   */
+  app.get('/api/admin/tools', superAdminOnly, async () => {
+    const items = Object.entries(tools).map(([key, definition]) => {
+      const state = availabilityOf(definition.provider);
+      return {
+        key,
+        provider: definition.provider,
+        action: definition.action,
+        scope: definition.scope,
+        approval: definition.approval,
+        maxCents: definition.maxCents,
+        agentProposable: definition.params !== undefined && definition.agentProposable !== false,
+        hasParams: definition.params !== undefined,
+        description: definition.description,
+        availability: state.availability,
+        availabilityReason: state.reason
+      };
+    });
+    return { items };
   });
 
   app.get('/api/admin/providers', superAdminOnly, async (request) => {

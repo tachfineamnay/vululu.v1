@@ -22,6 +22,8 @@ model User {
   passwordHash String
   name         String
   role         String         @default("user")
+  status       String         @default("active")
+  suspendedAt  DateTime?
   createdAt    DateTime       @default(now())
   contexts     BrandContext[]
   campaigns    Campaign[]
@@ -29,6 +31,8 @@ model User {
   projects     Project[]
   sessions     Session[]
   invitations  Invitation[] @relation("InvitationCreator")
+
+  @@index([status])
 }
 
 model AccountToken {
@@ -95,6 +99,12 @@ model Project {
   objective   String
   usage       String   @default("organic")
   storyboardBriefVersion Int?
+  assetsConfirmedAt       DateTime?
+  assetsConfirmationDigest String?
+  assetsConfirmation      Json?
+  // P12-05 — pointeur propriétaire vers la direction artistique retenue (révision CreativeRevision).
+  selectedCreativeVersion Int?
+  selectedCreativeAt      DateTime?
   sceneDurationSeconds Int @default(2)
   status      String   @default("draft")
   createdAt   DateTime @default(now())
@@ -728,6 +738,9 @@ model CreativeRevision {
   version Int
   spec Json
   manifest Json?
+  label String?
+  origin String?
+  provenance Json?
   approvedAt DateTime?
   createdAt DateTime @default(now())
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -764,6 +777,10 @@ model ExecutionOperation {
   correlationId String @unique
   claimUntil DateTime?
   notifyAfter DateTime @default(now())
+  params Json?
+  result Json?
+  agentTurnId String?
+  step Int?
   createdAt DateTime @default(now())
   account ExecutionAccount @relation(fields:[accountId],references:[userId],onDelete:Restrict)
   project Project @relation(fields:[projectId],references:[id],onDelete:Restrict)
@@ -892,6 +909,8 @@ model StudioRender {
  source CreativeRevision @relation(fields:[projectId,revision],references:[projectId,version],onDelete:Cascade)
  state String
  reason String?
+ progress Int @default(0)
+ cancelRequested Boolean @default(false)
  createdAt DateTime @default(now())
  @@index([projectId,createdAt])
 }

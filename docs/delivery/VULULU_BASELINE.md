@@ -1,5 +1,7 @@
 # VULULU — BASELINE D'INGÉNIERIE (Mission R00)
 
+> **Bannière P00 (2026-11-20) — baseline historique.** Cette baseline date du 2026-11-19 (HEAD `ccc1977`) et **ne décrit plus l'état courant**. Depuis, les lots C02–C13 et F01–F07 ont livré les fonctionnalités listées ci-dessous comme absentes ou MOCK (compositions d'assets, formats multiples, assistant, génération média, publication Postiz, facturation Stripe gelée, comptes clients, résultats, rendu durable, bêta gratuite). L'état courant fait foi dans `docs/implementation/VULULU_FEATURE_INVENTORY.md` ; le corps ci-dessous reste une **preuve datée**.
+
 - **Date de la mission** : 2026-11-19
 - **Dépôt** : `tachfineamnay/vululu.v1`
 - **Branche de travail** : `arena/c3982856-vululu-v1`

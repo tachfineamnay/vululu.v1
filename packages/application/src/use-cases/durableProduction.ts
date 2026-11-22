@@ -309,6 +309,7 @@ export class DurableProductionUseCases {
         expectedDurationSeconds: master.expectedDurationSeconds,
         videoCodec: master.videoCodec,
         audioCodec: master.audioCodec,
+        audioDuration: master.audioDuration,
         width: master.width,
         height: master.height
       }

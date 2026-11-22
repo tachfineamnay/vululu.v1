@@ -25,7 +25,13 @@ export const variant = z.object({
   platform: platformSchema,
   format: formatSchema,
   caption: text(2200),
-  cta: text(240)
+  cta: text(240),
+  /** P10 — hashtags éditables, sans doublon, inclus dans la légende publiée. */
+  hashtags: z
+    .array(z.string().trim().regex(/^#[a-z0-9_]{2,49}$/i, 'Hashtag invalide (# suivi de 2 à 49 caractères).'))
+    .max(10)
+    .default([])
+    .refine((tags) => new Set(tags.map((tag) => tag.toLowerCase())).size === tags.length, 'Hashtags en double.')
 });
 export const content = z.object({
   title: text(160),

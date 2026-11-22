@@ -16,7 +16,9 @@ whenToUse: Avant d'ajouter ou modifier un invariant/objet de domaine, un cas d'u
 
 **Ne pas l'utiliser pour** : démarrer la pile (`vululu-local-stack`), choisir/exécuter la matrice complète de tests (`vululu-quality-gates`), livrer un lot de bout en bout (`vululu-lot-delivery`), staging/déploiement (`vululu-ops-readiness`). AGENTS.md et les ADR restent prioritaires.
 
-## État vérifié (2026-11-04, HEAD `bb0bc3a`, branche `main`)
+## État vérifié — HISTORIQUE (2026-11-04, HEAD `bb0bc3a`, branche `main`)
+
+> **État courant au 2026-11-20 (HEAD `f5d515b`)** : `packages/domain/src` = 23 fichiers, `packages/application/src` = 30 fichiers TS (10 à la racine + 20 dans `use-cases/`), 34 migrations, 22 fichiers de routes API. Les fournisseurs réels existent derrière des flags : Vertex (`infrastructure/assistant/vertex.ts`), Replicate/Runway (`infrastructure/mediaGeneration/providers.ts`), Postiz (`infrastructure/publishing/provider.ts`), Stripe (`infrastructure/billing/`). Aucun n'est activé ; appels réels `NOT_VERIFIED`. Les compteurs du tableau ci-dessous sont datés du 2026-11-04.
 
 | Preuve | Résultat |
 |---|---|
@@ -33,9 +35,9 @@ whenToUse: Avant d'ajouter ou modifier un invariant/objet de domaine, un cas d'u
 
 | Couche | Emplacement | Autorisé | Interdit (vérifié) |
 |---|---|---|---|
-| Domain Core | `packages/domain/src` (20 fichiers) | imports relatifs uniquement ; zéro dépendance runtime | SDK, Prisma, Fastify, Next, Sharp, FFmpeg, Hatchet, Postiz, `node:*`, fs, réseau, horloge, aléa, env |
-| Application | `packages/application/src` (17 fichiers : `ports.ts`, `use-cases/`) | imports relatifs confinés ; `@vululu/domain` (le script tolère aussi `@vululu/contracts`, non déclaré dans package.json) | apps/*, `@vululu/db`, Prisma, Fastify, Next, AWS, Hatchet, Postiz, sharp, tout package externe ; builtins I/O `node:fs/http/https/net/dgram/child_process/tls/dns/cluster/worker_threads/v8` ; `process.env` par doctrine |
-| Infrastructure | `apps/api/src/infrastructure/**` | Prisma, FS/S3, Sharp/FFmpeg, Hatchet, Postiz MOCK, rate limiting ; adaptateurs derrière ports | logique métier dupliquée ; import depuis domain/application |
+| Domain Core | `packages/domain/src` (23 fichiers) | imports relatifs uniquement ; zéro dépendance runtime | SDK, Prisma, Fastify, Next, Sharp, FFmpeg, Hatchet, Postiz, `node:*`, fs, réseau, horloge, aléa, env |
+| Application | `packages/application/src` (30 fichiers : `ports.ts`, `use-cases/`) | imports relatifs confinés ; `@vululu/domain` (le script tolère aussi `@vululu/contracts`, non déclaré dans package.json) | apps/*, `@vululu/db`, Prisma, Fastify, Next, AWS, Hatchet, Postiz, sharp, tout package externe ; builtins I/O `node:fs/http/https/net/dgram/child_process/tls/dns/cluster/worker_threads/v8` ; `process.env` par doctrine |
+| Infrastructure | `apps/api/src/infrastructure/**` | Prisma, FS/S3, Sharp/FFmpeg, Hatchet, email, rate limiting ; adaptateurs Postiz/Vertex/Replicate/Runway derrière flags et ports (activation off, appels réels `NOT_VERIFIED`) ; mocks déterministes historiques conservés | logique métier dupliquée ; import depuis domain/application |
 | API (composition + HTTP) | `apps/api/src/application/container.ts`, `server.ts`, `routes/*.ts`, `env.ts`, `worker/` | Fastify, infrastructure, application, contracts ; DB | logique métier dans les routes ; accès direct Prisma depuis un route handler |
 | Web | `apps/web` (Next 16 / React 19) | UI, fetch API, contrats partagés | Prisma, Hatchet, S3, worker (pas couvert par le script : vérifier par grep/revue) |
 | Contrats | `packages/contracts/src/index.ts` + `admin.ts` | Zod partagé API/Web | dépendances applicatives |
@@ -91,7 +93,7 @@ Règle d'or : une dépendance va **vers l'intérieur** (API → Application → 
 3. **Identifiants stables** `project_id`, `scene_id`/`SCENE-NNN`, `character_id`/`CHAR-NNN` : la position est indépendante de l'identité ; les ids fournisseurs sont des bindings facultatifs.
 4. **Artefacts immuables** : nouvelle version plutôt qu'écrasement, checksum SHA-256 + provenance (provider, modèle, storageKey/provider) ; versions historiques relisibles depuis leur backend d'origine.
 5. **Approbation exacte** : version + checksum + QA PASS avant transfert ; invalidée par un nouveau master ; un transfert refuse une approbation absente/invalidée.
-6. **Transfert Postiz idempotent** : `findTransfer` renvoie l'existant ; « **transféré ≠ publié** » ; MOCK explicite et audité.
+6. **Transfert Postiz idempotent** : `findTransfer` renvoie l'existant ; « **transféré ≠ publié** ». Le pipeline MOCK historique est explicite et audité ; depuis F04, un provider Postiz réel existe derrière `POSTIZ_PUBLISH_ENABLED` (off par défaut) : ne pas activer sans GO.
 7. **Filtrage propriétaire + RBAC serveur** : toute lecture/écriture filtrée par propriétaire ; `super_admin` explicite ; tests IDOR/CSRF obligatoires pour les routes concernées.
 8. **Stockage interchangeable** : `ArtifactStoragePort`, registre de lecture local/S3 par `storageProvider`, clés opaques, Range 206/416, bucket et credentials jamais exposés.
 9. **Outbox/durable** : JobRun + snapshot + outbox atomiques ; dispatcher idempotent (claim `pending→dispatching`, reprises, backoff, `recoverStaleClaims`, `reconcileApprovals`) ; **at-least-once assumé**, exactly-once non revendiqué.
@@ -106,7 +108,7 @@ Règle d'or : une dépendance va **vers l'intérieur** (API → Application → 
 | `pwsh -NoProfile -File scripts/check-architecture-boundaries.ps1` | après tout import/touche domain ou application | **VÉRIFIÉ PASS** (à rejouer) |
 | `pnpm exec vitest run tests/domain` | après tout changement de domaine | **VÉRIFIÉ PASS** (82/82, à rejouer) |
 | `pnpm typecheck` | après tout changement TS | **VÉRIFIÉ PASS** (à rejouer) |
-| `pwsh -NoProfile -File scripts/check-migrations.ps1` | après toute migration | **VÉRIFIÉ PASS** (12, à rejouer) |
+| `pwsh -NoProfile -File scripts/check-migrations.ps1` | après toute migration | **VÉRIFIÉ PASS** le 2026-11-04 (12) ; au 2026-11-20 : 34 migrations (à rejouer en P12) |
 | `pnpm exec prisma validate --schema packages/db/prisma/schema.prisma` | après édition du schéma | **VÉRIFIÉ PASS** (à rejouer) |
 | `pnpm exec vitest run tests/v1 tests/api.test.ts` | route/use case/adaptateur | à rejouer (PostgreSQL 55432 test + `SESSION_SECRET` ≥ 32 ; `prisma migrate deploy` d'abord) |
 | `$env:LINT_STRICT='1'; pnpm lint` (PowerShell) / `LINT_STRICT=1 pnpm lint` (bash CI) ; `pnpm build` | avant de déclarer un lot livrable | documentés PASS le 2026-11-04, non rejoués ici |
@@ -117,7 +119,7 @@ Règle d'or : une dépendance va **vers l'intérieur** (API → Application → 
 
 ## Décisions structurantes et documents
 
-- Toute décision structurante ⇒ **nouvel ADR** `docs/adr/NNNN-slug.md` depuis `docs/adr/template.md` (statut, date ISO, sources PRD/CDC, décision vérifiable, conséquences, alternatives) + ligne dans l'index `docs/adr/README.md`. Prochain numéro libre : 0016 (0014/0015 existent mais manquent à l'index : écart documentaire connu, à traiter par un lot doc dédié, pas en silence).
+- Toute décision structurante ⇒ **nouvel ADR** `docs/adr/NNNN-slug.md` depuis `docs/adr/template.md` (statut, date ISO, sources PRD/CDC, décision vérifiable, conséquences, alternatives) + ligne dans l'index `docs/adr/README.md`. **Prochain numéro libre : 0035.** L'index est partiellement en retard (tableau jusqu'à 0026/0027, entrées 0028/0033/0034 hors tableau) : vérifier le dossier `docs/adr/` et compléter l'index dans un lot doc dédié, pas en silence.
 - **Ne jamais modifier un ADR accepté** : en créer un qui le remplace et le référence.
 - **Ne jamais modifier les documents importés VERBATIM** (empreintes `docs/source/SHA256SUMS.txt`) : PRD, CDC, `03_ARCHITECTURE_V1.md`, `11_BACKLOG.md`, prompt DSH, note V2 et les 3 `.docx`. Une évolution = nouveau document daté, ADR ou révision explicite.
 - En cas de contradiction documentaire : **arrêter et signaler** (AGENTS.md §1), ne pas arbitrer silencieusement.
@@ -128,8 +130,8 @@ Règle d'or : une dépendance va **vers l'intérieur** (API → Application → 
 - Contourner un port par un import direct d'adaptateur ou de `@prisma/client` depuis un use case : frontière violée même si le code « marche ».
 - `tests/domain/purity.test.ts` est un **miroir plus strict** du script (horloge, aléa, env, fs, réseau) : faire passer l'un ne garantit pas l'autre ; lancer les deux.
 - Le script analyse les imports par regex ligne à ligne et ignore les commentaires simples : un import glissé dans un bloc exotique ou une ligne commentée en fin de ligne peut tromper la lecture — relire le diff.
-- **`CapabilityResult` impose `mock: true`** (`packages/application/src/ports.ts:723`, P1 documenté dans `V1_CAPABILITIES_MATRIX.md`) : ne pas élargir ce contrat pour un provider réel sans décision explicite (ADR, contrat, tests, budget, provenance) ; la valeur `mock` est aussi écrite dans les métadonnées d'audit et les tests.
-- Migrations : jamais destructives, jamais éditées après application ; `check-migrations.ps1` ne valide pas la sémantique SQL ; minimum 12 ne peut que croître.
+- **`CapabilityResult` impose `mock: true`** (`packages/application/src/ports.ts:814`) : c'est le registre de capacités **historique**. Les fournisseurs réels F02/F03 passent par des ports dédiés (`LlmProvider`, `MediaProvider`) et le ToolBroker. Ne pas élargir `CapabilityResult` sans décision explicite (ADR, contrat, budget, provenance) ; la valeur `mock` est aussi écrite dans les métadonnées d'audit et les tests.
+- Migrations : jamais destructives, jamais éditées après application ; `check-migrations.ps1` ne valide pas la sémantique SQL ; le nombre (34 au 2026-11-20) ne peut que croître.
 - Ne jamais modifier rétroactivement un snapshot ni un `artifactVersion` ; ne jamais changer un identifiant stable (`sceneKey`/`charKey`/`project.id`).
 - `API_PORT` est la variable lue par `apps/api/src/env.ts` (défaut 3001) ; `V1_API_PORT` est documentée mais **non lue** — ne pas « corriger » cette convention sans décision.
 - Les tests de contrat existants font partie du socle : ne pas casser les suites API/V1 en changeant un statut HTTP, un code d'erreur, un champ de réponse ou un schéma Zod.

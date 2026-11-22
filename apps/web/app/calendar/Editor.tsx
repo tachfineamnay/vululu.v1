@@ -8,6 +8,11 @@ import type { Offer } from './suggestions';
 import { useUnsavedChanges } from '../../lib/useUnsavedChanges';
 import { instants, localInput } from './dates';
 
+const hashtagPattern = /^#[a-z0-9_]{2,49}$/i;
+const maxHashtags = 10;
+const hashtagHint =
+  'Format : # suivi de 2 à 49 lettres, chiffres ou tirets bas (ex. #atelier). Maximum 10, sans doublon. Ils rejoignent la légende publiée et le kit manuel.';
+
 export const labels: Record<Stage, string> = {
   IDEA: 'Idée',
   DRAFT: 'Brouillon',
@@ -39,6 +44,8 @@ export function Editor({
   const [late, setLate] = useState(instants(local)[1]?.toISOString() === initial.plannedAt);
   const [busy, working] = useState(false),
     [error, fail] = useState('');
+  const [tagDraft, setTagDraft] = useState<Record<number, string>>({}),
+    [tagError, setTagError] = useState<Record<number, string>>({});
   const [history, setHistory] = useState<{ version: number; snapshot: CalendarItem; createdAt: string }[] | null>(
     null
   );
@@ -57,6 +64,42 @@ export function Editor({
   const retry = useRef({ body: '', key: '' });
   function patch<K extends keyof Content>(k: K, v: Content[K]) {
     set((d) => ({ ...d, [k]: v }));
+  }
+  function tagMessage(index: number, message: string) {
+    setTagError((current) => ({ ...current, [index]: message }));
+  }
+  function addHashtag(index: number) {
+    const raw = (tagDraft[index] ?? '').trim();
+    if (!raw) return;
+    const tag = raw.startsWith('#') ? raw : '#' + raw;
+    const tags = draft.variants[index]?.hashtags ?? [];
+    if (!hashtagPattern.test(tag)) {
+      tagMessage(index, 'Hashtag invalide. Utilisez # suivi de 2 à 49 lettres, chiffres ou tirets bas (ex. #atelier).');
+      return;
+    }
+    if (tags.length >= maxHashtags) {
+      tagMessage(index, 'Maximum ' + maxHashtags + ' hashtags pour cette déclinaison.');
+      return;
+    }
+    if (tags.some((existing) => existing.toLowerCase() === tag.toLowerCase())) {
+      tagMessage(index, 'Ce hashtag est déjà présent.');
+      return;
+    }
+    patch(
+      'variants',
+      draft.variants.map((current, j) => (j === index ? { ...current, hashtags: [...tags, tag] } : current))
+    );
+    setTagDraft((current) => ({ ...current, [index]: '' }));
+    tagMessage(index, '');
+  }
+  function removeHashtag(index: number, tag: string) {
+    patch(
+      'variants',
+      draft.variants.map((current, j) =>
+        j === index ? { ...current, hashtags: (current.hashtags ?? []).filter((t) => t !== tag) } : current
+      )
+    );
+    tagMessage(index, '');
   }
   const available = instants(local),
     context = offers.find((o) => o.id === draft.offerId)?.contextId;
@@ -79,12 +122,26 @@ export function Editor({
       fail('Heure locale inexistante. Choisissez une autre heure.');
       return;
     }
+    const invalid = draft.variants.flatMap((v) => (v.hashtags ?? []).filter((tag) => !hashtagPattern.test(tag)));
+    const duplicates = draft.variants.find((v) => {
+      const tags = (v.hashtags ?? []).map((tag) => tag.toLowerCase());
+      return new Set(tags).size !== tags.length;
+    });
+    if (invalid.length || duplicates) {
+      fail(
+        duplicates
+          ? 'Hashtags en double dans la déclinaison ' + duplicates.platform + '. Retirez le doublon avant d’enregistrer.'
+          : 'Hashtags invalides : ' + invalid.join(', ') + '. Utilisez # suivi de 2 à 49 lettres, chiffres ou tirets bas.'
+      );
+      return;
+    }
     working(true);
     fail('');
     try {
       const { id, version, ...fields } = draft;
       const data = {
         ...fields,
+        variants: draft.variants.map((v) => ({ ...v, hashtags: v.hashtags ?? [] })),
         plannedAt: instant.toISOString(),
         timeZone:
           instant.toISOString() === initial.plannedAt
@@ -254,6 +311,71 @@ export function Editor({
                     onChange={(e) => update({ cta: e.target.value })}
                   />
                 </label>
+                <div className="cal-hashtags-editor" role="group" aria-labelledby={`hashtag-title-${i}`}>
+                  <p className="label" id={`hashtag-title-${i}`}>
+                    Hashtags (facultatif)
+                  </p>
+                  <p className="hint" id={`hashtag-hint-${i}`}>
+                    {hashtagHint}
+                  </p>
+                  {(v.hashtags ?? []).length ? (
+                    <ul className="cal-hashtags" aria-label={'Hashtags de ' + v.platform}>
+                      {(v.hashtags ?? []).map((tag) => (
+                        <li key={tag}>
+                          <span>{tag}</span>
+                          <button
+                            type="button"
+                            className="text-link"
+                            aria-label={'Retirer le hashtag ' + tag + ' de ' + v.platform}
+                            onClick={() => removeHashtag(i, tag)}
+                          >
+                            Retirer
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="hint">Aucun hashtag pour cette déclinaison.</p>
+                  )}
+                  <div className="cal-hashtag-add">
+                    <label htmlFor={'hashtag-input-' + i}>Ajouter un hashtag</label>
+                    <input
+                      id={'hashtag-input-' + i}
+                      className="input"
+                      value={tagDraft[i] ?? ''}
+                      maxLength={50}
+                      placeholder="#atelier"
+                      aria-describedby={'hashtag-hint-' + i}
+                      aria-invalid={tagError[i] ? true : undefined}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          addHashtag(i);
+                        }
+                      }}
+                      onChange={(event) => {
+                        setTagDraft((current) => ({ ...current, [i]: event.target.value }));
+                        tagMessage(i, '');
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      disabled={(v.hashtags ?? []).length >= maxHashtags}
+                      onClick={() => addHashtag(i)}
+                    >
+                      Ajouter
+                    </button>
+                  </div>
+                  {tagError[i] && (
+                    <p className="hint cal-error" role="alert">
+                      {tagError[i]}
+                    </p>
+                  )}
+                  <p className="hint">
+                    {(v.hashtags ?? []).length} / {maxHashtags} hashtags
+                  </p>
+                </div>
                 {draft.variants.length > 1 && (
                   <button
                     type="button"
@@ -281,7 +403,8 @@ export function Editor({
                   {
                     ...draft.variants[0],
                     ...(() => { const platform = variant.shape.platform.options.find((p) => !draft.variants.some((v) => v.platform === p))!;
-                      return { platform, format: availableFormats[platform][0] }; })()
+                      return { platform, format: availableFormats[platform][0] }; })(),
+                    hashtags: []
                   }
                 ])
               }

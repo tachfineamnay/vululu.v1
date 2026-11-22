@@ -23,7 +23,9 @@ whenToUse: Avant de lancer une session de développement locale, rejouer le parc
 - **E2E complet sans base migrée/seedée**, sans FFmpeg, ou avec un filtre/tests à inventer : rejouer ou déclarer NOT_RUN.
 - Laisser des services allumés « au cas où » : la pile se démarre puis s'arrête explicitement.
 
-## État vérifié (2026-11-04, HEAD `bb0bc3a`)
+## État vérifié — HISTORIQUE (2026-11-04, HEAD `bb0bc3a`)
+
+> **État courant au 2026-11-20 (HEAD `f5d515b`)** : 34 migrations (dont `20261121090000_durable_studio_render`), 66 modèles Prisma, bêta gratuite active par défaut (`VULULU_BETA_MODE` absent ⇒ `1`), fournisseurs IA/média/Postiz/Stripe présents derrière flags mais **non activés**. Au démarrage, l'API appelle `freezeCommercialForBeta()` : en bêta, une base **migrée et joignable** est nécessaire au boot (voir piège 13). Les commandes et ports du corps restent valides.
 
 Collecte read-only par l'auteur du skill (PowerShell 7, racine du dépôt). `VÉRIFIÉ` = commande réellement exécutée le 2026-11-04 ; `DOCUMENTÉ` = seulement lu dans un runbook/rapport ; `NOT_RUN` = non exécuté.
 
@@ -78,6 +80,12 @@ L'API charge le `.env` de la racine (`apps/api/src/env.ts`, `dotenv`, `override:
 | `ALLOW_NON_LOCAL_DATABASE` | Exception opt-in réservée à `APP_ENV=production` ; ne jamais l'activer en local. |
 | `ORCHESTRATOR_MODE` | `local` (défaut, exécution en process, **non durable**) ou `hatchet`. |
 | `ARTIFACT_STORAGE_BACKEND` | `local` (défaut) ou `s3`. |
+| `VULULU_BETA_MODE` | `1`/absent = bêta gratuite (commerce gelé, aucun paiement) ; `0` = mode commercial (paiements encore gelés par `BillingControl.enabled=false` tant qu'aucune activation explicite n'a eu lieu). |
+| `MEDIA_GENERATION_ENABLED` / `MEDIA_IMAGE_ENABLED` / `MEDIA_VIDEO_ENABLED` | Génération image (Replicate) / vidéo (Runway) ; désactivée par défaut. |
+| `REPLICATE_API_TOKEN` / `RUNWAYML_API_SECRET` | Secrets fournisseur média, côté worker uniquement ; placeholders dans `.env.example`. |
+| `ASSISTANT_VERTEX_ENABLED` + `ASSISTANT_VERTEX_*` | Assistant Vertex ; sans flag valide, repli local déterministe. Inférence réelle `NOT_VERIFIED`. |
+| `POSTIZ_PUBLISH_ENABLED` / `PUBLISHING_ENCRYPTION_KEY` | Publication Postiz réelle ; désactivée par défaut. |
+| `BILLING_STRIPE_MODE` + `STRIPE_*` | Facturation Stripe test/live ; gelée par la bêta gratuite. |
 
 **Hygiène** : ne jamais afficher `.env` (`Get-Content .env`) ni un token. Pour contrôler, n'imprimer que présence/longueur (`$v.Length`) ou le nom de la base parsée depuis `DATABASE_URL`.
 
@@ -134,6 +142,7 @@ Get-NetTCPConnection -State Listen -LocalPort 3100,3101,55432,9443 -ErrorAction 
 10. **Base de test** : tests API/V1 forcent `V0_TEST_DB=1` + `vululu_v1_00_test` et y appliquent les migrations ; ne pas les faire écrire dans `vululu_v1_00` (base de démonstration du poste de référence).
 11. **Docker/WSL** : démon Docker arrêté, `docker-desktop` stoppé, disque historiquement read-only ; ne pas réparer/formater le disque WSL sans accord (risque pour les autres projets).
 12. **Secrets** : jamais de `Get-Content .env`, jamais de token/handshake à l'écran, jamais `.env` commité (gitignoré).
+13. **Bêta gratuite et boot** : au démarrage, `freezeCommercialForBeta()` remet `BillingControl.enabled=false` et **échoue si la base est indisponible ou non migrée** (mieux vaut une instance arrêtée qu'une bêta mal gelée). Lancer PostgreSQL + migrations avant l'API. `GET /api/health` expose aussi `beta`.
 
 ## Checklist finale
 

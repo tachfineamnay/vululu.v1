@@ -188,7 +188,7 @@ export async function generateClaim(
   job: { id: string; accountId: string; projectId: string; revision: number; maxCents: number },
   signal: AbortSignal,
   provider: LlmProvider = offline
-) {
+): Promise<{ costCents: number; costBasis: 'configured_estimate' }> {
   const op = await prisma.executionOperation.findFirst({
     where: {
       id: job.id,
@@ -219,7 +219,8 @@ export async function generateClaim(
     });
   });
   if (d.costCents === null) throw Error('marketing_cost_unknown');
-  return { costCents: d.costCents };
+  // Jetons annoncés par le fournisseur × tarif configuré : estimation, jamais une facture.
+  return { costCents: d.costCents, costBasis: 'configured_estimate' };
 }
 export async function approveDraft(
   user: string,
