@@ -315,7 +315,6 @@ export function StudioAudioPanel({ spec, media, busy, operations, onSpec, onNoti
   const pending = jobs.some((job) => ACTIVE_STATES.has(job.state));
   const analyzeActive = analyzeOperation ? ACTIVE_STATES.has(analyzeOperation.state) : false;
 
-  const trackVersionIds = new Set(tracks.map((track) => track.versionId));
   const asrOptions: { value: string; label: string; source: StudioSource | undefined }[] = [];
   const seenAsrValues = new Set<string>();
   tracks.forEach((track, index) => {
@@ -533,7 +532,7 @@ export function StudioAudioPanel({ spec, media, busy, operations, onSpec, onNoti
     if (!ready || !job.result?.assetVersionId) return;
     void run(async () => {
       setError('');
-      let next: StudioRevision | null = null;
+      let next: StudioRevision;
       try {
         next = await postJson<StudioRevision>(
           '/api/projects/' + encodeURIComponent(project) + '/audio/jobs/' + encodeURIComponent(job.id) + '/apply',
@@ -547,7 +546,6 @@ export function StudioAudioPanel({ spec, media, busy, operations, onSpec, onNoti
         setError(errorLabel(failure));
         return;
       }
-      if (!next) return;
       try {
         await onApplied(next);
       } catch (failure) {
@@ -563,7 +561,7 @@ export function StudioAudioPanel({ spec, media, busy, operations, onSpec, onNoti
     if (!ready) return;
     void run(async () => {
       setError('');
-      let next: StudioRevision | null = null;
+      let next: StudioRevision;
       try {
         next = await postJson<StudioRevision>(
           '/api/projects/' + encodeURIComponent(project) + '/audio/jobs/' + encodeURIComponent(job.id) + '/apply',
@@ -573,7 +571,6 @@ export function StudioAudioPanel({ spec, media, busy, operations, onSpec, onNoti
         setError(errorLabel(failure));
         return;
       }
-      if (!next) return;
       try {
         await onApplied(next);
       } catch (failure) {

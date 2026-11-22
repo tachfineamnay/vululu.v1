@@ -71,6 +71,7 @@ export function StudioCanvas({
     if (!listeners) return;
     window.removeEventListener('pointermove', listeners.move);
     window.removeEventListener('pointerup', listeners.up);
+    window.removeEventListener('pointercancel', listeners.up);
     endListeners.current = null;
   }, []);
   useEffect(() => detach, [detach]);
@@ -114,6 +115,7 @@ export function StudioCanvas({
     endListeners.current = { move, up };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
   }
 
   function beginResize(event: PointerEvent<HTMLDivElement>, handle: StudioResizeHandle, index: number) {
@@ -141,6 +143,7 @@ export function StudioCanvas({
     endListeners.current = { move, up };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
   }
 
   function keydown(event: KeyboardEvent<HTMLDivElement>) {
@@ -207,6 +210,11 @@ export function StudioCanvas({
           style={{ aspectRatio: spec.width + ' / ' + spec.height, ...(zoom === 'fit' ? { width: '100%' } : { width: Math.round(spec.width * zoom), maxWidth: '100%' }) }}
           tabIndex={0}
           role="application"
+          onPointerDown={(event) => {
+            const target = event.target as HTMLElement;
+            if (busy || target.closest('.studio-layer-box, .studio-resize-handle')) return;
+            onSelect(-1, false);
+          }}
           aria-label="Sélection et déplacement des calques. Flèches pour ajuster, Maj+flèches pour un pas large, Suppr pour retirer, Échap pour désélectionner."
           onKeyDown={keydown}
         >
