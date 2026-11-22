@@ -10,6 +10,7 @@ import {
 } from '@vululu/contracts';
 import { api, apiResponse, postJson } from '../lib/api';
 import type { StudioAudioPanelProps } from '../lib/studioComponentTypes';
+import { maxTrackStart } from '../lib/studioAudio';
 import type {
   StudioAudioCapabilities,
   StudioAudioCapability,
@@ -159,6 +160,9 @@ function drawWaveform(canvas: HTMLCanvasElement, buffer: AudioBuffer) {
   context.stroke();
 }
 
+/** Au-delà de cette taille, le décodage complet bloquerait l'onglet : métadonnées seules. */
+const MAX_WAVEFORM_BYTES = 12 * 1024 * 1024;
+
 /** Forme d'onde réelle uniquement : contenu décodé par AudioContext, sinon métadonnées seules. */
 function TrackWaveform({ source }: { source: StudioSource | undefined }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -170,6 +174,15 @@ function TrackWaveform({ source }: { source: StudioSource | undefined }) {
     const versionId = source?.id;
     if (!assetId || !versionId) {
       setState('unavailable');
+      return;
+    }
+    if ((source?.sizeBytes ?? 0) > MAX_WAVEFORM_BYTES) {
+      setState('error');
+      setMessage(
+        'Fichier trop volumineux pour une forme d’onde dans le navigateur (' +
+          Math.round((source?.sizeBytes ?? 0) / (1024 * 1024)) +
+          ' Mio) : métadonnées réelles uniquement, le rendu serveur reste inchangé.'
+      );
       return;
     }
     let cancelled = false;
@@ -302,7 +315,6 @@ export function StudioAudioPanel({ spec, media, busy, operations, onSpec, onNoti
   const pending = jobs.some((job) => ACTIVE_STATES.has(job.state));
   const analyzeActive = analyzeOperation ? ACTIVE_STATES.has(analyzeOperation.state) : false;
 
-  const trackVersionIds = new Set(tracks.map((track) => track.versionId));
   const asrOptions: { value: string; label: string; source: StudioSource | undefined }[] = [];
   const seenAsrValues = new Set<string>();
   tracks.forEach((track, index) => {
@@ -428,10 +440,11 @@ export function StudioAudioPanel({ spec, media, busy, operations, onSpec, onNoti
     writeTracks(tracks.map((track) => (track.id === id ? { ...track, ...patch } : track)));
   }
 
+  /** Le début d'une piste doit rester dans la durée réelle de la vidéo (contrat serveur). */
   function changeStart(id: string, raw: string) {
     const track = tracks.find((item) => item.id === id);
     if (!track) return;
-    updateTrack(id, { start: clampNumber(raw, 0, MAX_START, 0.1) });
+    updateTrack(id, { start: clampNumber(raw, 0, Math.min(MAX_START, maxTrackStart(totalSeconds)), 0.1) });
   }
 
   function changeFade(id: string, key: 'fadeIn' | 'fadeOut', raw: string) {
@@ -519,13 +532,13 @@ export function StudioAudioPanel({ spec, media, busy, operations, onSpec, onNoti
     if (!ready || !job.result?.assetVersionId) return;
     void run(async () => {
       setError('');
-      let next: StudioRevision | null = null;
+      let next: StudioRevision;
       try {
         next = await postJson<StudioRevision>(
           '/api/projects/' + encodeURIComponent(project) + '/audio/jobs/' + encodeURIComponent(job.id) + '/apply',
           {
             expectedRevision: revision,
-            start: clampNumber(String(ttsStart), 0, MAX_START, 0.1),
+            start: clampNumber(String(ttsStart), 0, maxTrackStart(totalSeconds), 0.1),
             gain: clampNumber(String(ttsGain), 0, 1, 0.01)
           }
         );
@@ -533,7 +546,6 @@ export function StudioAudioPanel({ spec, media, busy, operations, onSpec, onNoti
         setError(errorLabel(failure));
         return;
       }
-      if (!next) return;
       try {
         await onApplied(next);
       } catch (failure) {
@@ -549,7 +561,7 @@ export function StudioAudioPanel({ spec, media, busy, operations, onSpec, onNoti
     if (!ready) return;
     void run(async () => {
       setError('');
-      let next: StudioRevision | null = null;
+      let next: StudioRevision;
       try {
         next = await postJson<StudioRevision>(
           '/api/projects/' + encodeURIComponent(project) + '/audio/jobs/' + encodeURIComponent(job.id) + '/apply',
@@ -559,7 +571,6 @@ export function StudioAudioPanel({ spec, media, busy, operations, onSpec, onNoti
         setError(errorLabel(failure));
         return;
       }
-      if (!next) return;
       try {
         await onApplied(next);
       } catch (failure) {
@@ -631,11 +642,11 @@ export function StudioAudioPanel({ spec, media, busy, operations, onSpec, onNoti
                   className="input"
                   type="number"
                   min={0}
-                  max={MAX_START}
+                  max={maxTrackStart(totalSeconds)}
                   step={0.1}
                   value={ttsStart}
                   disabled={busy}
-                  onChange={(event) => setTtsStart(clampNumber(event.target.value, 0, MAX_START, 0.1))}
+                  onChange={(event) => setTtsStart(clampNumber(event.target.value, 0, maxTrackStart(totalSeconds), 0.1))}
                 />
               </label>
               <label className="label">
@@ -809,7 +820,7 @@ export function StudioAudioPanel({ spec, media, busy, operations, onSpec, onNoti
                       className="input"
                       type="number"
                       min={0}
-                      max={MAX_START}
+                      max={maxTrackStart(totalSeconds)}
                       step={0.1}
                       value={track.start}
                       disabled={busy}

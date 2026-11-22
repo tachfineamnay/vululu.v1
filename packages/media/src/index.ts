@@ -124,10 +124,31 @@ export const STDIO_LIMIT_BYTES = 1024 * 1024;
 
 export type BoundedOutput = { text: string; truncated: boolean };
 
+const byteCounts = new WeakMap<BoundedOutput, number>();
+
+/**
+ * Cout amorti : sous la limite, on concatene des chaines (copie paresseuse V8)
+ * et on memorise le nombre d octets dans une WeakMap. Au depassement, on ne
+ * conserve que la derniere demi-fenetre, donc les Buffer.concat complets
+ * deviennent rares au lieu d arriver a chaque chunk (quadratique avant).
+ */
 export function appendBounded(current: BoundedOutput, chunk: Buffer | string, limit = STDIO_LIMIT_BYTES): BoundedOutput {
-  const combined = Buffer.concat([Buffer.from(current.text, 'utf8'), Buffer.from(chunk.toString(), 'utf8')]);
-  if (combined.length <= limit) return { text: combined.toString('utf8'), truncated: current.truncated };
-  return { text: combined.subarray(combined.length - limit).toString('utf8'), truncated: true };
+  const incoming = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+  const used = byteCounts.get(current) ?? Buffer.byteLength(current.text, 'utf8');
+  const size = Buffer.byteLength(incoming, 'utf8');
+  if (used + size <= limit) {
+    const next: BoundedOutput = { text: current.text + incoming, truncated: current.truncated };
+    byteCounts.set(next, used + size);
+    return next;
+  }
+  const keep = Math.max(1, Math.floor(limit / 2));
+  const combined = Buffer.from(current.text + incoming, 'utf8');
+  // Une coupe peut tomber au milieu d un caractere UTF-8 : la sortie reste un
+  // journal de diagnostic, on prefere des octets de remplacement a une erreur.
+  const tail = combined.subarray(Math.max(0, combined.length - keep));
+  const next: BoundedOutput = { text: tail.toString('utf8'), truncated: true };
+  byteCounts.set(next, tail.length);
+  return next;
 }
 
 function collect(child: ReturnType<typeof spawn>): {
@@ -185,6 +206,12 @@ async function probe(file: string): Promise<{ duration: number; videoCodec: stri
   const text = result.stdout + String.fromCharCode(10) + result.stderr;
   const lines = text.split(String.fromCharCode(10));
   const durationMatch = text.match(/Duration: ([0-9]+):([0-9]+):([0-9]+)[.]([0-9]+)/);
+  // `ffmpeg -i` sort volontairement en erreur sans fichier de sortie : on ne
+  // peut donc pas exiger le code 0. En revanche, sans duree ni flux video
+  // lisibles, la sonde doit echouer au lieu de produire un master 0x0 / 0 s.
+  if (!durationMatch && !lines.some((line) => line.includes('Video:'))) {
+    throw new Error('Sonde media invalide pour ' + file + ' : ' + (text.trim().slice(0, 500) || 'aucune metadonnee'));
+  }
   let duration = 0;
   if (durationMatch) {
     duration = Number(durationMatch[1]) * 3600 + Number(durationMatch[2]) * 60 + Number(durationMatch[3]) + Number('0.' + durationMatch[4]);

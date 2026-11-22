@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { CreativeSpec } from '@vululu/contracts';
 import { api, apiResponse, postJson } from '../lib/api';
 import { useWorkspace } from './WorkspacePreferences';
+import { previewSpecForScene } from '../lib/studioPreview';
 
 type Origin = 'generated' | 'refined' | 'alternative' | 'combined' | string;
 type Decision = 'retained' | 'rejected';
@@ -124,7 +125,8 @@ export default function ArtDirections({ projectId, onDirections, onSelected }: {
   async function preview(direction: Direction) {
     if (previews[direction.version]) return;
     await act('preview-' + direction.version, async () => {
-      const single = { ...direction.spec, scenes: [direction.spec.scenes[0]] };
+      // L'audio d'une direction vidéo n'est pas dessiné par l'aperçu d'une scène isolée.
+      const single = previewSpecForScene(direction.spec, direction.spec.scenes[0]);
       const response = await apiResponse(base + '/preview', { method: 'POST', body: JSON.stringify(single) });
       const url = URL.createObjectURL(await response.blob());
       previewUrls.current[direction.version] = url;

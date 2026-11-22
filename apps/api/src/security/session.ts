@@ -199,7 +199,9 @@ export function setAuthCookies(reply: FastifyReply, token: string, csrfToken: st
 
 /** Expires both auth cookies. */
 export function clearAuthCookies(reply: FastifyReply): void {
-  const secure = isProduction();
+  // Doit suivre EXACTEMENT la politique de setAuthCookies : un cookie pose
+  // `Secure` ne peut etre efface que par un Set-Cookie `Secure` identique.
+  const secure = cookieSecure();
   const sameSite = cookieSameSite();
   reply.clearCookie(SESSION_COOKIE, { path: '/', httpOnly: true, sameSite, secure });
   reply.clearCookie(CSRF_COOKIE, { path: '/', httpOnly: false, sameSite, secure });

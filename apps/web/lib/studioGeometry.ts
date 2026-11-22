@@ -13,9 +13,21 @@ export function layerMargin(layer: StudioLayerSpec, safeArea: number) {
 
 export function clampLayer(layer: StudioLayerSpec, safeArea: number): StudioLayerSpec {
   const m = layerMargin(layer, safeArea);
-  const w = clamp(roundBox(layer.w), MIN_LAYER_SIZE, 1 - 2 * m);
-  const h = clamp(roundBox(layer.h), MIN_LAYER_SIZE, 1 - 2 * m);
-  return { ...layer, w, h, x: clamp(roundBox(layer.x), m, 1 - m - w), y: clamp(roundBox(layer.y), m, 1 - m - h) };
+  // `1 - 2 * m` et `1 - m - w` ne sont pas exactement sur la grille au millième : borner aussi
+  // le maximum par la marge évite un x = 0,049999… qui sortirait de la zone sûre du contrat
+  // (le contrat compare `x < safeArea` sans tolérance) et invaliderait toute la composition.
+  const maxSize = Math.max(MIN_LAYER_SIZE, roundBox(1 - 2 * m));
+  const w = clamp(roundBox(layer.w), MIN_LAYER_SIZE, maxSize);
+  const h = clamp(roundBox(layer.h), MIN_LAYER_SIZE, maxSize);
+  const maxX = Math.max(m, roundBox(1 - m - w));
+  const maxY = Math.max(m, roundBox(1 - m - h));
+  return {
+    ...layer,
+    w,
+    h,
+    x: roundBox(clamp(roundBox(layer.x), m, maxX)),
+    y: roundBox(clamp(roundBox(layer.y), m, maxY))
+  };
 }
 
 export function selectionBounds(layers: StudioLayerSpec[], selected: number[]): StudioBox | null {
@@ -137,4 +149,69 @@ export function isImageLayer(layer: StudioLayerSpec): layer is Extract<StudioLay
 
 export function specWithLayers(spec: CreativeSpec, sceneIndex: number, layers: StudioLayerSpec[]): CreativeSpec {
   return { ...spec, scenes: spec.scenes.map((scene, index) => (index === sceneIndex ? { ...scene, layers } : scene)) };
+}
+
+/**
+ * Ordre de peinture : le contrat (« array order is paint order ») et le compositeur serveur
+ * (sharp compose les calques dans l'ordre) peignent le DERNIER indice au-dessus. Les contrôles
+ * de pile parlent donc en indices de tableau : +1 = monter d'un niveau visuel.
+ */
+export function moveLayerOrder(
+  layers: StudioLayerSpec[],
+  index: number,
+  delta: number
+): { layers: StudioLayerSpec[]; index: number } {
+  const target = index + delta;
+  if (!layers[index] || target < 0 || target >= layers.length || delta === 0) {
+    return { layers, index };
+  }
+  const next = [...layers];
+  const moved = next[index];
+  next[index] = next[target];
+  next[target] = moved;
+  return { layers: next, index: target };
+}
+
+export type TextRole = Extract<StudioLayerSpec, { type: 'text' }>['role'];
+
+const TEXT_PRESETS: Record<TextRole, { text: string; y: number; h: number; size: number; bold: boolean }> = {
+  headline: { text: 'Nouveau titre', y: 0.55, h: 0.14, size: 52, bold: true },
+  body: { text: 'Nouveau texte', y: 0.7, h: 0.11, size: 28, bold: false },
+  cta: { text: 'Nous contacter', y: 0.82, h: 0.12, size: 32, bold: true }
+};
+
+/**
+ * Nouveau calque texte placé dans la zone sûre. Le texte proposé est éditable immédiatement ;
+ * aucun contenu de marque n'est inventé au-delà de ce libellé neutre.
+ */
+export function createTextLayer(role: TextRole, safeArea: number): StudioLayerSpec {
+  const preset = TEXT_PRESETS[role];
+  const m = clamp(safeArea, 0, 0.2);
+  const layer: StudioLayerSpec = {
+    type: 'text',
+    role,
+    text: preset.text,
+    x: roundBox(m),
+    y: roundBox(m),
+    w: roundBox(1 - 2 * m),
+    h: roundBox(preset.h),
+    size: preset.size,
+    bold: preset.bold,
+    color: '#ffffff',
+    opacity: 1
+  };
+  return clampLayer({ ...layer, y: preset.y }, m);
+}
+
+/**
+ * Marge sûre appliquée à toute la composition : chaque calque texte est ramené dans la
+ * nouvelle zone sûre (le contrat refuse un texte hors marge, sans tolérance).
+ */
+export function withSafeArea(spec: CreativeSpec, value: number): CreativeSpec {
+  const safeArea = clamp(Math.round(clamp(value, 0, 0.2) * 100) / 100, 0, 0.2);
+  return {
+    ...spec,
+    safeArea,
+    scenes: spec.scenes.map((scene) => ({ ...scene, layers: scene.layers.map((layer) => clampLayer(layer, safeArea)) }))
+  };
 }

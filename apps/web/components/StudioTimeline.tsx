@@ -2,6 +2,7 @@
 import { useState, type DragEvent } from 'react';
 import { isVideoOutput, type CreativeSpec } from '@vululu/contracts';
 import type { StudioTimelineProps } from '../lib/studioComponentTypes';
+import { describeAudioTrim, withSceneDuration, withoutScene } from '../lib/studioAudio';
 
 const MIN_SECONDS = 0.5;
 const MAX_SECONDS = 30;
@@ -60,10 +61,12 @@ export function StudioTimeline({ spec, sceneIndex, busy, sources, onSpec, onSele
     if (!scene || !Number.isFinite(value)) return;
     const seconds = roundSeconds(value);
     if (seconds === scene.seconds) return;
-    onSpec({
-      ...spec,
-      scenes: spec.scenes.map((item, position) => (position === index ? { ...item, seconds } : item))
-    });
+    // Une durée plus courte peut laisser des pistes ou des sous-titres au-delà de la fin :
+    // on les ramène dans la durée et on annonce l'ajustement (aucune suppression silencieuse).
+    const trim = withSceneDuration(spec, index, seconds);
+    onSpec(trim.spec);
+    const message = describeAudioTrim(trim);
+    if (message) onNotice(message);
   }
 
   function addScene() {
@@ -89,9 +92,13 @@ export function StudioTimeline({ spec, sceneIndex, busy, sources, onSpec, onSele
   function removeScene() {
     if (!current || spec.scenes.length < 2) return;
     const scenes = spec.scenes.filter((_, position) => position !== sceneIndex);
-    onSpec({ ...spec, scenes });
+    const trim = withoutScene(spec, sceneIndex);
+    onSpec(trim.spec);
     onSelect(Math.min(sceneIndex, scenes.length - 1));
-    onNotice('Scène ' + current.key + ' retirée de la composition courante.');
+    const message = describeAudioTrim(trim);
+    onNotice(
+      'Scène ' + current.key + ' retirée de la composition courante.' + (message ? ' ' + message : '')
+    );
   }
 
   function dragStart(event: DragEvent<HTMLSpanElement>, index: number) {

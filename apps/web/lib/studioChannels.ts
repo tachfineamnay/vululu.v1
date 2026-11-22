@@ -62,8 +62,14 @@ export function applyChannelPreset(spec: CreativeSpec, preset: ChannelPreset): C
   }
   const keepVideo = isVideoOutput(preset.kind);
   let clamped = 0;
+  // Le contrat refuse pistes audio et sous-titres hors vidéo : une sortie image les retire,
+  // sinon la composition devient invalide (aperçu et enregistrement refusés).
+  const { audio: _droppedAudio, ...stillSpec } = spec;
+  void _droppedAudio;
+  const base = keepVideo ? spec : stillSpec;
+  const droppedAudio = !keepVideo && (!!spec.audio?.tracks.length || !!spec.audio?.subtitles?.cues.length);
   const next: CreativeSpec = {
-    ...spec,
+    ...base,
     width,
     height,
     safeArea: preset.safeArea,
@@ -87,6 +93,8 @@ export function applyChannelPreset(spec: CreativeSpec, preset: ChannelPreset): C
   };
   if (!keepVideo && (spec.delivery?.audio || spec.scenes.some((scene) => scene.clip)))
     notes.push('Clip et piste audio retirés : ils concernent uniquement les sorties vidéo.');
+  if (droppedAudio)
+    notes.push('Pistes et sous-titres de la composition retirés : ce canal ne produit pas de vidéo.');
   if (clamped) notes.push(clamped + ' calque(s) de texte replacé(s) dans la nouvelle marge sûre.');
   return { spec: next, preset, note: notes.join(' ') };
 }

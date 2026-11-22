@@ -8,15 +8,24 @@ import {
   cancelMedia,
   placeMedia
 } from '../infrastructure/mediaGeneration/service';
-import { rateLimitPreHandler } from '../infrastructure/security/rateLimiter';
+import { rateLimitPreHandler, type RateLimitPolicy } from '../infrastructure/security/rateLimiter';
+
+/**
+ * Fenetre en SECONDES (comme toutes les autres politiques) : 60000 donnait une
+ * fenetre de 16 h 40 et un `Retry-After` de 60000 s.
+ */
+export const mediaGenerationPolicy: RateLimitPolicy = {
+  name: 'media-generation',
+  limit: 60,
+  windowSeconds: 60,
+  failClosed: true
+};
+
 export async function mediaGenerationRoutes(app: FastifyInstance) {
   const auth = {
       preHandler: [
         app.authenticate,
-        rateLimitPreHandler(
-          { name: 'media-generation', limit: 60, windowSeconds: 60000, failClosed: true },
-          (r) => 'media:' + r.currentUser!.id
-        )
+        rateLimitPreHandler(mediaGenerationPolicy, (r) => 'media:' + r.currentUser!.id)
       ]
     },
     base = '/api/projects/:project/media-generation',

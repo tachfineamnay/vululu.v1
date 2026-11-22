@@ -3,7 +3,7 @@ import { prisma } from '@vululu/db';
 import { COMPOSITION_VERSION } from '@vululu/media';
 import { readSceneTextLayout } from '../prisma/mappers';
 import { contentChecksum, normalizeProductionSettings, type ProductionSettings, type Platform, type ProjectFormat } from '@vululu/domain';
-import { ApplicationError, productionSourceChecksum } from '@vululu/application';
+import { ApplicationError, productionSourceChecksum, qaPassedOrThrow } from '@vululu/application';
 import type {
   ExecutionProject,
   ExecutionScene,
@@ -135,6 +135,9 @@ export class PrismaProductionExecutionStore implements ProductionExecutionStore 
   }
 
   async finalizeRun(input: ProductionFinalization): Promise<void> {
+    // Defense en profondeur : un master dont la QA n est pas PASS ne cree jamais
+    // de version d artefact ni ne fait passer le projet en review.
+    qaPassedOrThrow(input.qa);
     try {
       await this.db.$transaction(async (tx) => {
         const project = await tx.project.findUnique({
