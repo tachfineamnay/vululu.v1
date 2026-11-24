@@ -114,6 +114,7 @@ export type StudioDeliveryProps = {
   onRestore: (version: number) => void | Promise<void>;
   onView: (version: number) => void | Promise<void>;
   onCancel?: () => void | Promise<void>;
+  onRefreshRender?: () => void;
   onNotice: (message: string) => void;
 };
 

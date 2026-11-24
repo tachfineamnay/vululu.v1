@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 import type { PrismaClient } from '@prisma/client';
 import { prisma } from '@vululu/db';
-import { contentChecksum, assertAssetUsage, normalizeProductionSettings, profileDimensions, type ProductionSettings, type Platform, type ProjectFormat, type AssetLicense, type PublicationUsage } from '@vululu/domain';
+import { contentChecksum, assertAssetUsage, assertJobRunTransition, normalizeProductionSettings, profileDimensions, type ProductionSettings, type Platform, type ProjectFormat, type AssetLicense, type PublicationUsage } from '@vululu/domain';
 import { ApplicationError, productionSourceChecksum, createProductionPlan } from '@vululu/application';
 import type {
   JobRunRecord,
@@ -131,10 +131,14 @@ export class PrismaProductionRunRepository implements ProductionRunRepository {
               projectId: input.projectId,
               status: { in: ['queued', 'running', 'waiting_approval', 'recovery_pending'] }
             },
-            select: { id: true }
+            select: { id: true, status: true }
           });
           if (running) {
-            throw new ApplicationError('job_running', 'Une production est deja en cours.', 409);
+            const message =
+              running.status === 'waiting_approval'
+                ? 'Un run est en attente d approbation ou de finalisation pour ce projet.'
+                : 'Une production est deja en cours.';
+            throw new ApplicationError('job_running', message, 409);
           }
           if (!project.context) {
             throw new ApplicationError('context_not_found', 'Contexte introuvable.', 404);
@@ -348,5 +352,101 @@ export class PrismaProductionRunRepository implements ProductionRunRepository {
       orderBy: { createdAt: 'desc' }
     });
     return row ? mapJobRun(row) : null;
+  }
+
+  async failStart(input: {
+    jobRunId: string;
+    jobId: string;
+    projectId: string;
+    error: string;
+  }): Promise<void> {
+    await this.db.$transaction(async (tx) => {
+      const run = await tx.jobRun.findUnique({
+        where: { id: input.jobRunId },
+        select: { status: true }
+      });
+      if (run && run.status === 'queued') {
+        assertJobRunTransition(run.status, 'failed');
+        await tx.jobRun.updateMany({
+          where: { id: input.jobRunId, status: 'queued' },
+          data: { status: 'failed', lastTransitionAt: new Date() }
+        });
+      }
+      await tx.productionJob.update({
+        where: { id: input.jobId },
+        data: { status: 'failed', step: 'failed', error: input.error }
+      });
+      await tx.stepRun.updateMany({
+        where: { jobRunId: input.jobRunId, status: { in: ['pending', 'running'] } },
+        data: { status: 'failed', error: input.error, finishedAt: new Date() }
+      });
+      await tx.project.updateMany({
+        where: { id: input.projectId, status: 'producing' },
+        data: { status: 'failed' }
+      });
+    });
+  }
+
+  async completeWaitingApprovalRun(input: {
+    jobRunId: string;
+    projectId: string;
+    outputs: Record<string, unknown>;
+  }): Promise<void> {
+    await this.db.$transaction(async (tx) => {
+      const run = await tx.jobRun.findUnique({
+        where: { id: input.jobRunId },
+        select: { status: true }
+      });
+      if (!run) throw new ApplicationError('job_run_not_found', 'JobRun introuvable.', 404);
+      if (run.status === 'succeeded') {
+        await tx.project.update({ where: { id: input.projectId }, data: { status: 'transferred' } });
+        return;
+      }
+      // Never force an in-flight (queued/running/recovery_pending) or failed run into success.
+      if (run.status !== 'waiting_approval') {
+        throw new ApplicationError(
+          'job_running',
+          'Le run actif n est pas en attente d approbation.',
+          409
+        );
+      }
+      const decision = assertJobRunTransition(run.status, 'succeeded');
+      if (decision.changed) {
+        const updated = await tx.jobRun.updateMany({
+          where: { id: input.jobRunId, status: 'waiting_approval' },
+          data: {
+            status: 'succeeded',
+            outputs: input.outputs as Prisma.InputJsonValue,
+            outputsChecksum: contentChecksum(input.outputs),
+            lastTransitionAt: new Date()
+          }
+        });
+        if (updated.count === 1) {
+          await tx.runStateEvent.create({
+            data: {
+              jobRunId: input.jobRunId,
+              scope: 'job',
+              fromState: 'waiting_approval',
+              toState: 'succeeded',
+              source: 'api',
+              metadata: { outputs: input.outputs } as Prisma.InputJsonValue
+            }
+          });
+        }
+      }
+      await tx.productionJob.updateMany({
+        where: { jobRunId: input.jobRunId },
+        data: { status: 'succeeded', step: 'done', progress: 100, error: null }
+      });
+      await tx.stepRun.updateMany({
+        where: {
+          jobRunId: input.jobRunId,
+          name: { in: ['approval', 'transfer'] },
+          status: { in: ['pending', 'running', 'waiting_approval'] }
+        },
+        data: { status: 'succeeded', finishedAt: new Date() }
+      });
+      await tx.project.update({ where: { id: input.projectId }, data: { status: 'transferred' } });
+    });
   }
 }

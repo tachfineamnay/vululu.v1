@@ -488,6 +488,7 @@ export class CreativeStudio {
         hooks.onProgress?.(10 + Math.round((frames.length / spec.scenes.length) * 70));
       }
       if (spec.delivery && !isVideoOutput(spec.delivery.kind)) {
+        if (hooks.isCancelled && (await hooks.isCancelled())) throw new Error('creative_render_cancelled');
         await seal({
           renderer: 'creative-2',
           approvalSha256: hash(JSON.stringify(frames.map((f) => [f.sceneKey, f.sha256]))),
@@ -497,6 +498,7 @@ export class CreativeStudio {
         });
         return (await this.get(userId, id, version)).manifest!;
       }
+      if (hooks.isCancelled && (await hooks.isCancelled())) throw new Error('creative_render_cancelled');
       hooks.onProgress?.(85);
       const totalSeconds = frames.reduce((sum, frame) => sum + frame.seconds, 0);
       const mixed = await this.mixedAudio(spec, sources, dir, totalSeconds);
@@ -557,6 +559,7 @@ export class CreativeStudio {
           : {})
       };
       hooks.onProgress?.(95);
+      if (hooks.isCancelled && (await hooks.isCancelled())) throw new Error('creative_render_cancelled');
       // Never replace a sealed manifest, even on concurrent render requests.
       await seal(manifest);
       hooks.onProgress?.(100);

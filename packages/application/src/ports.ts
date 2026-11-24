@@ -606,6 +606,12 @@ export interface ProductionRunRepository {
   updateJob(jobId: string, input: { status?: string; step?: string; progress?: number; error?: string | null }): Promise<void>;
   updateStep(jobRunId: string, name: string, status: string, error?: string): Promise<void>;
   findActiveByProject?(projectId: string): Promise<JobRunRecord | null>;
+  failStart?(input: { jobRunId: string; jobId: string; projectId: string; error: string }): Promise<void>;
+  completeWaitingApprovalRun?(input: {
+    jobRunId: string;
+    projectId: string;
+    outputs: Record<string, unknown>;
+  }): Promise<void>;
 }
 
 export type ExecutionScene = SceneRecord & {

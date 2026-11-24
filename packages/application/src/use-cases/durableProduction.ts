@@ -568,6 +568,14 @@ export class DurableProductionUseCases {
     checksum: string;
     approvedBy: string;
   }): Promise<StepApproval> {
+    const existing = await this.store.getStepOutput<StepApproval>(input.jobRunId, 'approval');
+    if (
+      existing &&
+      existing.artifactVersionId === input.artifactVersionId &&
+      existing.checksum === input.checksum
+    ) {
+      return existing;
+    }
     const run = await this.store.loadRun(input.jobRunId);
     const master = await this.master.latestMaster(run.projectId);
     if (!master || master.id !== input.artifactVersionId || master.checksum !== input.checksum) {
@@ -586,6 +594,15 @@ export class DurableProductionUseCases {
       artifactVersion: toDomainArtifact(master, createdAt),
       currentArtifactVersion: toDomainArtifact(master, createdAt)
     });
+    if (run.status === 'succeeded') {
+      const output = {
+        artifactVersionId: master.id,
+        checksum: master.checksum,
+        approvedBy: input.approvedBy
+      };
+      await this.store.saveStepOutput(input.jobRunId, 'approval', output);
+      return output;
+    }
     await this.store.transitionStep(input.jobRunId, 'approval', 'running', 'worker');
     await this.store.saveStepOutput(input.jobRunId, 'approval', {
       artifactVersionId: master.id,
@@ -613,6 +630,14 @@ export class DurableProductionUseCases {
     const approval = await this.master.findApproval(master.id);
     if (!approval || approval.invalidatedAt !== null) {
       throw new ApplicationError('approval_required', 'Approbation active absente.', 409);
+    }
+    if (run.status === 'succeeded') {
+      const existingTransfer = await this.master.findTransfer(approval.id);
+      if (existingTransfer) {
+        const output = { transferId: existingTransfer.id, status: existingTransfer.status };
+        await this.store.saveStepOutput(jobRunId, 'transfer', output);
+        return output;
+      }
     }
     await this.store.transitionStep(jobRunId, 'transfer', 'running', 'worker');
     const transfer = await this.postiz.transfer({

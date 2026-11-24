@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { postJson, type MasterVersion, type ProjectBundle, type Scene } from '../lib/api';
+import { ApiRequestError, postJson, type MasterVersion, type ProjectBundle, type Scene } from '../lib/api';
 import { exactApproval, masterMediaUrl } from '../lib/creationDelivery';
 
 type StudioPreview = { scene: Scene | null; mode: 'scene' | 'video'; onModeChange: (mode: 'scene' | 'video') => void };
@@ -25,6 +25,7 @@ export default function CreationDelivery({ bundle, refresh, blocked = false, cor
   const [error, setError] = useState('');
   const [message, setMessage] = useState<{ versionId: string; masterId: string; text: string } | null>(null);
   const [mediaErrors, setMediaErrors] = useState<number[]>([]);
+  const mutateInFlight = useRef(false);
   const latest = bundle.master;
   const showScene = Boolean(studio?.scene && (studio.mode === 'scene' || !latest));
   const previewSwitch = studio ? <div className="studio-preview-switch" role="group" aria-label="Aperçu du média">
@@ -41,19 +42,36 @@ export default function CreationDelivery({ bundle, refresh, blocked = false, cor
   const viewed = versions.find((version) => version.version === selected) ?? latest;
   const compared = versions.find((version) => version.version === compare && version.version !== viewed.version) ?? null;
   const isCurrent = viewed.id === latest.id;
-  const canAct = !blocked && !busy && bundle.project.status !== 'producing';
+  const runStatus = bundle.jobRun?.status ?? null;
+  const inFlightRun =
+    bundle.project.status === 'producing' ||
+    runStatus === 'queued' ||
+    runStatus === 'running' ||
+    runStatus === 'recovery_pending';
+  const waitingApprovalRun = runStatus === 'waiting_approval';
+  const canAct = !blocked && !busy && !inFlightRun;
   const report = viewed.qaReport as { checks?: Array<{ name: string; status: string; detail: string }> } | null;
   const checks = Array.isArray(report?.checks) ? report.checks : [];
   const mediaUrl = (version: number) => masterMediaUrl(bundle.project.id, version);
   function showVersion(version: number) { setSelected(version); setCompare(null); studio?.onModeChange('video'); document.getElementById('preview-heading')?.focus(); }
   async function mutate(action: 'approve' | 'transfer') {
+    if (mutateInFlight.current || !canAct) return;
+    mutateInFlight.current = true;
     setBusy(action); setError(''); setMessage(null);
     try {
       await postJson('/api/projects/' + bundle.project.id + '/' + action, action === 'approve' ? { artifactVersionId: viewed.id, checksum: viewed.checksum } : {});
       setMessage({ versionId: viewed.id, masterId: latest!.id, text: action === 'approve' ? 'Approbation acceptée pour la version exacte v' + viewed.version + '.' : 'Demande de transfert Postiz MOCK acceptée pour v' + viewed.version + '. Consultez son état serveur ; aucune publication.' });
       await refresh();
-    } catch (err) { setError(err instanceof Error ? err.message : 'Action non confirmée. Réessayez.'); }
-    finally { setBusy(''); }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Action non confirmée. Réessayez.');
+      if (err instanceof ApiRequestError && err.status === 409) {
+        await refresh().catch(() => undefined);
+      }
+    }
+    finally {
+      mutateInFlight.current = false;
+      setBusy('');
+    }
   }
   async function download() {
     setBusy('download'); setError(''); setMessage(null);
@@ -79,7 +97,7 @@ export default function CreationDelivery({ bundle, refresh, blocked = false, cor
     {scenes}
   </>;
   const finalization = <>
-    <p>Version courante : <strong>v{latest.version}</strong>. Version approuvée courante : <strong data-testid="current-approved-version">{exactApproval(latest) ? 'v' + latest.version : 'aucune'}</strong>. {bundle.project.status === 'producing' ? 'Une nouvelle production est en cours ; le résultat précédent reste disponible.' : ''}</p>
+    <p>Version courante : <strong>v{latest.version}</strong>. Version approuvée courante : <strong data-testid="current-approved-version">{exactApproval(latest) ? 'v' + latest.version : 'aucune'}</strong>. {inFlightRun ? 'Une nouvelle production est en cours ; le résultat précédent reste disponible.' : waitingApprovalRun ? (exactApproval(latest) ? 'Approbation enregistrée : finalisation du run en cours.' : 'Run en attente de votre approbation exacte.') : ''}</p>
     {!isCurrent ? <p className="context-completeness">Vous consultez une ancienne version. Son éventuelle approbation historique n’autorise pas le transfert du résultat courant.</p> : null}
     {blocked ? <p className="context-completeness">Une modification ou une action est en cours dans le projet. Relisez et enregistrez avant d’approuver ou transférer.</p> : null}
     {error ? <p className="error" role="alert" data-testid="delivery-error">{error}</p> : null}{message?.versionId === viewed.id && message.masterId === latest.id ? <p role="status" data-testid="delivery-message">{message.text}</p> : null}

@@ -35,7 +35,10 @@ export function useStudioFeed(id: string, refresh: () => Promise<void>, deny: (s
       again = false,
       nextStream = 0,
       failures = 0,
+      syncFailures = 0,
+      nextPollAt = 0,
       mode: Connection = 'connecting';
+    const MAX_SYNC_FAILURES = 8;
     let wake: ReturnType<typeof setTimeout> | undefined;
     const status = (m: Connection) => {
       mode = m;
@@ -111,9 +114,20 @@ export function useStudioFeed(id: string, refresh: () => Promise<void>, deny: (s
           denied(res.status);
           return;
         }
+        if (res.status === 429) {
+          const retryHeader = Number(res.headers.get('Retry-After'));
+          const retryMs =
+            Number.isFinite(retryHeader) && retryHeader > 0 ? Math.min(30000, retryHeader * 1000) : 8000;
+          syncFailures += 1;
+          nextPollAt = Date.now() + retryMs;
+          status(syncFailures >= MAX_SYNC_FAILURES ? 'offline' : 'polling');
+          return;
+        }
         if (!res.ok) throw Error();
         const snap = (await res.json()) as StudioState;
         if (stopped) return;
+        syncFailures = 0;
+        nextPollAt = 0;
         if (applied !== snap.cursor || mode !== 'live') {
           await refresh();
           if (stopped) return;
@@ -127,13 +141,17 @@ export function useStudioFeed(id: string, refresh: () => Promise<void>, deny: (s
       } catch {
         if (!stopped) {
           close();
-          status(navigator.onLine ? 'polling' : 'offline');
+          syncFailures += 1;
+          nextPollAt = Date.now() + Math.min(30000, 4000 * 2 ** Math.min(syncFailures - 1, 3));
+          status(!navigator.onLine || syncFailures >= MAX_SYNC_FAILURES ? 'offline' : 'polling');
         }
       } finally {
         inFlight = false;
-        if (again) {
+        if (again && syncFailures < MAX_SYNC_FAILURES) {
           again = false;
           queue();
+        } else {
+          again = false;
         }
       }
     }
@@ -144,15 +162,19 @@ export function useStudioFeed(id: string, refresh: () => Promise<void>, deny: (s
     function online() {
       if (stopped) return;
       nextStream = 0;
+      syncFailures = 0;
+      nextPollAt = 0;
       if (applied >= 0) connect();
       queue();
     }
     void sync();
     const poll = setInterval(() => {
-      if (!stopped && mode !== 'live') void sync();
+      if (!stopped && mode !== 'live' && syncFailures < MAX_SYNC_FAILURES && Date.now() >= nextPollAt) {
+        void sync();
+      }
     }, 4000);
     const reconcile = setInterval(() => {
-      if (!stopped && mode === 'live') void sync();
+      if (!stopped && mode === 'live' && syncFailures < MAX_SYNC_FAILURES) void sync();
     }, 30000);
     window.addEventListener('offline', offline);
     window.addEventListener('online', online);
