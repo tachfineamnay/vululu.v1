@@ -19,8 +19,13 @@ export function platformFor(identifier: string) {
 export type Attachment = { name: string; mime: string; bytes: Buffer; sha256: string };
 export type Post = { channel: string; platform?: PublishingPlatform; caption: string; when: string; files: Attachment[] };
 export type PostState = { status: 'QUEUE' | 'PUBLISHED' | 'ERROR'; receipt?: string };
+export type SubmissionLookup =
+  | { status: 'unique'; id: string; post: PostState | undefined }
+  | { status: 'none' }
+  | { status: 'ambiguous'; count: number };
 export interface PublishingProvider {
   status?(token: string, id: string, channel: string, platform: PublishingPlatform, when: Date, signal: AbortSignal): Promise<PostState | undefined>;
+  findSubmission?(token: string, channel: string, platform: PublishingPlatform, when: Date, signal: AbortSignal): Promise<SubmissionLookup>;
   schedule(token: string, p: Post, signal: AbortSignal, beforeSubmit?: () => Promise<void>): Promise<string>;
   cancel(token: string, remoteId: string, signal: AbortSignal): Promise<void>;
 }
@@ -85,9 +90,11 @@ export class PostizProvider implements PublishingProvider {
     if (r.status === 401 || r.status === 403) { await r.body?.cancel(); throw new ProviderFailure('TOKEN_EXPIRED', false); }
     if (!r.ok) {
       await r.body?.cancel();
+      const unavailable = r.status >= 500 || r.status === 429 || r.status === 408;
+      // Read-only GET requests never mutate remote state, so outages before submission are safe to retry.
       throw new ProviderFailure(
-        r.status >= 500 ? 'PROVIDER_UNAVAILABLE' : 'REJECTED',
-        r.status >= 500 || r.status === 408
+        unavailable ? 'PROVIDER_UNAVAILABLE' : 'REJECTED',
+        method !== 'GET' && (r.status >= 500 || r.status === 408)
       );
     }
     return r;
@@ -114,6 +121,13 @@ export class PostizProvider implements PublishingProvider {
       return disabled || !platform ? [] : [{ ...c, platform }];
     });
   }
+  private parsePostState(match: { state: string; releaseURL?: string | null }): PostState | undefined {
+    if (match.state === 'QUEUE') return { status: 'QUEUE' };
+    if (match.state === 'ERROR') return { status: 'ERROR' };
+    if (match.state === 'PUBLISHED' && match.releaseURL && /^https:\/\/[^\s]{1,488}$/u.test(match.releaseURL))
+      return { status: 'PUBLISHED', receipt: match.releaseURL };
+    return undefined;
+  }
   async status(token: string, id: string, channel: string, platform: PublishingPlatform, when: Date, signal: AbortSignal): Promise<PostState | undefined> {
     const day = 86400000;
     const query = new URLSearchParams({ startDate: new Date(when.getTime() - day).toISOString(), endDate: new Date(when.getTime() + day).toISOString() });
@@ -122,10 +136,24 @@ export class PostizProvider implements PublishingProvider {
       .parse(await readJson(await this.call(token, '/posts?' + query, 'GET', signal)));
     const match = value.posts.find((r) => r.id === id && r.integration.id === channel && platformFor(r.integration.providerIdentifier) === platform);
     if (!match) return;
-    if (match.state === 'QUEUE') return { status: 'QUEUE' };
-    if (match.state === 'ERROR') return { status: 'ERROR' };
-    if (match.state === 'PUBLISHED' && match.releaseURL && /^https:\/\/[^\s]{1,488}$/u.test(match.releaseURL))
-      return { status: 'PUBLISHED', receipt: match.releaseURL };
+    return this.parsePostState(match);
+  }
+  async findSubmission(token: string, channel: string, platform: PublishingPlatform, when: Date, signal: AbortSignal): Promise<SubmissionLookup> {
+    const day = 86400000;
+    const query = new URLSearchParams({ startDate: new Date(when.getTime() - day).toISOString(), endDate: new Date(when.getTime() + day).toISOString() });
+    const value = z.object({ posts: z.array(z.object({ id: opaque, state: z.string(), releaseURL: z.string().nullish(),
+      publishDate: z.string().nullish(),
+      integration: z.object({ id: opaque, providerIdentifier: z.string() }) })).max(2000) })
+      .parse(await readJson(await this.call(token, '/posts?' + query, 'GET', signal)));
+    const candidates = value.posts.filter((r) => {
+      if (r.integration.id !== channel || platformFor(r.integration.providerIdentifier) !== platform) return false;
+      if (!r.publishDate) return true;
+      const parsed = Date.parse(r.publishDate);
+      return Number.isFinite(parsed) && Math.abs(parsed - when.getTime()) <= 60_000;
+    });
+    if (candidates.length === 0) return { status: 'none' };
+    if (candidates.length > 1) return { status: 'ambiguous', count: candidates.length };
+    return { status: 'unique', id: candidates[0].id, post: this.parsePostState(candidates[0]) };
   }
   async schedule(token: string, p: Post, signal: AbortSignal, beforeSubmit?: () => Promise<void>) {
     const platform = p.platform ?? 'LinkedIn';

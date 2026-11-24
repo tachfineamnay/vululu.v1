@@ -50,26 +50,53 @@ export async function report(userId: string, now = new Date()) {
       bool_or("costState" IN ('UNKNOWN','RESERVED') OR
               ("costState" = 'ESTIMATED' AND "state" = 'SUCCEEDED') OR
               ("costState" IN ('REPORTED','RECONCILED') AND "reportedCents" IS NULL)) pending
-    FROM "ExecutionOperation" WHERE "accountId"=${userId} AND "createdAt">=${from}`;
+    FROM "ExecutionOperation" WHERE "accountId"=${userId} AND "createdAt">=${from} AND tool NOT LIKE 'sandbox.%'`;
   const pref = await prisma.resultPreference.findUnique({ where: { userId } });
-  const publications = await prisma.publicationRequest.findMany({
-    where: {
-      state: 'PUBLISHED',
-      networkReceipt: { not: null },
-      connection: { ownerId: userId },
-      creative: { project: { userId } },
-    },
-    orderBy: { id: 'asc' },
-    take: 50,
-    select: {
-      id: true,
-      revision: true,
-      projectId: true,
-      measure: true,
-      connection: { select: { revoked: true, expiresAt: true } },
-      creative: { select: { project: { select: { title: true } } } },
-    },
-  });
+  const [publications, pendingPublications] = await Promise.all([
+    prisma.publicationRequest.findMany({
+      where: {
+        state: 'PUBLISHED',
+        networkReceipt: { not: null },
+        connection: { ownerId: userId },
+        creative: { project: { userId } },
+      },
+      orderBy: { id: 'asc' },
+      take: 50,
+      select: {
+        id: true,
+        itemId: true,
+        revision: true,
+        projectId: true,
+        remoteId: true,
+        networkReceipt: true,
+        scheduledAt: true,
+        measure: true,
+        connection: { select: { platform: true, channel: true, displayName: true, revoked: true, expiresAt: true } },
+        creative: { select: { project: { select: { title: true } } } },
+      },
+    }),
+    prisma.publicationRequest.findMany({
+      where: {
+        OR: [{ state: { in: ['PREPARED', 'SENDING', 'SUBMITTED', 'CANCELLING', 'UNKNOWN', 'FAILED'] } }, { state: 'PUBLISHED', networkReceipt: null }],
+        connection: { ownerId: userId },
+        creative: { project: { userId } },
+      },
+      orderBy: [{ scheduledAt: 'desc' }, { id: 'desc' }],
+      take: 30,
+      select: {
+        id: true,
+        itemId: true,
+        revision: true,
+        projectId: true,
+        state: true,
+        reason: true,
+        remoteId: true,
+        scheduledAt: true,
+        connection: { select: { platform: true, channel: true, displayName: true, revoked: true, expiresAt: true } },
+        creative: { select: { project: { select: { title: true } } } },
+      },
+    }),
+  ]);
   const offers = await prisma.confirmedOffer.findMany({
     where: { context: { userId } },
     orderBy: { id: 'asc' },
@@ -146,8 +173,10 @@ export async function report(userId: string, now = new Date()) {
     sources: {
       content: 'ContentItem',
       publications: 'PublicationRequest',
-      metrics: 'Postiz · LinkedIn',
+      metrics: 'Postiz (par réseau)',
       metricsEnabled: process.env.POSTIZ_ANALYTICS_ENABLED === '1',
+      analyticsMode: process.env.POSTIZ_ANALYTICS_ENABLED === '1' ? 'postiz_live' : 'disabled',
+      mockAnalyticsIncluded: false,
       observedAt: now.toISOString()
     }
   };
@@ -197,13 +226,17 @@ export async function report(userId: string, now = new Date()) {
       campaignName: row.project.campaign?.name ?? null
     })),
     suggestions,
-    publications: publications.map(({ measure: m, connection, ...p }) => ({
-      ...p,
-      observation:
+    publications: publications.map(({ measure: m, connection, ...p }) => {
+      const connectionStatus = connection.revoked
+        ? ('revoked' as const)
+        : connection.expiresAt <= now
+          ? ('expired' as const)
+          : ('active' as const);
+      const analyticsEnabled = process.env.POSTIZ_ANALYTICS_ENABLED === '1';
+      const observation =
         m &&
-        process.env.POSTIZ_ANALYTICS_ENABLED === '1' &&
-        !connection.revoked &&
-        connection.expiresAt > now &&
+        analyticsEnabled &&
+        connectionStatus === 'active' &&
         m.retrievedAt >= from
           ? {
               source: m.source,
@@ -215,7 +248,36 @@ export async function report(userId: string, now = new Date()) {
                 clicks: m.clicks === null ? unavailable : Number(m.clicks),
               },
             }
-          : null,
+          : null;
+      const metricsStatus = observation
+        ? ('observed' as const)
+        : !analyticsEnabled
+          ? ('analytics_disabled' as const)
+          : connectionStatus === 'revoked'
+            ? ('connection_revoked' as const)
+            : connectionStatus === 'expired'
+              ? ('connection_expired' as const)
+              : ('not_fetched' as const);
+      return {
+        ...p,
+        platform: connection.platform,
+        channel: connection.channel,
+        displayName: connection.displayName,
+        connectionStatus,
+        metricsStatus,
+        observation,
+      };
+    }),
+    pendingPublications: pendingPublications.map(({ connection, ...p }) => ({
+      ...p,
+      platform: connection.platform,
+      channel: connection.channel,
+      displayName: connection.displayName,
+      connectionStatus: connection.revoked
+        ? ('revoked' as const)
+        : connection.expiresAt <= now
+          ? ('expired' as const)
+          : ('active' as const),
     })),
     offers: offers.map((o) => ({
       id: o.id,

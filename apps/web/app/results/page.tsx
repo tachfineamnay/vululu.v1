@@ -1,17 +1,43 @@
 'use client';
 import {useWorkspace} from '../../components/WorkspacePreferences';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import StudioNav from '../../components/StudioNav';
 import { api, postJson } from '../../lib/api';
 import './results.css';
 import { campaignLink } from '../../lib/utm';
+import { isSafeHttpsUrl, metricsBlockReason } from '../../lib/publishingPresentation';
 type Pref = { enabled: boolean; due: boolean };
+type ConnectionStatus = 'active' | 'expired' | 'revoked';
 type Pub = {
   observation: Metrics | null;
   id: string;
+  itemId?: string;
   revision: number;
   projectId: string;
+  remoteId?: string | null;
+  networkReceipt?: string | null;
+  scheduledAt?: string | null;
+  platform?: string;
+  channel?: string;
+  displayName?: string | null;
+  connectionStatus?: ConnectionStatus;
+  metricsStatus?: 'observed' | 'analytics_disabled' | 'connection_revoked' | 'connection_expired' | 'not_fetched';
+  creative: { project: { title: string } };
+};
+type PendingPub = {
+  id: string;
+  itemId: string;
+  revision: number;
+  projectId: string;
+  state: string;
+  reason: string | null;
+  remoteId: string | null;
+  scheduledAt: string | null;
+  platform: string;
+  channel: string;
+  displayName: string | null;
+  connectionStatus: ConnectionStatus;
   creative: { project: { title: string } };
 };
 type ObservedContent = {
@@ -38,6 +64,8 @@ type ObservedContent = {
     publications: string;
     metrics: string;
     metricsEnabled: boolean;
+    analyticsMode?: 'postiz_live' | 'disabled';
+    mockAnalyticsIncluded?: boolean;
     observedAt: string;
   };
 };
@@ -72,6 +100,7 @@ type Report = {
   creatives?: CreativeReport[];
   suggestions?: string[];
   publications: Pub[];
+  pendingPublications?: PendingPub[];
   offers: { id: string; name: string; previous: string | null; project: string | null }[];
   reminder: Pref;
 };
@@ -91,6 +120,23 @@ type Metrics = {
   source: string;
   retrievedAt: string | null;
   metrics: Record<keyof typeof definitions, number | 'NOT_AVAILABLE'>;
+  unavailableReason?: string;
+};
+const unavailableReasons: Record<string, string> = {
+  analytics_disabled:
+    'La lecture des mesures Postiz est désactivée sur cet environnement (POSTIZ_ANALYTICS_ENABLED ≠ 1). Aucune donnée simulée ou estimée n’est affichée.',
+  connection_revoked:
+    'Le compte de publication a été dissocié de Vululu. Associez-le à nouveau dans le calendrier pour relever de nouvelles mesures.',
+  connection_expired:
+    'La clé API du compte de publication a expiré. Renouvelez-la dans le calendrier (« Comptes de publication ») pour relever des mesures.',
+  token_expired:
+    'La clé API Postiz a été refusée ou a expiré. Renouvelez-la dans le calendrier avant de relire les mesures.',
+  missing_remote_id: 'Aucun identifiant distant Postiz n’est rattaché à cette publication.',
+  credentials_unreadable: 'Identifiant de connexion illisible sur cet environnement.',
+  provider_unavailable: 'Postiz est temporairement indisponible : aucune mesure n’a pu être lue.',
+  response_too_large: 'Réponse Postiz ignorée (taille excessive).',
+  invalid_response: 'Réponse Postiz invalide : aucune mesure vérifiable.',
+  invalid_remote_id: 'Identifiant de publication distant invalide.',
 };
 const fmt = (d: string | null) => (d ? new Date(d).toLocaleString('fr-FR') : 'Non observé');
 // États observés uniquement : un état éditorial n’est pas une diffusion, une soumission n’est pas
@@ -150,35 +196,75 @@ function detail(kind: string, value: string) {
     (status === 'PUBLISHED' ? 'Publication déclarée (non vérifiée)' : (states[status] ?? status))
   );
 }
-function Publication({ p }: { p: Pub }) {
+function Publication({ p, metricsEnabled }: { p: Pub; metricsEnabled: boolean }) {
   const [data, set] = useState<Metrics | null>(p.observation),
     [busy, work] = useState(false),
     [err, fail] = useState(false);
+  const inFlight = useRef(false);
+  const blockedReason = metricsBlockReason(metricsEnabled, p.connectionStatus);
+  const activeReason = data?.retrievedAt ? null : (data?.unavailableReason ?? blockedReason);
+  const accountName = p.displayName || p.channel;
   return (
     <article className="stack">
       <h3>
         {p.creative.project.title} · v{p.revision}
+        {p.platform ? ` · ${p.platform}` : ''}
       </h3>
-      <button
-        className="btn btn-secondary"
-        disabled={busy}
-        onClick={async () => {
-          work(true);
-          fail(false);
-          try {
-            set(await postJson<Metrics>('/api/results/publications/' + p.id + '/metrics', {}));
-          } catch {
-            set(null);
-            fail(true);
-          } finally {
-            work(false);
-          }
-        }}
-      >
-        {busy ? 'Lecture…' : 'Consulter les mesures Postiz'}
-      </button>
+      <p className="hint">
+        {accountName ? `Compte : ${accountName}` : 'Compte connecté'}
+        {p.scheduledAt ? ` · prévu le ${fmt(p.scheduledAt)}` : ''}
+        {p.remoteId ? ` · reçu de soumission : ${p.remoteId}` : ''}
+      </p>
+      <p className="hint">
+        Preuve réseau vérifiée :{' '}
+        {p.networkReceipt ? (
+          isSafeHttpsUrl(p.networkReceipt) ? (
+            <a href={p.networkReceipt} target="_blank" rel="noopener noreferrer">
+              {p.networkReceipt}
+            </a>
+          ) : (
+            <code>{p.networkReceipt}</code>
+          )
+        ) : (
+          'Aucune preuve réseau vérifiée'
+        )}
+      </p>
+      <div className="actions">
+        <button
+          type="button"
+          className="btn btn-secondary"
+          disabled={busy || Boolean(blockedReason)}
+          onClick={async () => {
+            if (inFlight.current || blockedReason) return;
+            inFlight.current = true;
+            work(true);
+            fail(false);
+            try {
+              set(await postJson<Metrics>('/api/results/publications/' + p.id + '/metrics', {}));
+            } catch {
+              set(null);
+              fail(true);
+            } finally {
+              inFlight.current = false;
+              work(false);
+            }
+          }}
+        >
+          {busy ? 'Lecture…' : 'Consulter les mesures Postiz'}
+        </button>
+        {p.itemId && (
+          <Link href={'/calendar?item=' + encodeURIComponent(p.itemId)}>
+            Ouvrir dans le calendrier
+          </Link>
+        )}
+      </div>
+      {activeReason && (
+        <p className="hint" role="status">
+          {unavailableReasons[activeReason] ?? 'Mesures actuellement indisponibles.'}
+        </p>
+      )}
       {err && <p role="alert">Lecture impossible. Réessayez.</p>}
-      {data && (
+      {data ? (
         <>
           <p>
             {data.source} ·{' '}
@@ -202,6 +288,10 @@ function Publication({ p }: { p: Pub }) {
             </p>
           )}
         </>
+      ) : (
+        <p className="hint">
+          Aucun relevé enregistré pour cette publication : les cinq mesures sont actuellement « Non disponible ».
+        </p>
       )}
     </article>
   );
@@ -261,9 +351,16 @@ export default function Results() {
   const [data, set] = useState<Report | null>(null),
     [h, list] = useState<History | null>(null),
     [error, fail] = useState(''),
-    [busy, work] = useState(false);
+    [busy, work] = useState(false),
+    [projectFilter, setProjectFilter] = useState('');
+  const actionInFlight = useRef(false);
   const observed = data?.content;
+  const metricsEnabled = Boolean(observed?.sources.metricsEnabled);
   const [missingHashCampaign, setMissingHashCampaign] = useState('');
+  useEffect(() => {
+    const project = new URLSearchParams(location.search).get('project')?.trim() ?? '';
+    setProjectFilter(project);
+  }, []);
   useEffect(() => {
     const match = /^#campaign-(.+)$/.exec(location.hash);
     if (!match || !data) return;
@@ -286,6 +383,26 @@ export default function Results() {
       live = false;
     };
   }, []);
+  const visiblePublications = data
+    ? projectFilter
+      ? data.publications.filter((p) => p.projectId === projectFilter)
+      : data.publications
+    : [];
+  const visiblePending = data?.pendingPublications
+    ? projectFilter
+      ? data.pendingPublications.filter((p) => p.projectId === projectFilter)
+      : data.pendingPublications
+    : [];
+  const visibleCreatives = data?.creatives
+    ? projectFilter
+      ? data.creatives.filter((c) => c.projectId === projectFilter)
+      : data.creatives
+    : [];
+  const focusedProjectTitle =
+    visiblePublications[0]?.creative.project.title ??
+    visiblePending[0]?.creative.project.title ??
+    visibleCreatives[0]?.projectTitle ??
+    null;
   return (
     <div className="shell" data-vululu-theme="blue">
       <a href="#results" className="skip-link">
@@ -301,6 +418,30 @@ export default function Results() {
         </header>
         {error && <p role="alert">{error}</p>}
         {!data && !error && <p role="status">Chargement…</p>}
+        {data && projectFilter && (
+          <section className="card stack" aria-label="Filtre par projet" role="status">
+            <strong>
+              Vue filtrée sur le projet {focusedProjectTitle ? `« ${focusedProjectTitle} »` : projectFilter}
+            </strong>
+            <p className="hint">
+              Les publications confirmées, demandes en attente et créations approuvées ci-dessous sont filtrées sur ce
+              projet. Les compteurs globaux d’activité restent affichés pour l’ensemble de l’espace.
+            </p>
+            <div className="actions">
+              <Link href={'/projects/' + encodeURIComponent(projectFilter)}>Retourner au projet</Link>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setProjectFilter('');
+                  history.replaceState(null, '', '/results');
+                }}
+              >
+                Afficher tous les projets
+              </button>
+            </div>
+          </section>
+        )}
         {data && (
           <>
             {observed ? (
@@ -439,9 +580,9 @@ export default function Results() {
             </section>
             <section className="card stack" aria-labelledby="creatives-heading">
               <h2 id="creatives-heading">Créations approuvées</h2>
-              {data.creatives?.length ? (
+              {visibleCreatives.length ? (
                 <ul className="result-creatives">
-                  {data.creatives.map((creative) => (
+                  {visibleCreatives.map((creative) => (
                     <li key={creative.projectId + ':' + creative.version} className="result-creative">
                       <div>
                         <h3>
@@ -459,7 +600,9 @@ export default function Results() {
                   ))}
                 </ul>
               ) : (
-                <p className="hint">Aucune création approuvée.</p>
+                <p className="hint">
+                  {projectFilter ? 'Aucune création approuvée pour ce projet.' : 'Aucune création approuvée.'}
+                </p>
               )}
               <p className="hint">
                 Reprendre une création dans le Studio crée une nouvelle révision de travail : la version approuvée
@@ -515,7 +658,8 @@ export default function Results() {
               <h2>{t("Performances des publications","Post performance")}</h2>
               <p>
                 Une publication confirmée n’est pas une conversion. « Non disponible » signifie qu’aucune
-                mesure vérifiable n’est fournie.
+                mesure vérifiable n’est fournie. Aucune donnée simulée (MOCK) ni estimation n’est affichée :
+                les transferts Postiz MOCK du Studio ne sont jamais comptés ici.
               </p>
               <dl>
                 {Object.entries(definitions).map(([k, [label, text]]) => (
@@ -525,10 +669,42 @@ export default function Results() {
                   </div>
                 ))}
               </dl>
-              {!data.publications.length ? (
-                <p>Aucune publication confirmée. Les cinq mesures sont non disponibles.</p>
+              {!visiblePublications.length ? (
+                <p>
+                  {projectFilter
+                    ? 'Aucune publication confirmée avec preuve réseau vérifiée pour ce projet. Les cinq mesures sont non disponibles.'
+                    : 'Aucune publication confirmée. Les cinq mesures sont non disponibles.'}
+                </p>
               ) : (
-                data.publications.map((p) => <Publication key={p.id} p={p} />)
+                visiblePublications.map((p) => <Publication key={p.id} p={p} metricsEnabled={metricsEnabled} />)
+              )}
+              {visiblePending.length > 0 && (
+                <div className="stack">
+                  <h3>Demandes non confirmées ou en attente ({visiblePending.length})</h3>
+                  <p className="hint">
+                    Ces demandes n’ont pas de preuve réseau vérifiée et ne disposent d’aucune mesure de performance.
+                    Ouvrez le calendrier pour vérifier leur statut auprès du fournisseur ou les résoudre.
+                  </p>
+                  <ul>
+                    {visiblePending.map((item) => (
+                      <li key={item.id}>
+                        <strong>
+                          {item.creative.project.title} · v{item.revision} · {item.platform}
+                        </strong>{' '}
+                        ({item.displayName || item.channel}) — {publicationStateLabels[item.state] ?? item.state}
+                        {item.connectionStatus === 'revoked'
+                          ? ' · compte dissocié'
+                          : item.connectionStatus === 'expired'
+                            ? ' · clé expirée'
+                            : ''}
+                        {item.remoteId ? ` · reçu ${item.remoteId}` : ''}{' '}
+                        <Link href={'/calendar?item=' + encodeURIComponent(item.itemId)}>
+                          Vérifier dans le calendrier
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
               <Utm />
             </section>
@@ -576,6 +752,8 @@ export default function Results() {
                   disabled={busy}
                   checked={data.reminder.enabled}
                   onChange={async (e) => {
+                    if (actionInFlight.current) return;
+                    actionInFlight.current = true;
                     const enabled = e.target.checked;
                     work(true);
                     try {
@@ -584,6 +762,7 @@ export default function Results() {
                     } catch {
                       fail('Préférence non enregistrée.');
                     } finally {
+                      actionInFlight.current = false;
                       work(false);
                     }
                   }}
@@ -609,6 +788,8 @@ export default function Results() {
                   className="btn"
                   disabled={busy}
                   onClick={async () => {
+                    if (actionInFlight.current) return;
+                    actionInFlight.current = true;
                     work(true);
                     try {
                       const page = await api<History>(
@@ -618,6 +799,7 @@ export default function Results() {
                     } catch {
                       fail('Suite de l’historique indisponible.');
                     } finally {
+                      actionInFlight.current = false;
                       work(false);
                     }
                   }}
