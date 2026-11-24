@@ -130,7 +130,10 @@ export async function adminAgentRoutes(app: FastifyInstance): Promise<void> {
         hasParams: definition.params !== undefined,
         description: definition.description,
         availability: state.availability,
-        availabilityReason: state.reason
+        availabilityReason: state.reason,
+        configured: state.configured,
+        verified: state.verified,
+        healthState: state.healthState
       };
     });
     return { items };

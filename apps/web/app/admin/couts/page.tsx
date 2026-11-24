@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import BarChart from '../../../components/admin/BarChart';
 import ErrorState from '../../../components/admin/ErrorState';
 import FlagBadge from '../../../components/admin/FlagBadge';
@@ -14,12 +14,13 @@ import StatusBadge from '../../../components/admin/StatusBadge';
 import { useAdminResource } from '../../../components/admin/useAdminResource';
 import {
   adminApi,
+  availabilityBadge,
   errorMessage,
   formatCents,
   formatDateTime,
   formatNumber,
   shortId,
-  TOOL_AVAILABILITY_LABELS,
+  validateResolveIncidentInput,
   type AdminExecutionBudgetAlert
 } from '../../../lib/admin';
 
@@ -30,8 +31,6 @@ const BUDGET_ALERT_LABELS: Record<AdminExecutionBudgetAlert, string> = {
   exhausted: 'Epuise',
   unknown: 'Cout incertain'
 };
-
-const EVIDENCE_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type Filters = {
   provider: string;
@@ -46,6 +45,8 @@ export default function AdminCostsPage() {
   const [draft, setDraft] = useState<Filters>(EMPTY_FILTERS);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [page, setPage] = useState(1);
+  const [accountsPage, setAccountsPage] = useState(1);
+  const [knownProviders, setKnownProviders] = useState<string[]>([]);
 
   const resource = useAdminResource(
     () =>
@@ -61,22 +62,46 @@ export default function AdminCostsPage() {
 
   const data = resource.data;
 
+  useEffect(() => {
+    if (!data) {
+      return;
+    }
+    const incoming = data.byProvider.map((entry) => entry.provider);
+    if (incoming.length === 0) {
+      return;
+    }
+    setKnownProviders((previous) => {
+      const merged = Array.from(new Set([...previous, ...incoming])).sort();
+      return merged.length === previous.length ? previous : merged;
+    });
+  }, [data]);
+
   // P11-D — budgets et couts d execution (lecture seule, aucune ecriture financiere).
-  const executionCosts = useAdminResource(() => adminApi.executionCosts(), 'execution-costs');
+  const executionCosts = useAdminResource(
+    () => adminApi.executionCosts({ accountsPage }),
+    'execution-costs:' + accountsPage
+  );
   const costData = executionCosts.data;
-  const [resolveDraft, setResolveDraft] = useState({ id: '', cents: '0', evidence: '' });
+  const [resolveDraft, setResolveDraft] = useState<{
+    id: string;
+    tool: string;
+    maxCents: number;
+    correlationId: string;
+    cents: string;
+    evidence: string;
+  }>({ id: '', tool: '', maxCents: 0, correlationId: '', cents: '', evidence: '' });
   const [resolveBusy, setResolveBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const [actionError, setActionError] = useState('');
 
   async function resolveCostIncident() {
-    const cents = Number(resolveDraft.cents);
-    if (!Number.isInteger(cents) || cents < 0) {
-      setActionError('Le cout constate doit etre un entier positif en centimes.');
-      return;
-    }
-    if (!EVIDENCE_PATTERN.test(resolveDraft.evidence.trim())) {
-      setActionError('Une reference de preuve au format UUID est requise.');
+    const validated = validateResolveIncidentInput({
+      cents: resolveDraft.cents,
+      evidence: resolveDraft.evidence,
+      maxCents: resolveDraft.maxCents
+    });
+    if (!validated.ok) {
+      setActionError(validated.error);
       return;
     }
     setResolveBusy(true);
@@ -84,11 +109,19 @@ export default function AdminCostsPage() {
     setNotice('');
     try {
       const result = await adminApi.resolveExecutionIncident(resolveDraft.id, {
-        cents,
-        evidence: resolveDraft.evidence.trim()
+        cents: validated.cents,
+        evidence: validated.evidence
       });
-      setNotice('Operation ' + shortId(result.id, 10) + ' resolue (etat ' + result.state + ').');
-      setResolveDraft({ id: '', cents: '0', evidence: '' });
+      setNotice(
+        'Operation ' +
+          shortId(result.id, 10) +
+          ' resolue (etat ' +
+          result.state +
+          ', cout ' +
+          result.costState +
+          ').'
+      );
+      setResolveDraft({ id: '', tool: '', maxCents: 0, correlationId: '', cents: '', evidence: '' });
       executionCosts.reload();
     } catch (error) {
       setActionError(errorMessage(error));
@@ -98,8 +131,12 @@ export default function AdminCostsPage() {
   }
 
   const uniqueProviders = Array.from(
-    new Set(data ? data.byProvider.map((entry) => entry.provider) : [])
-  );
+    new Set([
+      ...knownProviders,
+      ...(data ? data.byProvider.map((entry) => entry.provider) : []),
+      ...(filters.provider ? [filters.provider] : [])
+    ])
+  ).sort();
   const providerSelectOptions = [{ value: '', label: 'Tous les providers' }].concat(
     uniqueProviders.map((provider) => ({ value: provider, label: provider }))
   );
@@ -130,8 +167,11 @@ export default function AdminCostsPage() {
           <button
             type="button"
             className="btn btn-ghost btn-small"
-            onClick={resource.reload}
-            disabled={resource.loading}
+            onClick={() => {
+              resource.reload();
+              executionCosts.reload();
+            }}
+            disabled={resource.loading || executionCosts.loading}
           >
             Actualiser
           </button>
@@ -290,29 +330,34 @@ export default function AdminCostsPage() {
 
           <div className="admin-metric-grid">
             <MetricCard
-              label="Estime (propose)"
+              label="Estime (ESTIMATED)"
               value={formatCents(costData.summary.estimatedCents)}
-              hint="Operations proposees, aucune reservation engagee"
+              hint="Estimations et propositions (jamais une facture)"
             />
             <MetricCard
-              label="Reserve"
+              label="Reserve (RESERVED)"
               value={formatCents(costData.summary.reservedCents)}
               hint="Reservations en cours chez le ToolBroker"
             />
             <MetricCard
-              label="Confirme"
-              value={formatCents(costData.summary.confirmedCents)}
-              hint="Couts rapportes ou reconcilies"
+              label="Reel rapporte (REPORTED)"
+              value={formatCents(costData.summary.reportedCents ?? 0)}
+              hint="Montants rapportes par les fournisseurs"
             />
             <MetricCard
-              label="Incertain"
+              label="Reconcilie (RECONCILED)"
+              value={formatCents(costData.summary.reconciledCents ?? 0)}
+              hint="Montants constates manuellement avec preuve"
+            />
+            <MetricCard
+              label="Incertain (UNKNOWN)"
               value={formatCents(costData.summary.uncertainCents)}
               hint="Reservations UNKNOWN, jamais liberees silencieusement"
             />
             <MetricCard
               label="Exposition max"
               value={formatCents(costData.summary.maxExposureCents)}
-              hint="Reserve + incertain"
+              hint={'Reserve + incertain (total confirme : ' + formatCents(costData.summary.confirmedCents) + ')'}
             />
           </div>
 
@@ -343,62 +388,77 @@ export default function AdminCostsPage() {
             {costData.budgets.length === 0 ? (
               <p className="admin-empty">Aucun compte d execution configure.</p>
             ) : (
-              <div className="admin-table-wrap">
-                <table className="admin-table">
-                  <thead>
-                    <tr>
-                      <th>Compte</th>
-                      <th>Execution</th>
-                      <th>Plafond</th>
-                      <th>Reserve</th>
-                      <th>Consomme</th>
-                      <th>Restant</th>
-                      <th>Utilisation</th>
-                      <th>Alerte</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {costData.budgets.map((budget) => (
-                      <tr key={budget.userId}>
-                        <td>
-                          {budget.email}
-                          <br />
-                          <span className="admin-meta">{budget.name}</span>
-                        </td>
-                        <td>
-                          {budget.enabled ? 'Activee' : 'Desactivee'}
-                          {budget.status === 'suspended' ? ' · compte suspendu' : ''}
-                        </td>
-                        <td className="admin-nowrap">{formatCents(budget.limitCents)}</td>
-                        <td className="admin-nowrap">{formatCents(budget.reservedCents)}</td>
-                        <td className="admin-nowrap">{formatCents(budget.spentCents)}</td>
-                        <td className={'admin-nowrap' + (budget.remainingCents < 0 ? ' admin-text-danger' : '')}>
-                          {formatCents(budget.remainingCents)}
-                        </td>
-                        <td className="admin-nowrap">{budget.percentUsed === null ? '-' : budget.percentUsed + ' %'}</td>
-                        <td>
-                          <StatusBadge
-                            status={
-                              budget.alert === 'ok'
-                                ? 'ok'
-                                : budget.alert === 'unknown'
-                                  ? 'pending'
-                                  : budget.alert === 'warning'
-                                    ? 'recovery_pending'
-                                    : 'failed'
-                            }
-                            label={BUDGET_ALERT_LABELS[budget.alert]}
-                          />
-                        </td>
+              <>
+                <div className="admin-table-wrap">
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>Compte</th>
+                        <th>Execution</th>
+                        <th>Plafond</th>
+                        <th>Reserve</th>
+                        <th>Consomme</th>
+                        <th>Restant</th>
+                        <th>Utilisation</th>
+                        <th>Alerte</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {costData.budgets.map((budget) => (
+                        <tr key={budget.userId}>
+                          <td>
+                            {budget.email}
+                            <br />
+                            <span className="admin-meta">{budget.name}</span>
+                          </td>
+                          <td>
+                            {budget.enabled ? 'Activee' : 'Desactivee'}
+                            {budget.status === 'suspended' ? ' · compte suspendu' : ''}
+                          </td>
+                          <td className="admin-nowrap">{formatCents(budget.limitCents)}</td>
+                          <td className="admin-nowrap">{formatCents(budget.reservedCents)}</td>
+                          <td className="admin-nowrap">{formatCents(budget.spentCents)}</td>
+                          <td className={'admin-nowrap' + (budget.remainingCents < 0 ? ' admin-text-danger' : '')}>
+                            {formatCents(budget.remainingCents)}
+                          </td>
+                          <td className="admin-nowrap">{budget.percentUsed === null ? '-' : budget.percentUsed + ' %'}</td>
+                          <td>
+                            <StatusBadge
+                              status={
+                                budget.alert === 'ok'
+                                  ? 'ok'
+                                  : budget.alert === 'unknown'
+                                    ? 'pending'
+                                    : budget.alert === 'warning'
+                                      ? 'recovery_pending'
+                                      : 'failed'
+                              }
+                              label={BUDGET_ALERT_LABELS[budget.alert]}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {costData.scope?.budgets ? (
+                  <Pagination
+                    page={costData.scope.budgets.page}
+                    totalPages={
+                      costData.scope.budgets.totalPages ??
+                      Math.max(1, Math.ceil(costData.scope.budgets.total / costData.scope.budgets.pageSize))
+                    }
+                    total={costData.scope.budgets.total}
+                    pageSize={costData.scope.budgets.pageSize}
+                    onPageChange={setAccountsPage}
+                    disabled={executionCosts.loading}
+                  />
+                ) : null}
+              </>
             )}
           </SectionCard>
 
-          <SectionCard title="Couts par outil" description="Montants reels par outil du registre : plafond cumule, couts confirmes et exposition incertaine.">
+          <SectionCard title="Couts par outil" description="Distinction par outil entre estime, reel rapporte, reconcilie manuellement, incertain et plafond cumule.">
             {costData.byTool.length === 0 ? (
               <p className="admin-empty">Aucune operation outillee.</p>
             ) : (
@@ -409,9 +469,11 @@ export default function AdminCostsPage() {
                       <th>Outil</th>
                       <th>Fournisseur</th>
                       <th>Operations</th>
-                      <th>Plafond cumule</th>
-                      <th>Confirme</th>
+                      <th>Estime</th>
+                      <th>Reel rapporte</th>
+                      <th>Reconcilie</th>
                       <th>Incertain</th>
+                      <th>Plafond cumule</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -420,9 +482,11 @@ export default function AdminCostsPage() {
                         <td className="admin-mono">{entry.tool}</td>
                         <td className="admin-mono">{entry.provider}</td>
                         <td>{formatNumber(entry.operations)}</td>
-                        <td className="admin-nowrap">{formatCents(entry.maxCents)}</td>
-                        <td className="admin-nowrap">{formatCents(entry.confirmedCents)}</td>
+                        <td className="admin-nowrap">{formatCents(entry.estimatedCents ?? 0)}</td>
+                        <td className="admin-nowrap">{formatCents(entry.reportedCents ?? 0)}</td>
+                        <td className="admin-nowrap">{formatCents(entry.reconciledCents ?? 0)}</td>
                         <td className="admin-nowrap">{formatCents(entry.uncertainCents)}</td>
+                        <td className="admin-nowrap">{formatCents(entry.maxCents)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -433,7 +497,7 @@ export default function AdminCostsPage() {
 
           <SectionCard
             title="Fournisseurs, disponibilite et plafonds"
-            description="Disponibilite issue de la configuration serveur (jamais sondee) et exposition par fournisseur."
+            description="Disponibilite issue de la configuration serveur (Configure · Non verifie ne vaut pas Sain) et repartition des couts par fournisseur."
           >
             {costData.byProvider.length === 0 ? (
               <p className="admin-empty">Aucun fournisseur engage.</p>
@@ -446,37 +510,36 @@ export default function AdminCostsPage() {
                       <th>Disponibilite</th>
                       <th>Outils</th>
                       <th>Operations</th>
-                      <th>Plafond cumule</th>
-                      <th>Confirme</th>
+                      <th>Estime</th>
+                      <th>Reel rapporte</th>
+                      <th>Reconcilie</th>
                       <th>Incertain</th>
+                      <th>Plafond cumule</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {costData.byProvider.map((entry) => (
-                      <tr key={entry.provider}>
-                        <td className="admin-mono">{entry.provider}</td>
-                        <td>
-                          <StatusBadge
-                            status={
-                              entry.availability === 'configured'
-                                ? 'ok'
-                                : entry.availability === 'local'
-                                  ? 'active'
-                                  : entry.availability === 'disabled'
-                                    ? 'none'
-                                    : 'pending'
-                            }
-                            label={TOOL_AVAILABILITY_LABELS[entry.availability]}
-                            title={entry.availabilityReason ?? undefined}
-                          />
-                        </td>
-                        <td>{formatNumber(entry.tools)}</td>
-                        <td>{formatNumber(entry.operations)}</td>
-                        <td className="admin-nowrap">{formatCents(entry.maxCents)}</td>
-                        <td className="admin-nowrap">{formatCents(entry.confirmedCents)}</td>
-                        <td className="admin-nowrap">{formatCents(entry.uncertainCents)}</td>
-                      </tr>
-                    ))}
+                    {costData.byProvider.map((entry) => {
+                      const badge = availabilityBadge(entry);
+                      return (
+                        <tr key={entry.provider}>
+                          <td className="admin-mono">{entry.provider}</td>
+                          <td>
+                            <StatusBadge
+                              status={badge.status}
+                              label={badge.label}
+                              title={entry.availabilityReason ?? undefined}
+                            />
+                          </td>
+                          <td>{formatNumber(entry.tools)}</td>
+                          <td>{formatNumber(entry.operations)}</td>
+                          <td className="admin-nowrap">{formatCents(entry.estimatedCents ?? 0)}</td>
+                          <td className="admin-nowrap">{formatCents(entry.reportedCents ?? 0)}</td>
+                          <td className="admin-nowrap">{formatCents(entry.reconciledCents ?? 0)}</td>
+                          <td className="admin-nowrap">{formatCents(entry.uncertainCents)}</td>
+                          <td className="admin-nowrap">{formatCents(entry.maxCents)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -486,7 +549,21 @@ export default function AdminCostsPage() {
           <SectionCard
             title="Operations a cout incertain"
             description="Reservations UNKNOWN : jamais liberees silencieusement. Resolution manuelle avec cout constate et preuve deja journalisee."
+            actions={
+              costData.scope?.uncertain ? (
+                <span className="admin-meta">
+                  {formatNumber(costData.scope.uncertain.returned)} / {formatNumber(costData.scope.uncertain.total)} affichee(s)
+                </span>
+              ) : null
+            }
           >
+            {costData.scope?.uncertain?.truncated ? (
+              <p className="admin-banner admin-banner--warn" role="status">
+                Liste limitee aux {formatNumber(costData.scope.uncertain.limit)} operations incertaines les plus recentes
+                sur {formatNumber(costData.scope.uncertain.total)}. Consultez Jobs avec le filtre UNKNOWN pour paginer
+                l ensemble.
+              </p>
+            ) : null}
             {costData.uncertain.length === 0 ? (
               <p className="admin-empty">Aucune operation a cout incertain.</p>
             ) : (
@@ -504,37 +581,53 @@ export default function AdminCostsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {costData.uncertain.map((entry) => (
-                      <tr key={entry.id}>
-                        <td className="admin-mono">{entry.tool}</td>
-                        <td>
-                          {entry.state} / {entry.costState}
-                        </td>
-                        <td className="admin-nowrap">{formatCents(entry.maxCents)}</td>
-                        <td>{entry.ownerEmail ?? shortId(entry.accountId, 10)}</td>
-                        <td className="admin-mono" title={entry.correlationId}>
-                          {shortId(entry.correlationId, 8)}
-                        </td>
-                        <td className="admin-nowrap">{Math.round(entry.ageMs / 1000)} s</td>
-                        <td>
-                          <div className="admin-actions">
-                            <button
-                              type="button"
-                              className="btn btn-secondary btn-small"
-                              onClick={() => setResolveDraft({ id: entry.id, cents: String(entry.maxCents), evidence: '' })}
-                            >
-                              Resoudre
-                            </button>
-                            <a
-                              className="btn btn-ghost btn-small"
-                              href={'/admin/audit?traceId=' + encodeURIComponent(entry.correlationId)}
-                            >
-                              Audit
-                            </a>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                    {costData.uncertain.map((entry) => {
+                      const canResolve = entry.resolveEligible !== false && entry.state === 'UNKNOWN';
+                      return (
+                        <tr key={entry.id}>
+                          <td className="admin-mono">{entry.tool}</td>
+                          <td>
+                            {entry.state} / {entry.costState}
+                          </td>
+                          <td className="admin-nowrap">{formatCents(entry.maxCents)}</td>
+                          <td>{entry.ownerEmail ?? shortId(entry.accountId, 10)}</td>
+                          <td className="admin-mono" title={entry.correlationId}>
+                            {shortId(entry.correlationId, 8)}
+                          </td>
+                          <td className="admin-nowrap">{Math.round(entry.ageMs / 1000)} s</td>
+                          <td>
+                            <div className="admin-actions">
+                              {canResolve ? (
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary btn-small"
+                                  onClick={() => {
+                                    setActionError('');
+                                    setNotice('');
+                                    setResolveDraft({
+                                      id: entry.id,
+                                      tool: entry.tool,
+                                      maxCents: entry.maxCents,
+                                      correlationId: entry.correlationId,
+                                      cents: String(entry.maxCents),
+                                      evidence: ''
+                                    });
+                                  }}
+                                >
+                                  Resoudre
+                                </button>
+                              ) : null}
+                              <a
+                                className="btn btn-ghost btn-small"
+                                href={'/admin/audit?traceId=' + encodeURIComponent(entry.correlationId)}
+                              >
+                                Audit
+                              </a>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -542,18 +635,21 @@ export default function AdminCostsPage() {
             {resolveDraft.id ? (
               <div className="admin-form">
                 <p className="admin-meta">
-                  Resolution de l operation {shortId(resolveDraft.id, 10)} : le cout constate doit etre justifie par une
-                  preuve existante. Aucune reservation n est liberee sans cette procedure.
+                  Resolution de l operation {shortId(resolveDraft.id, 10)} ({resolveDraft.tool}, plafond{' '}
+                  {resolveDraft.maxCents} c, correlation {shortId(resolveDraft.correlationId, 8)}) : le cout constate
+                  doit etre justifie par une preuve existante. Aucune reservation n est liberee sans cette procedure.
                 </p>
                 <div className="admin-form-grid">
                   <TextField
                     id="cost-resolve-cents"
-                    label="Cout constate (centimes)"
+                    label={'Cout constate (0 a ' + resolveDraft.maxCents + ' centimes)'}
                     type="number"
                     min={0}
+                    max={resolveDraft.maxCents}
                     step={1}
                     value={resolveDraft.cents}
                     onChange={(value) => setResolveDraft((previous) => ({ ...previous, cents: value }))}
+                    required
                   />
                   <TextField
                     id="cost-resolve-evidence"
@@ -561,6 +657,7 @@ export default function AdminCostsPage() {
                     value={resolveDraft.evidence}
                     onChange={(value) => setResolveDraft((previous) => ({ ...previous, evidence: value }))}
                     hint="Identifiant d une preuve deja journalisee."
+                    required
                   />
                 </div>
                 <div className="admin-actions">
@@ -575,7 +672,9 @@ export default function AdminCostsPage() {
                   <button
                     type="button"
                     className="btn btn-ghost btn-small"
-                    onClick={() => setResolveDraft({ id: '', cents: '0', evidence: '' })}
+                    onClick={() =>
+                      setResolveDraft({ id: '', tool: '', maxCents: 0, correlationId: '', cents: '', evidence: '' })
+                    }
                   >
                     Fermer
                   </button>

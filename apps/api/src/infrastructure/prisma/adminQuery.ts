@@ -270,7 +270,7 @@ export class PrismaAdminQuery implements AdminQueryPort {
         where: { status: 'failed' },
         orderBy: { createdAt: 'desc' },
         take: 5,
-        select: { id: true, status: true, error: true, jobRunId: true, jobRun: { select: { projectId: true } } }
+        select: { id: true, status: true, error: true, jobRunId: true, createdAt: true, finishedAt: true, jobRun: { select: { projectId: true } } }
       }),
       this.db.orchestrationOutbox.findMany({
         where: { status: 'failed' },
@@ -298,7 +298,7 @@ export class PrismaAdminQuery implements AdminQueryPort {
         source: 'step_run' as const,
         status: step.status,
         error: step.error ?? 'StepRun en echec.',
-        createdAt: new Date(now).toISOString(),
+        createdAt: (step.finishedAt ?? step.createdAt).toISOString(),
         jobRunId: step.jobRunId,
         projectId: step.jobRun.projectId
       })),

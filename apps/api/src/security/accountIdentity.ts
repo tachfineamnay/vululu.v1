@@ -9,7 +9,7 @@ export async function lockAccountEmail(tx: Prisma.TransactionClient, email: stri
 
 export function findAccountsForEmail(tx: Prisma.TransactionClient, email: string) {
   // SQL equality treats '_' and '%' literally, unlike ILIKE-based matching.
-  return tx.$queryRaw<{ id: string; email: string; role: string }[]>`
-    SELECT "id", "email", "role" FROM "User" WHERE lower("email") = ${normalizeAccountEmail(email)} LIMIT 2
+  return tx.$queryRaw<{ id: string; email: string; role: string; status: string }[]>`
+    SELECT "id", "email", "role", "status" FROM "User" WHERE lower("email") = ${normalizeAccountEmail(email)} LIMIT 2
   `;
 }

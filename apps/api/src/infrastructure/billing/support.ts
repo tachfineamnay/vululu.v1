@@ -16,7 +16,7 @@ export { THREAD_ENTRY_LIMIT, THREAD_PAGE_SIZE, threadView };
  */
 const threadSelect = {
   id: true, userId: true, kind: true, subject: true, status: true, createdAt: true, updatedAt: true,
-  user: { select: { id: true, email: true, status: true } },
+  user: { select: { id: true, email: true, name: true, status: true } },
   _count: { select: { entries: true } },
   entries: {
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -37,12 +37,13 @@ export const threads = async (where: Prisma.ServiceTicketWhereInput, options: { 
 /** Page de file : même filtre pour les lignes et pour le total, curseur stable par identifiant. */
 export async function threadsPage(
   where: Prisma.ServiceTicketWhereInput,
-  options: { cursor?: string; pageSize?: number } = {}
+  options: { cursor?: string; pageSize?: number } = {},
+  db: Pick<Prisma.TransactionClient, 'serviceTicket'> = prisma
 ) {
   const pageSize = Math.min(Math.max(1, options.pageSize ?? THREAD_PAGE_SIZE), 50);
   const [total, rows] = await Promise.all([
-    prisma.serviceTicket.count({ where }),
-    prisma.serviceTicket.findMany({
+    db.serviceTicket.count({ where }),
+    db.serviceTicket.findMany({
       where,
       orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
       take: pageSize + 1,

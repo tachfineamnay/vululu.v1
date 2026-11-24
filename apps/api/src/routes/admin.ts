@@ -132,7 +132,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       const roleChanged = nextRole !== target.role;
       const statusChanged = nextStatus !== target.status;
       if (!roleChanged && !statusChanged) {
-        return { user: target, revokedSessions: 0, roleChanged: false, statusChanged: false };
+        return { user: target, revokedSessions: 0, revokedTokens: 0, roleChanged: false, statusChanged: false };
       }
       const removesActiveSuperAdmin =
         target.role === 'super_admin' &&
@@ -161,6 +161,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         select: { id: true, email: true, role: true, status: true, suspendedAt: true }
       });
       let revokedSessions = 0;
+      let revokedTokens = 0;
       const revokeReason =
         statusChanged && nextStatus === 'suspended'
           ? 'admin_suspend'
@@ -169,6 +170,12 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
             : null;
       if (revokeReason) {
         revokedSessions = await revokeAllUserSessions(target.id, revokeReason, tx);
+      }
+      if (statusChanged && nextStatus === 'suspended') {
+        const deletedTokens = await tx.accountToken.deleteMany({
+          where: { OR: [{ userId: target.id }, { email: target.email.toLowerCase() }] }
+        });
+        revokedTokens = deletedTokens.count;
       }
       if (roleChanged) {
         await recordAuditEvent(
@@ -200,13 +207,14 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
               email: target.email,
               fromStatus: target.status,
               toStatus: nextStatus,
-              revokedSessions
+              revokedSessions,
+              ...(nextStatus === 'suspended' ? { revokedTokens } : {})
             }
           },
           tx
         );
       }
-      return { user: updated, revokedSessions, roleChanged, statusChanged };
+      return { user: updated, revokedSessions, revokedTokens, roleChanged, statusChanged };
     });
 
     return {
@@ -218,6 +226,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         suspendedAt: result.user.suspendedAt ? result.user.suspendedAt.toISOString() : null
       },
       revokedSessions: result.revokedSessions,
+      revokedTokens: result.revokedTokens,
       roleChanged: result.roleChanged,
       statusChanged: result.statusChanged
     };

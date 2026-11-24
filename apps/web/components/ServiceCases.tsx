@@ -9,7 +9,7 @@ export type TicketEntry = {
   status: string;
   createdAt: string;
 };
-export type TicketUser = { email: string; name: string; status: string };
+export type TicketUser = { email: string; name?: string | null; status: string };
 export type Ticket = {
   id: string;
   userId: string;
@@ -21,6 +21,7 @@ export type Ticket = {
   updatedAt?: string;
   user?: TicketUser | null;
   entriesCount?: number;
+  entriesTruncated?: boolean;
   lastEntryRole?: string | null;
   lastEntryAt?: string | null;
 };
@@ -112,11 +113,19 @@ export function ServiceCases({
             <p>
               Référence {t.id} · état technique {t.status}
               {mode !== 'customer' && t.user
-                ? ' · Compte ' + t.user.email + ' (' + t.user.name + ')' + (t.user.status === 'suspended' ? ' · suspendu' : '')
+                ? ' · Compte ' +
+                  t.user.email +
+                  (t.user.name ? ' (' + t.user.name + ')' : '') +
+                  (t.user.status === 'suspended' ? ' · suspendu' : '')
                 : mode !== 'customer'
                   ? ' · Compte ' + t.userId
                   : ''}
             </p>
+            {t.entriesTruncated && typeof t.entriesCount === 'number' ? (
+              <p className="muted">
+                Affichage des {t.entries.length} messages les plus récents sur {t.entriesCount}.
+              </p>
+            ) : null}
             <ol>
               {t.entries.map((e) => (
                 <li key={e.id}>
@@ -128,6 +137,7 @@ export function ServiceCases({
             </ol>
             {t.status !== 'CLOSED' && mode !== 'admin' && (
               <form
+                key={t.id + ':' + t.status}
                 className="stack"
                 onSubmit={async (e) => {
                   e.preventDefault();

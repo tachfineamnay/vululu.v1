@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import ConfirmDialog from '../../../components/admin/ConfirmDialog';
 import ErrorState from '../../../components/admin/ErrorState';
 import { SelectField, TextField } from '../../../components/admin/Fields';
@@ -171,6 +171,7 @@ function UsersPanel() {
         setDetailReloadToken((token) => token + 1);
       }
     } catch (error) {
+      setRevokeTarget(null);
       setActionError(errorMessage(error));
     } finally {
       setActionBusy(false);
@@ -178,6 +179,12 @@ function UsersPanel() {
   }
 
   const data = resource.data;
+
+  useEffect(() => {
+    if (data && page > data.totalPages) {
+      setPage(data.totalPages);
+    }
+  }, [data, page]);
 
   return (
     <div className="admin-sections">
@@ -383,6 +390,7 @@ function InvitationsPanel() {
       const result = await adminApi.createInvitation({ email: emailDraft.trim(), role: roleDraft });
       setCreated({ email: result.invitation.email, token: result.token });
       setEmailDraft('');
+      setPage(1);
       setNotice('Invitation creee pour ' + result.invitation.email + '.');
       resource.reload();
     } catch (error) {
@@ -413,6 +421,7 @@ function InvitationsPanel() {
       setRevokeTarget(null);
       resource.reload();
     } catch (error) {
+      setRevokeTarget(null);
       setActionError(errorMessage(error));
     } finally {
       setActionBusy(false);

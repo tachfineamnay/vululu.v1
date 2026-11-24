@@ -1,6 +1,6 @@
 'use client';
 import { useWorkspace } from '../../components/WorkspacePreferences';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import StudioNav from '../../components/StudioNav';
 import { ServiceCases, type Ticket } from '../../components/ServiceCases';
 import { api } from '../../lib/api';
@@ -20,6 +20,15 @@ const STATUS_FILTERS: Array<{ value: '' | 'OPEN' | 'IN_PROGRESS' | 'CLOSED'; lab
   { value: 'IN_PROGRESS', label: 'En cours' },
   { value: 'CLOSED', label: 'Clôturé' }
 ];
+
+type SupportFilters = {
+  kind: string;
+  status: '' | 'OPEN' | 'IN_PROGRESS' | 'CLOSED';
+  search: string;
+};
+
+const EMPTY_FILTERS: SupportFilters = { kind: '', status: '', search: '' };
+
 type SupportPage = {
   items: Ticket[];
   total: number;
@@ -30,59 +39,90 @@ type SupportPage = {
   filters: { kind: string | null; status: string | null; q: string | null };
 };
 
+function supportEndpoint(filters: SupportFilters, cursor: string | null) {
+  const params = new URLSearchParams();
+  if (filters.kind) params.set('kind', filters.kind);
+  if (filters.status) params.set('status', filters.status);
+  if (filters.search.trim()) params.set('q', filters.search.trim());
+  if (cursor) params.set('cursor', cursor);
+  return '/api/support/cases' + (params.toString() ? '?' + params.toString() : '');
+}
+
 export default function Support() {
   const { t } = useWorkspace();
   const [rows, list] = useState<Ticket[]>([]),
     [err, fail] = useState('');
-  const [kind, setKind] = useState('');
-  const [status, setStatus] = useState<'' | 'OPEN' | 'IN_PROGRESS' | 'CLOSED'>('');
-  const [search, setSearch] = useState('');
+  const [filters, setFilters] = useState<SupportFilters>(EMPTY_FILTERS);
   const [total, setTotal] = useState(0);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [entryLimit, setEntryLimit] = useState(20);
   const [busy, setBusy] = useState(false);
+  const requestSeq = useRef(0);
+  const filtersRef = useRef<SupportFilters>(filters);
+  filtersRef.current = filters;
 
-  function endpoint(cursor: string | null) {
-    const params = new URLSearchParams();
-    if (kind) params.set('kind', kind);
-    if (status) params.set('status', status);
-    if (search.trim()) params.set('q', search.trim());
-    if (cursor) params.set('cursor', cursor);
-    return '/api/support/cases' + (params.toString() ? '?' + params.toString() : '');
-  }
-
-  // P12-08 — filtres, totaux et page viennent du serveur : plus de filtrage local qui
-  // contredirait les compteurs, et plus de chargement de tous les historiques.
-  async function load() {
+  // P12-08 — filtres, totaux et page viennent du serveur : jamais de closure obsolète
+  // ni de filtrage local qui contredirait les compteurs serveur.
+  async function load(override?: SupportFilters) {
+    const active = override ?? filtersRef.current;
+    const seq = ++requestSeq.current;
     setBusy(true);
+    setNextCursor(null);
     try {
-      const page = await api<SupportPage>(endpoint(null));
+      const page = await api<SupportPage>(supportEndpoint(active, null));
+      if (seq !== requestSeq.current) return;
       list(page.items);
       setTotal(page.total);
       setCounts(page.counts);
       setNextCursor(page.nextCursor);
       setEntryLimit(page.entryLimit);
       fail('');
+    } catch (error) {
+      if (seq !== requestSeq.current) return;
+      fail(error instanceof Error ? error.message : 'Erreur lors du chargement des dossiers.');
     } finally {
-      setBusy(false);
+      if (seq === requestSeq.current) {
+        setBusy(false);
+      }
     }
   }
 
   async function loadMore() {
-    if (!nextCursor) return;
+    if (!nextCursor || busy) return;
+    const active = filtersRef.current;
+    const seq = ++requestSeq.current;
     setBusy(true);
     try {
-      const page = await api<SupportPage>(endpoint(nextCursor));
-      list((previous) => [...previous, ...page.items]);
+      const page = await api<SupportPage>(supportEndpoint(active, nextCursor));
+      if (seq !== requestSeq.current) return;
+      list((previous) => {
+        const seen = new Set(previous.map((item) => item.id));
+        const appended = page.items.filter((item) => !seen.has(item.id));
+        return [...previous, ...appended];
+      });
+      setTotal(page.total);
+      setCounts(page.counts);
       setNextCursor(page.nextCursor);
+      fail('');
+    } catch (error) {
+      if (seq !== requestSeq.current) return;
+      fail(error instanceof Error ? error.message : 'Erreur lors du chargement des dossiers suivants.');
     } finally {
-      setBusy(false);
+      if (seq === requestSeq.current) {
+        setBusy(false);
+      }
     }
   }
 
+  function applyFilterChange(next: SupportFilters) {
+    setFilters(next);
+    filtersRef.current = next;
+    void load(next);
+  }
+
   useEffect(() => {
-    load().catch((e) => fail(e.message));
+    void load(EMPTY_FILTERS);
   }, []);
 
   const beta = useMemo(
@@ -109,10 +149,20 @@ export default function Support() {
         </p>
 
         <section className="card stack" aria-label="Filtres des dossiers">
-          <div className="stack" role="search">
+          <form
+            className="stack"
+            role="search"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void load(filters);
+            }}
+          >
             <label>
               Type de dossier
-              <select value={kind} onChange={(event) => setKind(event.target.value)}>
+              <select
+                value={filters.kind}
+                onChange={(event) => applyFilterChange({ ...filters, kind: event.target.value })}
+              >
                 {KIND_FILTERS.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
@@ -123,11 +173,13 @@ export default function Support() {
             <label>
               État serveur
               <select
-                value={status}
-                onChange={(event) => {
-                  setStatus(event.target.value as '' | 'OPEN' | 'IN_PROGRESS' | 'CLOSED');
-                  void load().catch((e) => fail(e.message));
-                }}
+                value={filters.status}
+                onChange={(event) =>
+                  applyFilterChange({
+                    ...filters,
+                    status: event.target.value as '' | 'OPEN' | 'IN_PROGRESS' | 'CLOSED'
+                  })
+                }
               >
                 {STATUS_FILTERS.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -140,28 +192,26 @@ export default function Support() {
               Recherche
               <input
                 type="search"
-                value={search}
+                value={filters.search}
                 maxLength={120}
                 placeholder="Objet, email ou référence"
-                onChange={(event) => setSearch(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault();
-                    void load().catch((e) => fail(e.message));
-                  }
-                }}
+                onChange={(event) => setFilters((previous) => ({ ...previous, search: event.target.value }))}
               />
             </label>
-            <button
-              type="button"
-              onClick={() => {
-                fail('');
-                void load().catch((e) => fail(e.message));
-              }}
-            >
-              Actualiser
-            </button>
-          </div>
+            <div className="admin-actions">
+              <button type="submit" disabled={busy}>
+                {busy ? t('Chargement…', 'Loading…') : t('Actualiser', 'Refresh')}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={busy}
+                onClick={() => applyFilterChange(EMPTY_FILTERS)}
+              >
+                {t('Réinitialiser', 'Reset')}
+              </button>
+            </div>
+          </form>
           <p className="muted" data-testid="support-totals">
             {t('Dossiers correspondants', 'Matching cases')} : {total} · {t('affichés', 'shown')} : {rows.length} ·{' '}
             {t('ouverts', 'open')} : {counts.OPEN ?? 0} · {t('en cours', 'in progress')} : {counts.IN_PROGRESS ?? 0} ·{' '}
@@ -182,13 +232,14 @@ export default function Support() {
           </p>
         </section>
 
-        {err ? <p role="alert">{err}</p> : <ServiceCases items={rows} mode="support" reload={load} />}
+        {err ? <p role="alert">{err}</p> : null}
+        <ServiceCases items={rows} mode="support" reload={() => load(filtersRef.current)} />
         {nextCursor ? (
           <button
             type="button"
             className="btn btn-secondary"
             disabled={busy}
-            onClick={() => void loadMore().catch((e) => fail(e.message))}
+            onClick={() => void loadMore()}
           >
             {busy ? t('Chargement…', 'Loading…') : t('Charger les dossiers suivants', 'Load more cases')}
           </button>

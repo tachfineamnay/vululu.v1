@@ -11,6 +11,7 @@ import StatusBadge from '../../../components/admin/StatusBadge';
 import { useAdminResource } from '../../../components/admin/useAdminResource';
 import {
   adminApi,
+  availabilityBadge,
   errorMessage,
   formatDateTime,
   roleLabel,
@@ -83,6 +84,7 @@ export default function AdminAgentsPage() {
       agents.reload();
       configs.reload();
     } catch (error) {
+      setPendingAction(null);
       setActionError(errorMessage(error));
     } finally {
       setActionBusy(false);
@@ -471,19 +473,16 @@ function ToolCatalogSection() {
                   <td className="admin-nowrap">{tool.maxCents} c</td>
                   <td>{tool.agentProposable ? 'Proposable' : 'Reserve utilisateur'}</td>
                   <td>
-                    <StatusBadge
-                      status={
-                        tool.availability === 'configured'
-                          ? 'ok'
-                          : tool.availability === 'local'
-                            ? 'active'
-                            : tool.availability === 'disabled'
-                              ? 'none'
-                              : 'pending'
-                      }
-                      label={TOOL_AVAILABILITY_LABELS[tool.availability]}
-                      title={tool.availabilityReason ?? undefined}
-                    />
+                    {(() => {
+                      const badge = availabilityBadge(tool);
+                      return (
+                        <StatusBadge
+                          status={badge.status}
+                          label={badge.label}
+                          title={tool.availabilityReason ?? undefined}
+                        />
+                      );
+                    })()}
                   </td>
                 </tr>
               ))}
@@ -514,12 +513,15 @@ function ExecutionPolicySection() {
 
   useEffect(() => {
     if (!current) {
+      setEnabled(false);
+      setLimitCents('0');
+      setSelected([]);
       return;
     }
     setEnabled(current.enabled);
     setLimitCents(String(current.limitCents));
     setSelected(current.tools);
-  }, [current]);
+  }, [accountId, current]);
 
   const accountOptions = (accounts.data ? accounts.data.items : []).map((item) => ({
     value: item.userId,
@@ -535,13 +537,20 @@ function ExecutionPolicySection() {
     if (!accountId) {
       return;
     }
+    const rawLimit = limitCents.trim();
+    const parsedLimit = rawLimit.length > 0 ? Number(rawLimit) : Number.NaN;
+    if (!Number.isInteger(parsedLimit) || parsedLimit < 0 || parsedLimit > 1000000000) {
+      setError('Le plafond doit etre un entier compris entre 0 et 1 000 000 000 centimes.');
+      setNotice('');
+      return;
+    }
     setBusy(true);
     setError('');
     setNotice('');
     try {
       const result = await adminApi.setExecutionAccount(accountId, {
         enabled,
-        limitCents: Math.max(0, Math.trunc(Number(limitCents) || 0)),
+        limitCents: parsedLimit,
         tools: selected
       });
       setNotice(
