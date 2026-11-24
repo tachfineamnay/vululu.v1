@@ -6,6 +6,8 @@ export type AuditEventInput = {
   action: string;
   targetType: string;
   targetId?: string | null;
+  traceId?: string | null;
+  requestId?: string | null;
   metadata?: Record<string, unknown> | null;
 };
 
@@ -20,6 +22,8 @@ export async function recordAuditEvent(event: AuditEventInput, db: Prisma.Transa
       action: event.action,
       targetType: event.targetType,
       targetId: event.targetId ?? null,
+      ...(event.traceId !== undefined ? { traceId: event.traceId } : {}),
+      ...(event.requestId !== undefined ? { requestId: event.requestId } : {}),
       metadata: event.metadata ? (event.metadata as Prisma.InputJsonValue) : undefined
     }
   });

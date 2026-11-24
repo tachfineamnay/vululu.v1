@@ -12,14 +12,15 @@ import StatusBadge from '../../../components/admin/StatusBadge';
 import { useAdminResource } from '../../../components/admin/useAdminResource';
 import {
   adminApi,
+  availabilityBadge,
   errorMessage,
   formatCents,
   formatDateTime,
   formatJson,
   LICENSE_OPTIONS,
+  providerRegistryBadge,
   shortId,
   statusLabel,
-  TOOL_AVAILABILITY_LABELS,
   type AdminCapabilityRequirement,
   type AdminTool,
   type AdminLicense,
@@ -88,6 +89,7 @@ export default function AdminProvidersPage() {
   const [notice, setNotice] = useState('');
   const [actionError, setActionError] = useState('');
   const [busyKey, setBusyKey] = useState('');
+  const [availabilityReloadToken, setAvailabilityReloadToken] = useState(0);
 
   const [providerKeyDraft, setProviderKeyDraft] = useState('');
   const [providerNameDraft, setProviderNameDraft] = useState('');
@@ -134,6 +136,7 @@ export default function AdminProvidersPage() {
       await adminApi.setProviderActive(provider.key, !provider.active);
       setNotice('Fournisseur ' + provider.key + (provider.active ? ' desactive.' : ' active.'));
       providers.reload();
+      setAvailabilityReloadToken((token) => token + 1);
     } catch (error) {
       setActionError(errorMessage(error));
     } finally {
@@ -157,6 +160,7 @@ export default function AdminProvidersPage() {
       setProviderKeyDraft('');
       setProviderNameDraft('');
       providers.reload();
+      setAvailabilityReloadToken((token) => token + 1);
     } catch (error) {
       setProviderFormError(errorMessage(error));
     } finally {
@@ -360,10 +364,11 @@ export default function AdminProvidersPage() {
       />
 
       <div className="admin-banner admin-banner--warn" role="note">
-        <strong>Registre MOCK</strong>
+        <strong>Registre fournisseurs et simulateur MOCK</strong>
         <span>
-          Aucune cle fournisseur n est stockee ni renvoyee. Les appels providers sont mock
-          deterministes : aucun cout fournisseur reel n est engage.
+          Les cles API enregistrees sont chiffrees cote serveur et ne sont jamais restituees. Enregistrer une cle
+          ne teste pas la connexion (etat « Configure · Non verifie »). Le simulateur de routage ci-dessous execute
+          uniquement des providers mock deterministes sans cout fournisseur reel.
         </span>
       </div>
 
@@ -406,31 +411,38 @@ export default function AdminProvidersPage() {
                       <th>Cle</th>
                       <th>Nom</th>
                       <th>Actif</th>
+                      <th>Disponibilite / Verification</th>
                       <th>Cree le</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {providerItems.map((provider) => (
-                      <tr key={provider.id}>
-                        <td className="admin-mono">{provider.key}</td>
-                        <td>{provider.name}</td>
-                        <td>
-                          <StatusBadge status={provider.active ? 'active' : 'none'} label={provider.active ? 'Actif' : 'Inactif'} />
-                        </td>
-                        <td className="admin-nowrap">{formatDateTime(provider.createdAt)}</td>
-                        <td>
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-small"
-                            disabled={busyKey === 'provider:' + provider.id}
-                            onClick={() => void toggleProvider(provider)}
-                          >
-                            {provider.active ? 'Desactiver' : 'Activer'}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {providerItems.map((provider) => {
+                      const stateBadge = providerRegistryBadge(provider);
+                      return (
+                        <tr key={provider.id}>
+                          <td className="admin-mono">{provider.key}</td>
+                          <td>{provider.name}</td>
+                          <td>
+                            <StatusBadge status={provider.active ? 'active' : 'none'} label={provider.active ? 'Actif' : 'Inactif'} />
+                          </td>
+                          <td>
+                            <StatusBadge status={stateBadge.status} label={stateBadge.label} title={stateBadge.detail} />
+                          </td>
+                          <td className="admin-nowrap">{formatDateTime(provider.createdAt)}</td>
+                          <td>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-small"
+                              disabled={busyKey === 'provider:' + provider.id}
+                              onClick={() => void toggleProvider(provider)}
+                            >
+                              {provider.active ? 'Desactiver' : 'Activer'}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -469,7 +481,18 @@ export default function AdminProvidersPage() {
         </SectionCard>
 
         <SectionCard title="Clés API IA" description="Facultatives pour la démo. Enregistrer une clé ne lance aucun appel IA.">
-          <div className="admin-credential-grid">{providerItems.map((provider) => <ProviderCredentialForm key={provider.id} provider={provider} onChanged={providers.reload} />)}</div>
+          <div className="admin-credential-grid">
+            {providerItems.map((provider) => (
+              <ProviderCredentialForm
+                key={provider.id}
+                provider={provider}
+                onChanged={() => {
+                  providers.reload();
+                  setAvailabilityReloadToken((token) => token + 1);
+                }}
+              />
+            ))}
+          </div>
           {!providerItems.length ? <p className="admin-empty">Ajoutez un fournisseur pour enregistrer sa clé API.</p> : null}
         </SectionCard>
 
@@ -834,7 +857,7 @@ export default function AdminProvidersPage() {
           ) : null}
         </SectionCard>
       </div>
-      <ProviderAvailabilitySection />
+      <ProviderAvailabilitySection reloadToken={availabilityReloadToken} />
     </div>
   );
 }
@@ -844,21 +867,34 @@ export default function AdminProvidersPage() {
  * serveur. Aucune sonde payante : « configure » ne signifie pas « appel verifie », et un
  * fournisseur desactive n'est jamais affiche disponible.
  */
-function ProviderAvailabilitySection() {
-  const tools = useAdminResource(() => adminApi.tools(), 'provider-availability');
-  const groups = new Map<string, { availability: AdminTool['availability']; reason: string | null; keys: string[] }>();
+function ProviderAvailabilitySection({ reloadToken }: { reloadToken: number }) {
+  const tools = useAdminResource(() => adminApi.tools(), 'provider-availability:' + reloadToken);
+  const groups = new Map<
+    string,
+    {
+      availability: AdminTool['availability'];
+      healthState?: AdminTool['healthState'];
+      reason: string | null;
+      keys: string[];
+    }
+  >();
   for (const tool of tools.data ? tools.data.items : []) {
     const current = groups.get(tool.provider);
     if (current) {
       current.keys.push(tool.key);
     } else {
-      groups.set(tool.provider, { availability: tool.availability, reason: tool.availabilityReason, keys: [tool.key] });
+      groups.set(tool.provider, {
+        availability: tool.availability,
+        healthState: tool.healthState,
+        reason: tool.availabilityReason,
+        keys: [tool.key]
+      });
     }
   }
   return (
     <SectionCard
       title="Disponibilite reelle des capacites"
-      description="Lecture de la configuration serveur, sans test fournisseur. 'Configure' ne vaut pas 'appel verifie' ; un fournisseur desactive reste indisponible."
+      description="Lecture de la configuration serveur, sans test fournisseur. 'Configure · Non verifie' ne vaut pas 'Sain' ; un fournisseur desactive ou sans identifiant reste indisponible."
       actions={
         <button type="button" className="btn btn-ghost btn-small" onClick={tools.reload} disabled={tools.loading}>
           Actualiser
@@ -879,27 +915,27 @@ function ProviderAvailabilitySection() {
               </tr>
             </thead>
             <tbody>
-              {[...groups.entries()].map(([provider, state]) => (
-                <tr key={provider}>
-                  <td className="admin-mono">{provider}</td>
-                  <td className="admin-meta">{state.keys.join(', ')}</td>
-                  <td>
-                    <StatusBadge
-                      status={
-                        state.availability === 'configured'
-                          ? 'ok'
-                          : state.availability === 'local'
-                            ? 'active'
-                            : state.availability === 'disabled'
-                              ? 'none'
-                              : 'pending'
-                      }
-                      label={TOOL_AVAILABILITY_LABELS[state.availability]}
-                    />
-                  </td>
-                  <td className="admin-meta">{state.reason ?? 'Aucun motif : capacite locale.'}</td>
-                </tr>
-              ))}
+              {[...groups.entries()].map(([provider, state]) => {
+                const badge = availabilityBadge(state);
+                const fallbackReason =
+                  state.availability === 'local'
+                    ? 'Capacite locale deterministe.'
+                    : state.availability === 'configured'
+                      ? 'Configure cote serveur ; etat de sante non verifie.'
+                      : state.availability === 'disabled'
+                        ? 'Fournisseur desactive dans la configuration serveur.'
+                        : 'Identifiant ou configuration serveur manquant.';
+                return (
+                  <tr key={provider}>
+                    <td className="admin-mono">{provider}</td>
+                    <td className="admin-meta">{state.keys.join(', ')}</td>
+                    <td>
+                      <StatusBadge status={badge.status} label={badge.label} />
+                    </td>
+                    <td className="admin-meta">{state.reason ?? fallbackReason}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

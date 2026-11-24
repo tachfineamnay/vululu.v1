@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { api, postJson } from '../../../lib/api';
+import { validateResolveIncidentInput } from '../../../lib/admin';
 import { ServiceCases, type Ticket } from '../../../components/ServiceCases';
 const features = [
   'creative.render',
@@ -27,7 +28,12 @@ type View = {
 };
 export default function Commerce() {
   const [v, set] = useState<View>(),
-    [unknown, ops] = useState<{ id: string; accountId: string; tool: string }[]>([]),
+    [unknown, ops] = useState<
+      { id: string; accountId: string; tool: string; maxCents?: number; correlationId?: string }[]
+    >([]),
+    [resolveOp, setResolveOp] = useState(''),
+    [resolveCents, setResolveCents] = useState(''),
+    [resolveEvidence, setResolveEvidence] = useState(''),
     [busy, work] = useState(false),
     [err, fail] = useState(''),
     [msg, say] = useState('');
@@ -38,7 +44,7 @@ export default function Commerce() {
   useEffect(() => {
     load().catch((e) => fail(e.message));
   }, []);
-  async function send(url: string, data: object) {
+  async function send(url: string, data: object): Promise<boolean> {
     work(true);
     fail('');
     say('');
@@ -46,8 +52,10 @@ export default function Commerce() {
       const res = await postJson<{ deleted?: boolean }>(url, data);
       say(res.deleted === false ? 'Examen manuel requis. Compte non supprimé.' : 'Action enregistrée.');
       await load();
+      return true;
     } catch (e) {
       fail((e as Error).message);
+      return false;
     } finally {
       work(false);
     }
@@ -233,29 +241,70 @@ export default function Commerce() {
             : unknown.map((o) => (
                 <p key={o.id}>
                   {o.id} · {o.tool} · {o.accountId}
+                  {typeof o.maxCents === 'number' ? ` · plafond ${o.maxCents} c` : ''}
+                  {o.correlationId ? ` · correlation ${o.correlationId}` : ''}{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      fail('');
+                      say('');
+                      setResolveOp(o.id);
+                      setResolveCents(typeof o.maxCents === 'number' ? String(o.maxCents) : '');
+                    }}
+                  >
+                    Sélectionner
+                  </button>
                 </p>
               ))}
           <form
-            onSubmit={(e) => {
+            onSubmit={async (e) => {
               e.preventDefault();
-              const f = new FormData(e.currentTarget);
-              void send('/api/admin/execution/' + encodeURIComponent(String(f.get('op'))) + '/resolve', {
-                cents: Number(f.get('cents')),
-                evidence: f.get('evidence'),
+              const target = unknown.find((item) => item.id === resolveOp.trim());
+              const validated = validateResolveIncidentInput({
+                cents: resolveCents,
+                evidence: resolveEvidence,
+                maxCents: target?.maxCents
               });
+              if (!validated.ok) {
+                fail(validated.error);
+                say('');
+                return;
+              }
+              const ok = await send('/api/admin/execution/' + encodeURIComponent(resolveOp.trim()) + '/resolve', {
+                cents: validated.cents,
+                evidence: validated.evidence,
+              });
+              if (ok) {
+                setResolveOp('');
+                setResolveCents('');
+                setResolveEvidence('');
+              }
             }}
           >
             <label>
               ID de l’opération à coût inconnu
-              <input name="op" required />
+              <input name="op" value={resolveOp} onChange={(e) => setResolveOp(e.target.value)} required />
             </label>
             <label>
               Coût vérifié (centimes USD)
-              <input type="number" name="cents" min={0} required />
+              <input
+                type="number"
+                name="cents"
+                min={0}
+                step={1}
+                value={resolveCents}
+                onChange={(e) => setResolveCents(e.target.value)}
+                required
+              />
             </label>
             <label>
               Référence de preuve (UUID)
-              <input name="evidence" required />
+              <input
+                name="evidence"
+                value={resolveEvidence}
+                onChange={(e) => setResolveEvidence(e.target.value)}
+                required
+              />
             </label>
             <button>Rapprocher le coût fournisseur</button>
           </form>

@@ -105,6 +105,7 @@ export type AdminUserMutationResult = {
     suspendedAt: string | null;
   };
   revokedSessions: number;
+  revokedTokens?: number;
   roleChanged: boolean;
   statusChanged: boolean;
 };
@@ -177,6 +178,7 @@ export type AdminModel = {
 
 /** P11-B — disponibilité réelle d'une capacité (configuration serveur, jamais une sonde). */
 export type AdminToolAvailability = 'configured' | 'disabled' | 'missing_credential' | 'local';
+export type AdminHealthState = 'healthy' | 'unverified' | 'unavailable';
 
 /** Outil du registre FERMÉ : aucune définition arbitraire ne peut être ajoutée côté client. */
 export type AdminTool = {
@@ -191,6 +193,9 @@ export type AdminTool = {
   description: string;
   availability: AdminToolAvailability;
   availabilityReason: string | null;
+  configured?: boolean;
+  verified?: boolean;
+  healthState?: AdminHealthState;
 };
 
 /** Politique d'exécution d'un compte (plafond, état, outils autorisés). */
@@ -427,10 +432,22 @@ export type AdminExecutionItem = {
   resolveEligible: boolean;
 };
 
+export type AdminExecutionQuery = {
+  page?: number;
+  pageSize?: number;
+  state?: string;
+  costState?: string;
+};
+
 export type AdminExecutionOverview = {
   generatedAt: string;
   states: Record<string, number>;
   costStates: Record<string, number>;
+  page?: number;
+  pageSize?: number;
+  total?: number;
+  totalPages?: number;
+  truncated?: boolean;
   items: AdminExecutionItem[];
 };
 
@@ -454,6 +471,7 @@ export type AdminPythonStatus = {
   configured: boolean;
   reachable: boolean;
   ready: boolean;
+  healthState?: 'healthy' | 'unavailable';
   checkedAt: string;
   error?: string;
   version?: string | null;
@@ -487,6 +505,9 @@ export type AdminExecutionCostTool = {
   provider: string;
   operations: number;
   maxCents: number;
+  estimatedCents?: number;
+  reportedCents?: number;
+  reconciledCents?: number;
   confirmedCents: number;
   uncertainCents: number;
 };
@@ -496,10 +517,16 @@ export type AdminExecutionCostProvider = {
   tools: number;
   operations: number;
   maxCents: number;
+  estimatedCents?: number;
+  reportedCents?: number;
+  reconciledCents?: number;
   confirmedCents: number;
   uncertainCents: number;
   availability: AdminToolAvailability;
   availabilityReason: string | null;
+  configured?: boolean;
+  verified?: boolean;
+  healthState?: AdminHealthState;
 };
 
 export type AdminExecutionUncertainCost = {
@@ -515,6 +542,7 @@ export type AdminExecutionUncertainCost = {
   accountId: string;
   ownerEmail: string | null;
   projectTitle: string;
+  resolveEligible?: boolean;
 };
 
 export type AdminCostsExecution = {
@@ -529,14 +557,33 @@ export type AdminCostsExecution = {
     stripeLiveMode: boolean;
     stripeCheckoutEnabled: boolean;
   };
+  scope?: {
+    summary: string;
+    budgetTotals: string;
+    ledger: string;
+    budgets: {
+      page: number;
+      pageSize: number;
+      total: number;
+      totalPages?: number;
+      returned: number;
+      truncated: boolean;
+      hasMore?: boolean;
+    };
+    recentOperations: { limit: number; total: number; returned: number; truncated: boolean };
+    uncertain: { limit: number; total: number; returned: number; truncated: boolean };
+  };
   summary: {
     estimatedCents: number;
     reservedCents: number;
+    reportedCents?: number;
+    reconciledCents?: number;
     confirmedCents: number;
     uncertainCents: number;
     releasedCents: number;
     maxExposureCents: number;
     byCostState: Record<string, number>;
+    operations?: number;
   };
   budgetTotals: {
     accounts: number;
@@ -761,7 +808,16 @@ export const adminApi = {
   runtime: () => api<AdminRuntime>('/api/admin/runtime'),
 
   // P11-C — operations outillees, sante Python et actions administratives sures.
-  opsExecution: () => api<AdminExecutionOverview>('/api/admin/ops/execution'),
+  opsExecution: (input?: AdminExecutionQuery) =>
+    api<AdminExecutionOverview>(
+      '/api/admin/ops/execution' +
+        buildQuery({
+          page: input?.page,
+          pageSize: input?.pageSize,
+          state: input?.state,
+          costState: input?.costState
+        })
+    ),
 
   opsExecutionDetail: (operationId: string) =>
     api<AdminExecutionDetail>('/api/admin/ops/execution/' + encodeURIComponent(operationId)),
@@ -780,7 +836,14 @@ export const adminApi = {
 
   opsPython: () => api<AdminPythonStatus>('/api/admin/ops/python'),
 
-  executionCosts: () => api<AdminCostsExecution>('/api/admin/costs/execution'),
+  executionCosts: (input?: { accountsPage?: number; operationsLimit?: number }) =>
+    api<AdminCostsExecution>(
+      '/api/admin/costs/execution' +
+        buildQuery({
+          accountsPage: input?.accountsPage,
+          operationsLimit: input?.operationsLimit
+        })
+    ),
 
   opsHealth: () => api<OpsHealth>('/api/ops/health'),
 
@@ -793,11 +856,90 @@ export const adminApi = {
 };
 
 export const TOOL_AVAILABILITY_LABELS: Record<AdminToolAvailability, string> = {
-  configured: 'Configuré (non sondé)',
-  disabled: 'Désactivé',
-  missing_credential: 'Identifiant manquant',
-  local: 'Local / déterministe'
+  configured: 'Configuré · Non vérifié',
+  disabled: 'Indisponible (désactivé)',
+  missing_credential: 'Indisponible (identifiant manquant)',
+  local: 'Sain (local)'
 };
+
+export function availabilityBadge(input: {
+  availability: AdminToolAvailability;
+  healthState?: AdminHealthState;
+}): { status: string; label: string } {
+  if (input.availability === 'local' || input.healthState === 'healthy') {
+    return { status: 'healthy', label: TOOL_AVAILABILITY_LABELS.local };
+  }
+  if (input.availability === 'configured') {
+    return { status: 'unverified', label: TOOL_AVAILABILITY_LABELS.configured };
+  }
+  if (input.availability === 'disabled') {
+    return { status: 'unavailable', label: TOOL_AVAILABILITY_LABELS.disabled };
+  }
+  return { status: 'unavailable', label: TOOL_AVAILABILITY_LABELS.missing_credential };
+}
+
+export function providerRegistryBadge(provider: AdminProvider): { status: string; label: string; detail: string } {
+  if (!provider.active) {
+    return {
+      status: 'unavailable',
+      label: 'Indisponible (désactivé)',
+      detail: 'Fournisseur désactivé dans le registre.'
+    };
+  }
+  if (provider.credentials?.configured) {
+    return {
+      status: 'unverified',
+      label: 'Configuré · Non vérifié',
+      detail: 'Clé API enregistrée ; aucun appel fournisseur vérifié.'
+    };
+  }
+  return {
+    status: 'unavailable',
+    label: 'Indisponible (non configuré)',
+    detail: 'Aucune clé API enregistrée sur le serveur.'
+  };
+}
+
+export function pythonServiceBadge(python: AdminPythonStatus): { status: string; label: string } {
+  if (!python.configured) {
+    return { status: 'unavailable', label: 'Indisponible (non configuré)' };
+  }
+  if (!python.reachable) {
+    return { status: 'unavailable', label: 'Configuré · Indisponible (injoignable)' };
+  }
+  if (!python.ready) {
+    return { status: 'unavailable', label: 'Configuré · Indisponible (non prêt)' };
+  }
+  return { status: 'healthy', label: 'Configuré · Sain (vérifié)' };
+}
+
+const RESOLVE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function validateResolveIncidentInput(input: {
+  cents: string;
+  evidence: string;
+  maxCents?: number;
+}): { ok: true; cents: number; evidence: string } | { ok: false; error: string } {
+  const rawCents = input.cents.trim();
+  if (rawCents.length === 0) {
+    return { ok: false, error: 'Le cout constate est obligatoire (entier en centimes).' };
+  }
+  const cents = Number(rawCents);
+  if (!Number.isInteger(cents) || cents < 0) {
+    return { ok: false, error: 'Le cout constate doit etre un entier positif ou nul en centimes.' };
+  }
+  if (input.maxCents !== undefined && cents > input.maxCents) {
+    return {
+      ok: false,
+      error: 'Le cout constate (' + cents + ' c) depasse le plafond autorise de l operation (' + input.maxCents + ' c).'
+    };
+  }
+  const evidence = input.evidence.trim();
+  if (!RESOLVE_UUID_PATTERN.test(evidence)) {
+    return { ok: false, error: 'Une reference de preuve au format UUID est requise.' };
+  }
+  return { ok: true, cents, evidence };
+}
 
 export const ROLE_LABELS: Record<string, string> = {
   support: 'Assistance',
@@ -847,6 +989,10 @@ const STATUS_LABELS: Record<string, string> = {
   staged: 'Staged',
   committed: 'Committed',
   ok: 'OK',
+  healthy: 'Sain',
+  unverified: 'Configuré · Non vérifié',
+  unavailable: 'Indisponible',
+  configured: 'Configuré',
   error: 'Erreur',
   degraded: 'Degrade',
   connected: 'Connecte',
@@ -854,7 +1000,9 @@ const STATUS_LABELS: Record<string, string> = {
   not_connected: 'Non connecte',
   internal: 'Interne',
   commercial: 'Commercial',
-  unknown: 'Inconnue'
+  unknown: 'Inconnue',
+  UNKNOWN: 'Inconnu (UNKNOWN)',
+  RESOLVED: 'Resolu'
 };
 
 export type StatusTone = 'success' | 'danger' | 'warning' | 'info' | 'neutral';
@@ -868,7 +1016,10 @@ export function statusLabel(status: string): string {
 export function statusTone(status: string): StatusTone {
   switch (status) {
     case 'ok':
+    case 'healthy':
     case 'succeeded':
+    case 'SUCCEEDED':
+    case 'RESOLVED':
     case 'active':
     case 'approved':
     case 'committed':
@@ -876,14 +1027,18 @@ export function statusTone(status: string): StatusTone {
       return 'success';
     case 'error':
     case 'failed':
+    case 'FAILED':
+    case 'unavailable':
     case 'revoked':
     case 'denied':
     case 'suspended':
     case 'timed_out':
+    case 'UNKNOWN':
       return 'danger';
     case 'running':
     case 'queued':
     case 'pending':
+    case 'unverified':
     case 'waiting_approval':
     case 'recovery_pending':
     case 'dispatching':
@@ -892,6 +1047,8 @@ export function statusTone(status: string): StatusTone {
     case 'stale':
       return 'warning';
     case 'cancelled':
+    case 'CANCELLED':
+    case 'configured':
     case 'staged':
     case 'used':
     case 'mock':

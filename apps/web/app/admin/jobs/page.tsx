@@ -19,8 +19,10 @@ import {
   formatJson,
   formatNumber,
   JOB_RUN_STATUSES,
+  pythonServiceBadge,
   shortId,
   statusLabel,
+  validateResolveIncidentInput,
   type AdminExecutionDetail,
   type AdminExecutionItem,
   type AdminRun,
@@ -36,7 +38,22 @@ const EXECUTION_STATE_ORDER = [
   'SUCCEEDED',
   'FAILED',
   'CANCELLED',
-  'UNKNOWN'
+  'UNKNOWN',
+  'RESOLVED'
+];
+
+const EXECUTION_STATE_OPTIONS = [{ value: '', label: 'Tous les etats' }].concat(
+  EXECUTION_STATE_ORDER.map((state) => ({ value: state, label: statusLabel(state) }))
+);
+
+const EXECUTION_COST_STATE_OPTIONS = [
+  { value: '', label: 'Tous les etats cout' },
+  { value: 'ESTIMATED', label: 'ESTIMATED' },
+  { value: 'RESERVED', label: 'RESERVED' },
+  { value: 'REPORTED', label: 'REPORTED' },
+  { value: 'RECONCILED', label: 'RECONCILED' },
+  { value: 'UNKNOWN', label: 'UNKNOWN' },
+  { value: 'RELEASED', label: 'RELEASED' }
 ];
 
 const STATUS_OPTIONS = [{ value: '', label: 'Tous les statuts' }].concat(
@@ -84,7 +101,20 @@ export default function AdminJobsPage() {
   const [reconcileResult, setReconcileResult] = useState<ReconciliationReport | null>(null);
 
   // P11-C — operations outillees, sante Python et actions administratives sures.
-  const execution = useAdminResource(() => adminApi.opsExecution(), 'ops-execution');
+  const [execStateFilter, setExecStateFilter] = useState('');
+  const [execCostStateFilter, setExecCostStateFilter] = useState('');
+  const [execPage, setExecPage] = useState(1);
+  const execPageSize = 25;
+  const execution = useAdminResource(
+    () =>
+      adminApi.opsExecution({
+        page: execPage,
+        pageSize: execPageSize,
+        state: execStateFilter || undefined,
+        costState: execCostStateFilter || undefined
+      }),
+    'ops-execution:' + execStateFilter + ':' + execCostStateFilter + ':' + execPage
+  );
   const python = useAdminResource(() => adminApi.opsPython(), 'ops-python');
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const executionDetail = useAdminResource(
@@ -98,7 +128,14 @@ export default function AdminJobsPage() {
   const [execError, setExecError] = useState('');
   const [execNotice, setExecNotice] = useState('');
   const [cancelTarget, setCancelTarget] = useState<AdminExecutionItem | null>(null);
-  const [resolveDraft, setResolveDraft] = useState({ id: '', cents: '0', evidence: '' });
+  const [resolveDraft, setResolveDraft] = useState<{
+    id: string;
+    tool: string;
+    maxCents: number;
+    correlationId: string;
+    cents: string;
+    evidence: string;
+  }>({ id: '', tool: '', maxCents: 0, correlationId: '', cents: '', evidence: '' });
 
   async function runReconcile() {
     const staleSeconds = readInteger(staleSecondsDraft, 0, 604800);
@@ -116,6 +153,11 @@ export default function AdminJobsPage() {
     try {
       const result = await adminApi.reconcile({ dryRun, staleSeconds, stagedGraceHours });
       setReconcileResult(result);
+      if (!result.dryRun) {
+        health.reload();
+        snapshot.reload();
+        runs.reload();
+      }
     } catch (error) {
       setReconcileError(errorMessage(error));
     } finally {
@@ -139,6 +181,7 @@ export default function AdminJobsPage() {
         executionDetail.reload();
       }
     } catch (error) {
+      setCancelTarget(null);
       setExecError(errorMessage(error));
     } finally {
       setExecBusy('');
@@ -146,13 +189,13 @@ export default function AdminJobsPage() {
   }
 
   async function resolveIncidentOperation() {
-    const cents = Number(resolveDraft.cents);
-    if (!Number.isInteger(cents) || cents < 0) {
-      setExecError('Le cout constate doit etre un entier positif en centimes.');
-      return;
-    }
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resolveDraft.evidence.trim())) {
-      setExecError('Une reference de preuve au format UUID est requise.');
+    const validated = validateResolveIncidentInput({
+      cents: resolveDraft.cents,
+      evidence: resolveDraft.evidence,
+      maxCents: resolveDraft.maxCents
+    });
+    if (!validated.ok) {
+      setExecError(validated.error);
       return;
     }
     setExecBusy('resolve');
@@ -160,11 +203,19 @@ export default function AdminJobsPage() {
     setExecNotice('');
     try {
       const result = await adminApi.resolveExecutionIncident(resolveDraft.id, {
-        cents,
-        evidence: resolveDraft.evidence.trim()
+        cents: validated.cents,
+        evidence: validated.evidence
       });
-      setExecNotice('Operation ' + shortId(result.id, 10) + ' resolue (etat ' + result.state + ').');
-      setResolveDraft({ id: '', cents: '0', evidence: '' });
+      setExecNotice(
+        'Operation ' +
+          shortId(result.id, 10) +
+          ' resolue (etat ' +
+          result.state +
+          ', cout ' +
+          result.costState +
+          ').'
+      );
+      setResolveDraft({ id: '', tool: '', maxCents: 0, correlationId: '', cents: '', evidence: '' });
       execution.reload();
       if (selectedExecutionId === result.id) {
         executionDetail.reload();
@@ -189,7 +240,7 @@ export default function AdminJobsPage() {
       <PageHeader
         eyebrow="Administration"
         title="Jobs"
-        description="Runs, etapes, outbox et sante runtime. Aucune action de relance ou d annulation n est exposee ici."
+        description="Runs, etapes, outbox, workers et executions outillees. Aucune relance aveugle de run ; seules la reconciliation runtime, l annulation avant envoi et la resolution manuelle UNKNOWN sont autorisees."
         actions={
           <button
             type="button"
@@ -198,8 +249,10 @@ export default function AdminJobsPage() {
               health.reload();
               snapshot.reload();
               runs.reload();
+              execution.reload();
+              python.reload();
             }}
-            disabled={runs.loading || health.loading || snapshot.loading}
+            disabled={runs.loading || health.loading || snapshot.loading || execution.loading}
           >
             Actualiser
           </button>
@@ -207,6 +260,7 @@ export default function AdminJobsPage() {
       />
 
       <div className="admin-sections">
+        {health.error ? <ErrorState message={health.error} onRetry={health.reload} /> : null}
         <div className="admin-metric-grid">
           {health.loading && !healthData ? (
             <LoadingState label="Chargement de la sante..." />
@@ -463,94 +517,146 @@ export default function AdminJobsPage() {
                   .map(([state, count]) => state + ' ' + count)
                   .join(' · ') || 'aucune operation'}
               </p>
+              <div className="admin-controls">
+                <SelectField
+                  id="exec-state-filter"
+                  label="Etat operation"
+                  value={execStateFilter}
+                  onChange={(value) => {
+                    setExecStateFilter(value);
+                    setExecPage(1);
+                  }}
+                  options={EXECUTION_STATE_OPTIONS}
+                />
+                <SelectField
+                  id="exec-cost-state-filter"
+                  label="Etat cout"
+                  value={execCostStateFilter}
+                  onChange={(value) => {
+                    setExecCostStateFilter(value);
+                    setExecPage(1);
+                  }}
+                  options={EXECUTION_COST_STATE_OPTIONS}
+                />
+              </div>
               {executionData.items.length === 0 ? (
-                <p className="admin-empty">Aucune operation outillee.</p>
+                <p className="admin-empty">Aucune operation outillee pour ces filtres.</p>
               ) : (
-                <div className="admin-table-wrap">
-                  <table className="admin-table">
-                    <thead>
-                      <tr>
-                        <th>Outil</th>
-                        <th>Etat</th>
-                        <th>Cout</th>
-                        <th>Correlation</th>
-                        <th>Age</th>
-                        <th>Projet</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {executionData.items.map((item) => (
-                        <tr key={item.id}>
-                          <td className="admin-mono">{item.tool}</td>
-                          <td>
-                            <StatusBadge status={item.state} />
-                            {item.approved ? <span className="admin-meta"> approuvee</span> : null}
-                          </td>
-                          <td className="admin-nowrap">
-                            {item.costState} · {item.reportedCents === null ? '-' : item.reportedCents}/{item.maxCents} c
-                          </td>
-                          <td className="admin-mono" title={item.correlationId}>
-                            {shortId(item.correlationId, 8)}
-                          </td>
-                          <td className="admin-nowrap">{Math.round(item.ageMs / 1000)} s</td>
-                          <td>{item.projectTitle}</td>
-                          <td>
-                            <div className="admin-actions">
-                              <button
-                                type="button"
-                                className="btn btn-secondary btn-small"
-                                onClick={() => setSelectedExecutionId(item.id)}
-                              >
-                                Details
-                              </button>
-                              <a
-                                className="btn btn-ghost btn-small"
-                                href={'/admin/audit?traceId=' + encodeURIComponent(item.correlationId)}
-                              >
-                                Audit
-                              </a>
-                              {item.cancelEligible ? (
-                                <button
-                                  type="button"
-                                  className="btn btn-danger btn-small"
-                                  onClick={() => setCancelTarget(item)}
-                                >
-                                  Annuler
-                                </button>
-                              ) : null}
-                              {item.resolveEligible ? (
+                <>
+                  <div className="admin-table-wrap">
+                    <table className="admin-table">
+                      <thead>
+                        <tr>
+                          <th>Outil</th>
+                          <th>Etat</th>
+                          <th>Cout</th>
+                          <th>Correlation</th>
+                          <th>Age</th>
+                          <th>Projet</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {executionData.items.map((item) => (
+                          <tr key={item.id}>
+                            <td className="admin-mono">{item.tool}</td>
+                            <td>
+                              <StatusBadge status={item.state} />
+                              {item.approved ? <span className="admin-meta"> approuvee</span> : null}
+                            </td>
+                            <td className="admin-nowrap">
+                              {item.costState} · {item.reportedCents === null ? '-' : item.reportedCents}/{item.maxCents} c
+                            </td>
+                            <td className="admin-mono" title={item.correlationId}>
+                              {shortId(item.correlationId, 8)}
+                            </td>
+                            <td className="admin-nowrap">{Math.round(item.ageMs / 1000)} s</td>
+                            <td>{item.projectTitle}</td>
+                            <td>
+                              <div className="admin-actions">
                                 <button
                                   type="button"
                                   className="btn btn-secondary btn-small"
-                                  onClick={() => setResolveDraft({ id: item.id, cents: String(item.maxCents), evidence: '' })}
+                                  onClick={() => setSelectedExecutionId(item.id)}
                                 >
-                                  Resoudre
+                                  Details
                                 </button>
-                              ) : null}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                                <a
+                                  className="btn btn-ghost btn-small"
+                                  href={'/admin/audit?traceId=' + encodeURIComponent(item.correlationId)}
+                                >
+                                  Audit
+                                </a>
+                                {item.cancelEligible ? (
+                                  <button
+                                    type="button"
+                                    className="btn btn-danger btn-small"
+                                    onClick={() => {
+                                      setExecError('');
+                                      setExecNotice('');
+                                      setCancelTarget(item);
+                                    }}
+                                  >
+                                    Annuler
+                                  </button>
+                                ) : null}
+                                {item.resolveEligible ? (
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-small"
+                                    onClick={() => {
+                                      setExecError('');
+                                      setExecNotice('');
+                                      setResolveDraft({
+                                        id: item.id,
+                                        tool: item.tool,
+                                        maxCents: item.maxCents,
+                                        correlationId: item.correlationId,
+                                        cents: String(item.maxCents),
+                                        evidence: ''
+                                      });
+                                    }}
+                                  >
+                                    Resoudre
+                                  </button>
+                                ) : null}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {typeof executionData.total === 'number' ? (
+                    <Pagination
+                      page={executionData.page ?? execPage}
+                      totalPages={executionData.totalPages ?? 1}
+                      total={executionData.total}
+                      pageSize={executionData.pageSize ?? execPageSize}
+                      onPageChange={setExecPage}
+                      disabled={execution.loading}
+                    />
+                  ) : null}
+                </>
               )}
               {resolveDraft.id ? (
                 <div className="admin-form">
                   <p className="admin-meta">
-                    Resolution manuelle de l issue incertaine {shortId(resolveDraft.id, 10)} : le cout constate doit etre
-                    justifie par une preuve deja journalisee.
+                    Resolution manuelle de l issue incertaine {shortId(resolveDraft.id, 10)} ({resolveDraft.tool},
+                    plafond {resolveDraft.maxCents} c, correlation {shortId(resolveDraft.correlationId, 8)}) : le cout
+                    constate doit etre justifie par une preuve deja journalisee.
                   </p>
                   <div className="admin-form-grid">
                     <TextField
                       id="resolve-cents"
-                      label="Cout constate (centimes)"
+                      label={'Cout constate (0 a ' + resolveDraft.maxCents + ' centimes)'}
                       type="number"
                       min={0}
+                      max={resolveDraft.maxCents}
                       step={1}
                       value={resolveDraft.cents}
                       onChange={(value) => setResolveDraft((previous) => ({ ...previous, cents: value }))}
+                      required
                     />
                     <TextField
                       id="resolve-evidence"
@@ -558,6 +664,7 @@ export default function AdminJobsPage() {
                       value={resolveDraft.evidence}
                       onChange={(value) => setResolveDraft((previous) => ({ ...previous, evidence: value }))}
                       hint="Identifiant d une preuve existante."
+                      required
                     />
                   </div>
                   <div className="admin-actions">
@@ -572,7 +679,9 @@ export default function AdminJobsPage() {
                     <button
                       type="button"
                       className="btn btn-ghost btn-small"
-                      onClick={() => setResolveDraft({ id: '', cents: '0', evidence: '' })}
+                      onClick={() =>
+                        setResolveDraft({ id: '', tool: '', maxCents: 0, correlationId: '', cents: '', evidence: '' })
+                      }
                     >
                       Fermer
                     </button>
@@ -705,6 +814,15 @@ export default function AdminJobsPage() {
           {pythonData ? (
             <div className="admin-sections">
               <div className="admin-kv">
+                <div>
+                  <span>Etat verifie</span>
+                  <strong>
+                    {(() => {
+                      const badge = pythonServiceBadge(pythonData);
+                      return <StatusBadge status={badge.status} label={badge.label} />;
+                    })()}
+                  </strong>
+                </div>
                 <div>
                   <span>Configure</span>
                   <strong>{pythonData.configured ? 'Oui' : 'Non'}</strong>

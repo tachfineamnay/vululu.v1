@@ -77,7 +77,7 @@ export async function billingRoutes(app: FastifyInstance, { stripe }: { stripe?:
       action: 'rbac.denied',
       targetType: 'role',
       targetId: 'support',
-      metadata: { method: request.method, path: request.url, actualRole: role ?? null }
+      metadata: { method: request.method, path: request.url.split('?')[0], actualRole: role ?? null }
     });
     throw new HttpError(403, 'forbidden', 'Acces refuse.');
   };
@@ -135,6 +135,7 @@ export async function billingRoutes(app: FastifyInstance, { stripe }: { stripe?:
       ...(filters.q
         ? {
             OR: [
+              { id: { contains: filters.q, mode: 'insensitive' as const } },
               { subject: { contains: filters.q, mode: 'insensitive' as const } },
               { user: { email: { contains: filters.q, mode: 'insensitive' as const } } },
             ],
@@ -146,7 +147,7 @@ export async function billingRoutes(app: FastifyInstance, { stripe }: { stripe?:
     return prisma.$transaction(async (tx) => {
       await audit(tx, r.currentUser!.id, 'support.queue_read', 'support');
       const [page, byStatus] = await Promise.all([
-        threadsPage(where, { cursor: filters.cursor, pageSize: filters.pageSize }),
+        threadsPage(where, { cursor: filters.cursor, pageSize: filters.pageSize }, tx),
         tx.serviceTicket.groupBy({ by: ['status'], where, _count: { _all: true } })
       ]);
       const counts: Record<string, number> = {};

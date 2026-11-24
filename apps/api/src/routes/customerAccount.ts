@@ -61,12 +61,12 @@ export async function customerAccountRoutes(app: FastifyInstance, { mail }: { ma
         const recipient = await prisma.$transaction(async (tx) => {
           await lockAccountEmail(tx, email);
           const now = new Date();
-          let user: { id: string; email: string; role: string } | undefined;
+          let user: { id: string; email: string; role: string; status: string } | undefined;
           if (purpose === 'verify') {
             if (!await canRegister(tx, email)) return null;
           } else {
             const matches = await findAccountsForEmail(tx, email);
-            if (matches.length !== 1 || matches[0].role !== 'user') return null;
+            if (matches.length !== 1 || matches[0].role !== 'user' || matches[0].status === 'suspended') return null;
             user = matches[0];
           }
           await tx.accountToken.create({ data: {
@@ -104,8 +104,13 @@ export async function customerAccountRoutes(app: FastifyInstance, { mail }: { ma
         } else {
           if (!pending.userId) throw invalidToken();
           const accounts = await findAccountsForEmail(tx, pending.email);
-          if (accounts.length !== 1 || accounts[0].id !== pending.userId) throw invalidToken();
-          const updated = await tx.user.updateMany({ where: { id: pending.userId, role: 'user' }, data: { passwordHash } });
+          if (accounts.length !== 1 || accounts[0].id !== pending.userId || accounts[0].status === 'suspended') {
+            throw invalidToken();
+          }
+          const updated = await tx.user.updateMany({
+            where: { id: pending.userId, role: 'user', status: 'active' },
+            data: { passwordHash }
+          });
           if (updated.count !== 1) throw invalidToken();
           id = pending.userId;
           await revokeSessions(tx, id, 'password_reset');
