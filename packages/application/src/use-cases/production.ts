@@ -121,7 +121,11 @@ export class ProductionUseCases {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'production_failed';
-      await this.runs.updateJob(job.id, { status: 'failed', error: message });
+      if (this.runs.failStart) {
+        await this.runs.failStart({ jobRunId: jobRun.id, jobId: job.id, projectId, error: message });
+      } else {
+        await this.runs.updateJob(job.id, { status: 'failed', error: message });
+      }
       throw error;
     }
     await this.audit.record({
@@ -174,7 +178,11 @@ export class ProductionUseCases {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'correction_failed';
-      await this.runs.updateJob(job.id, { status: 'failed', error: message });
+      if (this.runs.failStart) {
+        await this.runs.failStart({ jobRunId: jobRun.id, jobId: job.id, projectId, error: message });
+      } else {
+        await this.runs.updateJob(job.id, { status: 'failed', error: message });
+      }
       throw error;
     }
     await this.audit.record({
@@ -188,7 +196,15 @@ export class ProductionUseCases {
   }
 
   async approve(actor: Actor, projectId: string, artifactVersionId: string, checksum: string) {
-    await this.assertOwnedProject(actor, projectId);
+    const project = await this.assertOwnedProject(actor, projectId);
+    const active = await this.runs.findActiveByProject?.(projectId);
+    if (project.status === 'producing' || (active && active.status !== 'waiting_approval')) {
+      throw new ApplicationError(
+        'job_running',
+        'Une production est en cours. Attendez la fin du rendu avant d approuver.',
+        409
+      );
+    }
     const master = await this.production.latestMaster(projectId);
     if (!master) {
       throw new ApplicationError('master_required', 'Aucun master a approuver.', 400);
@@ -227,33 +243,38 @@ export class ProductionUseCases {
       targetId: artifactVersionId,
       metadata: { projectId, checksum }
     });
-    if (this.options.approvalSignal) {
-      const active = await this.runs.findActiveByProject?.(projectId);
-      if (active) {
-        try {
-          await this.options.approvalSignal.signal({
-            jobRunId: active.id,
-            projectId,
-            artifactVersionId: master.id,
-            checksum: state.approval.checksum,
-            approvedBy: actor.id
-          });
-        } catch (error) {
-          await this.audit.record({
-            actorId: actor.id,
-            action: 'orchestration.approval_signal_failed',
-            targetType: 'job_run',
-            targetId: active.id,
-            metadata: { message: error instanceof Error ? error.message : 'signal_failed' }
-          });
-        }
+    if (this.options.approvalSignal && active && active.status === 'waiting_approval') {
+      try {
+        await this.options.approvalSignal.signal({
+          jobRunId: active.id,
+          projectId,
+          artifactVersionId: master.id,
+          checksum: state.approval.checksum,
+          approvedBy: actor.id
+        });
+      } catch (error) {
+        await this.audit.record({
+          actorId: actor.id,
+          action: 'orchestration.approval_signal_failed',
+          targetType: 'job_run',
+          targetId: active.id,
+          metadata: { message: error instanceof Error ? error.message : 'signal_failed' }
+        });
       }
     }
     return { approval };
   }
 
   async transfer(actor: Actor, projectId: string) {
-    await this.assertOwnedProject(actor, projectId);
+    const project = await this.assertOwnedProject(actor, projectId);
+    const active = await this.runs.findActiveByProject?.(projectId);
+    if (project.status === 'producing' || (active && active.status !== 'waiting_approval')) {
+      throw new ApplicationError(
+        'job_running',
+        'Une production est en cours. Attendez la fin du rendu avant de transferer.',
+        409
+      );
+    }
     const master = await this.production.latestMaster(projectId);
     if (!master) {
       throw new ApplicationError('master_required', 'Aucun master a transferer.', 400);
@@ -267,6 +288,19 @@ export class ProductionUseCases {
     }
     const existingTransfer = await this.production.findTransfer(approval.id);
     if (existingTransfer) {
+      if (active && active.status === 'waiting_approval' && this.runs.completeWaitingApprovalRun) {
+        await this.runs.completeWaitingApprovalRun({
+          jobRunId: active.id,
+          projectId,
+          outputs: {
+            transferId: existingTransfer.id,
+            transferStatus: existingTransfer.status,
+            artifactVersionId: master.id,
+            checksum: master.checksum,
+            completedAt: this.clock.now().toISOString()
+          }
+        });
+      }
       return { transfer: existingTransfer };
     }
     const createdAt = this.clock.now().toISOString();
@@ -280,7 +314,21 @@ export class ProductionUseCases {
       checksum: approval.checksum,
       artifactVersionId: master.id
     });
-    await this.projects.updateStatus(projectId, 'transferred');
+    if (active && active.status === 'waiting_approval' && this.runs.completeWaitingApprovalRun) {
+      await this.runs.completeWaitingApprovalRun({
+        jobRunId: active.id,
+        projectId,
+        outputs: {
+          transferId: transfer.id,
+          transferStatus: transfer.status,
+          artifactVersionId: master.id,
+          checksum: master.checksum,
+          completedAt: this.clock.now().toISOString()
+        }
+      });
+    } else {
+      await this.projects.updateStatus(projectId, 'transferred');
+    }
     await this.audit.record({
       actorId: actor.id,
       action: 'postiz.transfer_requested',

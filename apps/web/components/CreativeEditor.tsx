@@ -1,6 +1,6 @@
 'use client';
 import {useWorkspace} from './WorkspacePreferences';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { MediaGenerationPanel } from './MediaGenerationPanel';
 import { CreativeActionPanel } from './CreativeActionPanel';
 import { FormatGuide, type Destination } from './FormatGuide';
@@ -19,10 +19,16 @@ import { alignLayers, clampLayer, distributeLayers, patchLayer, specWithLayers, 
 import { describeAudioTrim, withSceneDuration, withoutScene } from '../lib/studioAudio';
 import { previewSpecForScene } from '../lib/studioPreview';
 import { outputSize, platformSchema, productionCapability, readableInk, studioExportExtension, creativeSpec, isVideoOutput, type CreativeSpec, type CreativeLayer } from '@vululu/contracts';
-import { api, apiResponse, postJson, type ProjectBundle } from '../lib/api';
-import type { StudioAlignMode, StudioLayerSpec, StudioRevision } from '../lib/studioTypes';
+import { api, ApiRequestError, apiResponse, postJson, type ProjectBundle } from '../lib/api';
+import {
+  isStateConflict,
+  nextRenderPollDecision,
+  runWithBoundedBusyRetry,
+  studioPreviewCoordinator
+} from '../lib/studioConcurrency';
+import type { StudioAlignMode, StudioLayerSpec, StudioRenderState, StudioRevision } from '../lib/studioTypes';
 
-type RenderStatus = { revision: number; state: string; reason: string | null; progress: number };
+type RenderStatus = StudioRenderState;
 
 type Rev = { version: number; approvedAt: string | null };
 type Revision = Rev & {
@@ -116,6 +122,8 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
   const [render, setRender] = useState<RenderStatus | null>(null);
   const [renderRefresh, refreshRender] = useState(0);
   const renderState = render?.revision === selectedVersion ? render : null;
+  const actionInFlight = useRef(false);
+  const renderSubmitInFlight = useRef(false);
   const [scenePreview, setScenePreview] = useState<{ url: string; spec: CreativeSpec; index: number } | null>(null);
   const [timeline, travel] = useState<{ head: number; past: number[]; future: number[] }>({
     head: 0,
@@ -129,30 +137,105 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
   const past = timeline.head === expected ? timeline.past : versions.slice(1).map((v) => v.version);
   const future = timeline.head === expected ? timeline.future : [];
 
-  // P12-05 — tant qu'aucune direction n'est choisie, l'éditeur refuse d'utiliser la dernière
-  // direction générée : l'utilisateur doit faire un choix explicite.
+  // Suivi borné du rendu serveur : backoff progressif, arrêt sur erreurs répétées ou
+  // absence prolongée d'évolution, et synchronisation complète révision + historique à la fin.
   useEffect(() => {
     if (!selectedVersion || hasManifest || dirty) return;
     let stopped = false;
-    let timer: ReturnType<typeof setTimeout>;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let consecutiveErrors = 0;
+    let unchangedPolls = 0;
+    let lastFingerprint = '';
+    let manifestRetries = 0;
     const poll = async () => {
       try {
         const status = await api<Omit<RenderStatus, 'revision'>>(`${base}/${selectedVersion}/render`);
         if (stopped) return;
+        consecutiveErrors = 0;
+        const fingerprint = `${status.state}:${status.progress}:${status.cancelRequested ? '1' : '0'}`;
+        unchangedPolls = fingerprint === lastFingerprint ? unchangedPolls + 1 : 0;
+        lastFingerprint = fingerprint;
         setRender({ ...status, revision: selectedVersion });
         if (status.state === 'succeeded') {
-          const result = await api<Revision>(`${base}/${selectedVersion}`);
-          if (!stopped) show((current) => current?.version === selectedVersion ? result : current);
+          const [result, latestVersions] = await Promise.all([
+            api<Revision>(`${base}/${selectedVersion}`),
+            api<Rev[]>(base).catch(() => null)
+          ]);
+          if (stopped) return;
+          if (latestVersions) setVersions(latestVersions);
+          if (result.manifest) {
+            show((current) => (current?.version === selectedVersion ? result : current));
+            return;
+          }
+          // Sécurité : ne jamais supposer un master non scellé ; au plus 2 relectures courtes.
+          manifestRetries += 1;
+          if (manifestRetries <= 2) {
+            timer = setTimeout(poll, 1000);
+            return;
+          }
+          setRender({
+            revision: selectedVersion,
+            state: 'offline',
+            reason: 'Le master finalisé n’est pas encore synchronisé. Actualisez le suivi.',
+            progress: 100,
+            retryable: true
+          });
           return;
         }
-        if (status.state === 'idle' || status.state === 'failed' || status.state === 'cancelled') return;
-      } catch {
-        if (!stopped) setRender({ revision: selectedVersion, state: 'offline', reason: 'Suivi indisponible. Nouvelle tentative automatique.', progress: 0 });
+        const decision = nextRenderPollDecision({
+          state: status.state,
+          unchangedPolls,
+          consecutiveErrors: 0
+        });
+        if (decision.action === 'stop') {
+          if (decision.terminalState === 'stalled') {
+            setRender({
+              ...status,
+              revision: selectedVersion,
+              state: 'stalled',
+              reason: decision.reason,
+              retryable: decision.retryable
+            });
+          }
+          return;
+        }
+        if (!stopped) timer = setTimeout(poll, decision.delayMs);
+      } catch (caught) {
+        if (stopped) return;
+        consecutiveErrors += 1;
+        const errorStatus = caught instanceof ApiRequestError ? caught.status : undefined;
+        const retryAfterSeconds = caught instanceof ApiRequestError ? caught.retryAfterSeconds : undefined;
+        const decision = nextRenderPollDecision({
+          unchangedPolls,
+          consecutiveErrors,
+          errorStatus,
+          retryAfterSeconds
+        });
+        if (decision.action === 'stop') {
+          setRender({
+            revision: selectedVersion,
+            state: decision.terminalState,
+            reason: decision.reason,
+            progress: 0,
+            retryable: decision.retryable
+          });
+          return;
+        }
+        setRender({
+          revision: selectedVersion,
+          state: 'offline',
+          reason: `Suivi temporairement indisponible · nouvelle tentative automatique (${consecutiveErrors}/5)…`,
+          progress: 0,
+          retryable: true
+        });
+        if (!stopped) timer = setTimeout(poll, decision.delayMs);
       }
-      if (!stopped) timer = setTimeout(poll, 1500);
     };
     void poll();
-    return () => { stopped = true; clearTimeout(timer); };
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    };
   }, [base, selectedVersion, hasManifest, dirty, renderRefresh, renderSignal]);
   useEffect(
     () => () => {
@@ -174,7 +257,8 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
     return () => clearTimeout(timer);
   }, [spec, dirty, expected, projectId]);
   async function action(fn: () => Promise<void>) {
-    if (busy) return;
+    if (actionInFlight.current || busy) return;
+    actionInFlight.current = true;
     work(true);
     fail('');
     try {
@@ -182,6 +266,7 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
     } catch (e) {
       fail(e instanceof Error ? e.message : 'Action impossible.');
     } finally {
+      actionInFlight.current = false;
       work(false);
     }
   }
@@ -373,10 +458,34 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
     });
   }
   async function renderMaster() {
-    if (!view) return;
-    const result = await postJson<Omit<RenderStatus, 'revision'>>(`${base}/${view.version}/render`, {});
-    setRender({ ...result, revision: view.version });
-    refreshRender((n) => n + 1);
+    if (!view || view.manifest || renderSubmitInFlight.current) return;
+    if (renderState && (renderState.state === 'queued' || renderState.state === 'running')) {
+      notify(`Un rendu est déjà actif pour la révision v${view.version}.`);
+      return;
+    }
+    renderSubmitInFlight.current = true;
+    try {
+      const result = await postJson<Omit<RenderStatus, 'revision'>>(`${base}/${view.version}/render`, {});
+      setRender({ ...result, revision: view.version });
+      if (result.state === 'succeeded') {
+        const [latestRev, latestVersions] = await Promise.all([
+          api<Revision>(`${base}/${view.version}`),
+          api<Rev[]>(base)
+        ]);
+        show((current) => (current?.version === view.version ? latestRev : current));
+        setVersions(latestVersions);
+        notify(`Master déjà scellé pour la révision v${view.version}.`);
+      } else {
+        refreshRender((n) => n + 1);
+        notify(
+          result.state === 'running'
+            ? `Rendu déjà en cours pour la révision v${view.version}.`
+            : `Rendu mis en file pour la révision v${view.version}.`
+        );
+      }
+    } finally {
+      renderSubmitInFlight.current = false;
+    }
   }
   async function cancelRender() {
     if (!view) return;
@@ -385,14 +494,25 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
     refreshRender((n) => n + 1);
     notify(result.state === 'cancelled'
       ? 'Rendu annulé côté serveur.'
-      : 'Annulation demandée : le rendu s’arrêtera à la fin de la scène en cours.');
+      : result.state === 'succeeded'
+        ? 'Le rendu était déjà terminé et scellé.'
+        : 'Annulation demandée : le rendu s’arrêtera à la fin de la scène en cours.');
   }
   async function approveVersion(checksum: string) {
     if (!view) return;
-    const r = await postJson<Revision>(`${base}/${view.version}/approve`, { checksum });
-    display(r);
-    setVersions(await api<Rev[]>(base));
-    notify(`Version v${r.version} approuvée pour le checksum exact affiché.`);
+    try {
+      const r = await postJson<Revision>(`${base}/${view.version}/approve`, { checksum });
+      display(r);
+      setVersions(await api<Rev[]>(base));
+      notify(`Version v${r.version} approuvée pour le checksum exact affiché.`);
+    } catch (caught) {
+      if (isStateConflict(caught)) {
+        const latestRev = await api<Revision>(`${base}/${view.version}`).catch(() => null);
+        if (latestRev) show((current) => (current?.version === view.version ? latestRev : current));
+        refreshRender((n) => n + 1);
+      }
+      throw caught;
+    }
   }
   async function viewVersion(version: number) {
     display(await api<Revision>(base + '/' + version));
@@ -581,14 +701,16 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
                     >
                       {videoPreview.state === 'loading'
                         ? 'Préparation de l’aperçu vidéo par le serveur…'
-                        : videoPreview.state === 'invalid'
-                          ? 'Aperçu vidéo impossible : ' + videoPreview.message
-                          : videoPreview.state === 'error'
-                            ? 'Aperçu vidéo indisponible : ' + videoPreview.message
-                            : videoPreview.state === 'ready'
-                              ? 'Aperçu vidéo généré par le serveur' +
-                                (videoPreview.message ? ' · ' + videoPreview.message : '') + '.'
-                              : 'Aperçu vidéo en attente de la composition.'}
+                        : videoPreview.state === 'waiting'
+                          ? videoPreview.message || 'Serveur de rendu vidéo occupé · nouvelle tentative automatique…'
+                          : videoPreview.state === 'invalid'
+                            ? 'Aperçu vidéo impossible : ' + videoPreview.message
+                            : videoPreview.state === 'error'
+                              ? 'Aperçu vidéo indisponible : ' + videoPreview.message
+                              : videoPreview.state === 'ready'
+                                ? 'Aperçu vidéo généré par le serveur' +
+                                  (videoPreview.message ? ' · ' + videoPreview.message : '') + '.'
+                                : 'Aperçu vidéo en attente de la composition.'}
                       {videoPreview.state === 'error' ? (
                         <>
                           {' '}
@@ -716,10 +838,18 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
                   className="btn btn-secondary"
                   onClick={() =>
                     void action(async () => {
-                      const response = await apiResponse(base + '/preview', {
-                        method: 'POST',
-                        body: JSON.stringify(previewSpecForScene(spec, scene))
-                      });
+                      const response = await runWithBoundedBusyRetry(
+                        () =>
+                          studioPreviewCoordinator.schedule(() =>
+                            apiResponse(base + '/preview', {
+                              method: 'POST',
+                              body: JSON.stringify(previewSpecForScene(spec, scene))
+                            })
+                          ),
+                        {
+                          onWaiting: (info) => notify(info.message)
+                        }
+                      );
                       setScenePreview({ url: URL.createObjectURL(await response.blob()), spec, index });
                     })
                   }
@@ -1050,6 +1180,7 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
                   onRestore={restoreVersion}
                   onView={viewVersion}
                   onCancel={() => action(cancelRender)}
+                  onRefreshRender={() => refreshRender((n) => n + 1)}
                   onNotice={notify}
                 />
               </>

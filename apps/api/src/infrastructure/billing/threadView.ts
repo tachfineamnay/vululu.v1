@@ -17,7 +17,7 @@ export type ThreadSourceRow = {
   status: string;
   createdAt: Date;
   updatedAt: Date;
-  user: { id: string; email: string; status: string } | null;
+  user: { id: string; email: string; name?: string | null; status: string } | null;
   _count: { entries: number };
   /** Messages les plus récents, dans l'ordre décroissant fourni par la base. */
   entries: ThreadEntryRow[];

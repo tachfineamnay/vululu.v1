@@ -14,6 +14,42 @@ const asRecord = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : {};
 const asString = (value: unknown): string | null => (typeof value === 'string' ? value : null);
 
+const reconcileInputSchema = z
+  .object({
+    dryRun: z.boolean().optional(),
+    staleSeconds: z.coerce.number().int().min(0).max(604800).optional(),
+    stagedGraceHours: z.coerce.number().int().min(0).max(8760).optional()
+  })
+  .strict();
+
+const executionStates = [
+  'PROPOSED',
+  'QUEUED',
+  'CLAIMED',
+  'POLLING',
+  'SUCCEEDED',
+  'FAILED',
+  'CANCELLED',
+  'UNKNOWN',
+  'RESOLVED'
+] as const;
+
+const executionCostStates = [
+  'ESTIMATED',
+  'RESERVED',
+  'UNKNOWN',
+  'REPORTED',
+  'RECONCILED',
+  'RELEASED'
+] as const;
+
+const executionQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+  state: z.enum(executionStates).optional(),
+  costState: z.enum(executionCostStates).optional()
+});
+
 export async function opsRoutes(app: FastifyInstance): Promise<void> {
   // Public load-balancer probe: schema is usable. No identifiers, credentials or paid provider calls.
   app.get('/api/ready',async (_r,reply)=>{reply.header('Cache-Control','no-store');try{
@@ -47,25 +83,51 @@ export async function opsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/api/ops/reconcile', adminOnly, async (request) => {
-    const body = (request.body ?? {}) as { dryRun?: boolean; staleSeconds?: number; stagedGraceHours?: number };
-    return new RuntimeReconciliationService(undefined, outboxDispatcher ?? undefined).report({
-      dryRun: body.dryRun !== false,
+    const body = reconcileInputSchema.parse(request.body ?? {});
+    const dryRun = body.dryRun !== false;
+    const report = await new RuntimeReconciliationService(undefined, outboxDispatcher ?? undefined).report({
+      dryRun,
       staleSeconds: body.staleSeconds,
       stagedGraceHours: body.stagedGraceHours
     });
+    await recordAuditEvent({
+      actorId: request.currentUser!.id,
+      action: 'ops.reconcile',
+      targetType: 'runtime',
+      targetId: null,
+      traceId: request.traceId ?? null,
+      requestId: request.requestId ?? null,
+      metadata: {
+        dryRun,
+        staleSeconds: body.staleSeconds ?? 300,
+        stagedGraceHours: body.stagedGraceHours ?? 24,
+        actionsCount: report.actions.length,
+        incidentsCount: report.incidents.length,
+        dispatcherAttached: report.dispatcherAttached
+      }
+    });
+    return report;
   });
 
   // P11-C — operations outillees (ToolBroker) : etats reels, eligibilites, correlation.
   // Aucune relance aveugle d'une operation payante : seules l'annulation d'une operation
   // encore proposee/en file et la resolution manuelle d'une issue UNKNOWN sont permises.
-  app.get('/api/admin/ops/execution', adminOnly, async () => {
+  app.get('/api/admin/ops/execution', adminOnly, async (request) => {
+    const filters = executionQuerySchema.parse(request.query ?? {});
+    const where = {
+      ...(filters.state ? { state: filters.state } : {}),
+      ...(filters.costState ? { costState: filters.costState } : {})
+    };
     const now = Date.now();
-    const [states, costStates, rows] = await Promise.all([
+    const [states, costStates, total, rows] = await Promise.all([
       prisma.executionOperation.groupBy({ by: ['state'], _count: { _all: true } }),
       prisma.executionOperation.groupBy({ by: ['costState'], _count: { _all: true } }),
+      prisma.executionOperation.count({ where }),
       prisma.executionOperation.findMany({
+        where,
         orderBy: { createdAt: 'desc' },
-        take: 50,
+        skip: (filters.page - 1) * filters.pageSize,
+        take: filters.pageSize,
         select: {
           id: true, tool: true, state: true, costState: true, maxCents: true, reportedCents: true,
           correlationId: true, createdAt: true, claimUntil: true, approvedBy: true,
@@ -74,10 +136,16 @@ export async function opsRoutes(app: FastifyInstance): Promise<void> {
         }
       })
     ]);
+    const totalPages = Math.max(1, Math.ceil(total / filters.pageSize));
     return {
       generatedAt: new Date(now).toISOString(),
       states: Object.fromEntries(states.map((row) => [row.state, row._count._all])),
       costStates: Object.fromEntries(costStates.map((row) => [row.costState, row._count._all])),
+      page: filters.page,
+      pageSize: filters.pageSize,
+      total,
+      totalPages,
+      truncated: total > filters.page * filters.pageSize,
       items: rows.map((row) => ({
         id: row.id,
         tool: row.tool,
@@ -102,6 +170,7 @@ export async function opsRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/admin/ops/execution/:id', adminOnly, async (request) => {
     const id = z.uuid().parse((request.params as { id?: string }).id);
+    const now = Date.now();
     const operation = await prisma.executionOperation.findUnique({
       where: { id },
       select: {
@@ -122,6 +191,12 @@ export async function opsRoutes(app: FastifyInstance): Promise<void> {
     });
     return {
       ...operation,
+      projectTitle: operation.project.title,
+      ownerEmail: operation.project.user.email,
+      ageMs: Math.max(0, now - operation.createdAt.getTime()),
+      approved: operation.approvedBy !== null,
+      cancelEligible: ['PROPOSED', 'QUEUED'].includes(operation.state),
+      resolveEligible: operation.state === 'UNKNOWN',
       result,
       createdAt: operation.createdAt.toISOString(),
       claimUntil: operation.claimUntil ? operation.claimUntil.toISOString() : null,
@@ -146,6 +221,8 @@ export async function opsRoutes(app: FastifyInstance): Promise<void> {
       action: 'execution.admin_cancelled',
       targetType: 'execution',
       targetId: operation.id,
+      traceId: operation.correlationId,
+      requestId: request.requestId ?? null,
       metadata: { tool: operation.tool, previousState: operation.state, correlationId: operation.correlationId }
     });
     return result;
@@ -158,7 +235,7 @@ export async function opsRoutes(app: FastifyInstance): Promise<void> {
     const checkedAt = new Date().toISOString();
     if (!config) {
       return {
-        configured: false, reachable: false, ready: false, checkedAt,
+        configured: false, reachable: false, ready: false, healthState: 'unavailable' as const, checkedAt,
         error: 'python_tools_unconfigured', capabilities: [], dependencies: {}, models: []
       };
     }
@@ -196,10 +273,12 @@ export async function opsRoutes(app: FastifyInstance): Promise<void> {
           };
         })
         .filter((item) => item.key.length > 0);
+      const isReady = ready.status === 200 && readyBody.status === 'ready';
       return {
         configured: true,
         reachable: true,
-        ready: ready.status === 200 && readyBody.status === 'ready',
+        ready: isReady,
+        healthState: isReady ? ('healthy' as const) : ('unavailable' as const),
         checkedAt,
         version: asString(readyBody.version),
         dependencies: asRecord(readyBody.dependencies),
@@ -212,6 +291,7 @@ export async function opsRoutes(app: FastifyInstance): Promise<void> {
         configured: true,
         reachable: false,
         ready: false,
+        healthState: 'unavailable' as const,
         checkedAt,
         error: error instanceof Error && error.name === 'TimeoutError' ? 'python_tools_timeout' : 'python_tools_unreachable',
         capabilities: [],

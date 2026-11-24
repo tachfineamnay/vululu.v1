@@ -120,6 +120,25 @@ export class OutboxDispatcher {
       if (row.kind === 'approval_signal') {
         const projectId = String(payload.projectId ?? '');
         const approvalStatuses = ['waiting_approval', 'running', 'queued', 'recovery_pending'];
+        if (row.jobRunId) {
+          const existing = await this.db.jobRun.findUnique({
+            where: { id: row.jobRunId },
+            select: { id: true, projectId: true, status: true, workflowRunId: true }
+          });
+          if (existing && existing.projectId === projectId && existing.status === 'succeeded') {
+            await this.db.orchestrationOutbox.update({
+              where: { id: row.id },
+              data: {
+                status: 'dispatched',
+                workflowRunId: existing.workflowRunId,
+                dispatchedAt: new Date(),
+                lastError: null,
+                attempts: { increment: 1 }
+              }
+            });
+            return;
+          }
+        }
         const jobRun = row.jobRunId
           ? await this.db.jobRun.findFirst({
               where: {

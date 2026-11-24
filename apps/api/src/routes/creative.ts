@@ -26,6 +26,7 @@ import { sendArtifact } from './production';
 import { rateLimitPreHandler, RATE_LIMITS } from '../infrastructure/security/rateLimiter';
 import { HttpError } from '../errors';
 import { cancelRender, queueRender, renderStatus } from '../infrastructure/creative/renderJobs';
+import { CreativeRenderSlot } from '../infrastructure/creative/renderSlot';
 
 export async function creativeRoutes(app: FastifyInstance) {
   const auth = { preHandler: [app.authenticate] };
@@ -138,25 +139,29 @@ export async function creativeRoutes(app: FastifyInstance) {
     );
   });
   // Bound native render work across preview and export, not just per account.
-  let active = 0;
+  // Preview, master render, and cancel keep separate rate-limit buckets so interactive
+  // previews cannot lock out render submission or cooperative cancellation.
+  const renderSlot = new CreativeRenderSlot();
+  const previewAuth = {
+    preHandler: [
+      app.authenticate,
+      rateLimitPreHandler(RATE_LIMITS.creativePreview, (r) => 'creative-preview:' + r.currentUser!.id),
+    ],
+  };
   const renderAuth = {
     preHandler: [
       app.authenticate,
-      rateLimitPreHandler(RATE_LIMITS.productionStart, (r) => 'creative:' + r.currentUser!.id),
+      rateLimitPreHandler(RATE_LIMITS.productionStart, (r) => 'creative-render:' + r.currentUser!.id),
     ],
   };
-  async function withSlot<T>(fn: () => Promise<T>) {
-    if (active >= 2) throw new HttpError(429, 'creative_busy', 'Rendu en cours, réessayez.');
-    active++;
-    try {
-      return await fn();
-    } catch (e) {
-      if (e instanceof Error && 'code' in e && e.code === 'media_text_overflow')
-        throw new HttpError(422, 'creative_text_overflow', e.message);
-      throw e;
-    } finally {
-      active--;
-    }
+  const cancelAuth = {
+    preHandler: [
+      app.authenticate,
+      rateLimitPreHandler(RATE_LIMITS.productionApprove, (r) => 'creative-cancel:' + r.currentUser!.id),
+    ],
+  };
+  function withSlot<T>(fn: () => Promise<T>, aborted?: () => boolean) {
+    return renderSlot.run(fn, aborted ? { aborted } : undefined);
   }
   app.get(base + '/destinations', auth, async (r) =>
     prisma.contentItem.findMany({
@@ -208,14 +213,14 @@ export async function creativeRoutes(app: FastifyInstance) {
       if (!index.length) throw new HttpError(404, 'empty_package', 'Aucune création rendue.');
       files['manifest.json'] = strToU8(JSON.stringify(index, null, 2));
       return Buffer.from(zipSync(files, { level: 0 }));
-    });
+    }, () => Boolean(r.raw.aborted));
     markExport(r,reply,campaignId,null,'Lot campagne');
     return reply
       .type('application/zip')
       .header('Content-Disposition', 'attachment; filename="campagne.zip"')
       .send(data);
   });
-  app.post(base + '/preview', renderAuth, async (r, reply) => {
+  app.post(base + '/preview', previewAuth, async (r, reply) => {
     const spec = creativeSpec.refine((s) => s.scenes.length === 1).parse(r.body);
     return reply
       .header('Cache-Control', 'private, no-store')
@@ -223,12 +228,15 @@ export async function creativeRoutes(app: FastifyInstance) {
       .send(await withSlot(async () => {
         const frame = await service.preview(r.currentUser!.id, id.parse(r.params).id, spec);
         return (await prisma.billingControl.findUniqueOrThrow({where:{id:'commercial'}})).enabled ? draftThumbnail(frame) : frame;
-      }));
+      }, () => Boolean(r.raw.aborted)));
   });
   // Aperçu vidéo borné (20 s) : même compositeur que le master, aucune révision créée.
-  app.post(base + '/preview/video', renderAuth, async (r, reply) => {
+  app.post(base + '/preview/video', previewAuth, async (r, reply) => {
     const spec = creativeSpec.refine((s) => !s.delivery || isVideoOutput(s.delivery.kind)).parse(r.body);
-    const out = await withSlot(() => service.previewVideo(r.currentUser!.id, id.parse(r.params).id, spec));
+    const out = await withSlot(
+      () => service.previewVideo(r.currentUser!.id, id.parse(r.params).id, spec),
+      () => Boolean(r.raw.aborted)
+    );
     return reply
       .header('Cache-Control', 'private, no-store')
       .header('X-Preview-Seconds', out.seconds.toFixed(2))
@@ -242,7 +250,7 @@ export async function creativeRoutes(app: FastifyInstance) {
     return reply.code(job.state === 'succeeded' ? 200 : 202).send(job);
   });
   // Annulation : immédiate si le job est en file, coopérative (fin de scène) s'il est en cours.
-  app.post(base + '/:version/render/cancel', renderAuth, async (r) => {
+  app.post(base + '/:version/render/cancel', cancelAuth, async (r) => {
     const p = revision.parse(r.params);
     return cancelRender(r.currentUser!.id, p.id, p.version);
   });
@@ -281,7 +289,7 @@ export async function creativeRoutes(app: FastifyInstance) {
       }
       files['manifest.json'] = strToU8(JSON.stringify({ revision: p.version, slides }, null, 2));
       return Buffer.from(zipSync(files, { level: 0 }));
-    });
+    }, () => Boolean(r.raw.aborted));
     markExport(r, reply, p.id, p.version, 'Carrousel approuvé');
     return reply.header('Content-Disposition', `attachment; filename="creation-v${p.version}.zip"`)
       .type('application/zip').send(data);

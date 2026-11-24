@@ -37,7 +37,7 @@ export async function adminCostRoutes(app: FastifyInstance): Promise<void> {
     const operationsLimit = filters.operationsLimit ?? OPERATIONS_WINDOW;
     const now = Date.now();
 
-    const [accounts, accountsTotal, enabledAccounts, budgetAggregate, byCostStateRows, nullReportedRows, operations, operationsTotal, toolStateRows, costEvents, control, uncertainRows, uncertainTotal, uncertainByAccount] =
+    const [accounts, accountsTotal, enabledAccounts, budgetAggregate, byCostStateRows, nullReportedRows, operations, operationsTotal, toolStateRows, toolNullEstimatedRows, costEvents, control, uncertainRows, uncertainTotal, uncertainByAccount] =
       await Promise.all([
         prisma.executionAccount.findMany({
           orderBy: { userId: 'asc' },
@@ -74,11 +74,16 @@ export async function adminCostRoutes(app: FastifyInstance): Promise<void> {
           }
         }),
         prisma.executionOperation.count(),
-        // Agrégat par outil ET par état : les colonnes confirmées/incertaines restent séparées.
+        // Agrégat par outil ET par état : estimé, réel (rapporté), réconcilié et incertain restent séparés.
         prisma.executionOperation.groupBy({
           by: ['tool', 'costState'],
           _count: { _all: true },
           _sum: { maxCents: true, reportedCents: true }
+        }),
+        prisma.executionOperation.groupBy({
+          by: ['tool'],
+          where: { costState: 'ESTIMATED', reportedCents: null },
+          _sum: { maxCents: true }
         }),
         prisma.costEvent.groupBy({ by: ['provider'], _count: { _all: true }, _sum: { amountCents: true } }),
         prisma.billingControl.findUnique({ where: { id: 'commercial' }, select: { enabled: true, mode: true } }),
@@ -88,7 +93,8 @@ export async function adminCostRoutes(app: FastifyInstance): Promise<void> {
           take: UNCERTAIN_LIMIT,
           select: {
             id: true, tool: true, state: true, costState: true, maxCents: true, correlationId: true,
-            createdAt: true, accountId: true, project: { select: { title: true } }
+            createdAt: true, accountId: true,
+            project: { select: { title: true, user: { select: { email: true } } } }
           }
         }),
         prisma.executionOperation.count({ where: { OR: [{ state: 'UNKNOWN' }, { costState: 'UNKNOWN' }] } }),
@@ -107,11 +113,13 @@ export async function adminCostRoutes(app: FastifyInstance): Promise<void> {
     const byCostState: Record<string, number> = {};
     for (const row of byCostStateRows) byCostState[row.costState] = row._count._all;
 
-    // Chaque nature de coût reste distincte : estimation (borne), réservé, confirmé (rapporté ou
-    // constaté), incertain, libéré. Aucun montant n'est fondu dans un total ambigu.
+    // Chaque nature de coût reste distincte : estimation (borne), réservé, réel rapporté
+    // (REPORTED), réconcilié manuellement (RECONCILED), incertain (UNKNOWN), libéré (RELEASED).
     const estimatedCents = reportedOf('ESTIMATED') + (nullReported.get('ESTIMATED')?._sum.maxCents ?? 0);
     const reservedCents = maxOf('RESERVED');
-    const confirmedCents = reportedOf('REPORTED') + reportedOf('RECONCILED');
+    const reportedCents = reportedOf('REPORTED');
+    const reconciledCents = reportedOf('RECONCILED');
+    const confirmedCents = reportedCents + reconciledCents;
     const uncertainCents = maxOf('UNKNOWN');
     const releasedCents = maxOf('RELEASED');
     const maxExposureCents = reservedCents + uncertainCents;
@@ -119,30 +127,80 @@ export async function adminCostRoutes(app: FastifyInstance): Promise<void> {
     const providerOf = (toolKey: string) => tools[toolKey as keyof typeof tools]?.provider ?? 'unknown';
     const emailOf = new Map(accounts.map((account) => [account.userId, account.user.email]));
     const uncertainPerAccount = new Map(uncertainByAccount.map((row) => [row.accountId, row._count._all]));
+    const toolNullEstimated = new Map(toolNullEstimatedRows.map((row) => [row.tool, row._sum.maxCents ?? 0]));
 
-    type ToolRow = { tool: string; provider: string; operations: number; maxCents: number; confirmedCents: number; uncertainCents: number };
+    type ToolRow = {
+      tool: string;
+      provider: string;
+      operations: number;
+      maxCents: number;
+      estimatedCents: number;
+      reportedCents: number;
+      reconciledCents: number;
+      confirmedCents: number;
+      uncertainCents: number;
+    };
     const toolMap = new Map<string, ToolRow>();
     for (const row of toolStateRows) {
       const entry = toolMap.get(row.tool) ?? {
-        tool: row.tool, provider: providerOf(row.tool), operations: 0, maxCents: 0, confirmedCents: 0, uncertainCents: 0
+        tool: row.tool,
+        provider: providerOf(row.tool),
+        operations: 0,
+        maxCents: 0,
+        estimatedCents: toolNullEstimated.get(row.tool) ?? 0,
+        reportedCents: 0,
+        reconciledCents: 0,
+        confirmedCents: 0,
+        uncertainCents: 0
       };
       entry.operations += row._count._all;
       entry.maxCents += row._sum.maxCents ?? 0;
-      if (row.costState === 'REPORTED' || row.costState === 'RECONCILED')
+      if (row.costState === 'ESTIMATED') entry.estimatedCents += row._sum.reportedCents ?? 0;
+      if (row.costState === 'REPORTED') {
+        entry.reportedCents += row._sum.reportedCents ?? 0;
         entry.confirmedCents += row._sum.reportedCents ?? 0;
+      }
+      if (row.costState === 'RECONCILED') {
+        entry.reconciledCents += row._sum.reportedCents ?? 0;
+        entry.confirmedCents += row._sum.reportedCents ?? 0;
+      }
       if (row.costState === 'UNKNOWN') entry.uncertainCents += row._sum.maxCents ?? 0;
       toolMap.set(row.tool, entry);
     }
     const byTool = [...toolMap.values()].sort((left, right) => right.maxCents - left.maxCents);
 
-    const providerMap = new Map<string, { provider: string; tools: Set<string>; operations: number; maxCents: number; confirmedCents: number; uncertainCents: number }>();
+    const providerMap = new Map<
+      string,
+      {
+        provider: string;
+        tools: Set<string>;
+        operations: number;
+        maxCents: number;
+        estimatedCents: number;
+        reportedCents: number;
+        reconciledCents: number;
+        confirmedCents: number;
+        uncertainCents: number;
+      }
+    >();
     for (const entry of byTool) {
       const provider = providerMap.get(entry.provider) ?? {
-        provider: entry.provider, tools: new Set<string>(), operations: 0, maxCents: 0, confirmedCents: 0, uncertainCents: 0
+        provider: entry.provider,
+        tools: new Set<string>(),
+        operations: 0,
+        maxCents: 0,
+        estimatedCents: 0,
+        reportedCents: 0,
+        reconciledCents: 0,
+        confirmedCents: 0,
+        uncertainCents: 0
       };
       provider.tools.add(entry.tool);
       provider.operations += entry.operations;
       provider.maxCents += entry.maxCents;
+      provider.estimatedCents += entry.estimatedCents;
+      provider.reportedCents += entry.reportedCents;
+      provider.reconciledCents += entry.reconciledCents;
       provider.confirmedCents += entry.confirmedCents;
       provider.uncertainCents += entry.uncertainCents;
       providerMap.set(entry.provider, provider);
@@ -155,10 +213,16 @@ export async function adminCostRoutes(app: FastifyInstance): Promise<void> {
           tools: entry.tools.size,
           operations: entry.operations,
           maxCents: entry.maxCents,
+          estimatedCents: entry.estimatedCents,
+          reportedCents: entry.reportedCents,
+          reconciledCents: entry.reconciledCents,
           confirmedCents: entry.confirmedCents,
           uncertainCents: entry.uncertainCents,
           availability: state.availability,
-          availabilityReason: state.reason
+          availabilityReason: state.reason,
+          configured: state.configured,
+          verified: state.verified,
+          healthState: state.healthState
         };
       })
       .sort((left, right) => right.maxCents - left.maxCents);
@@ -206,8 +270,9 @@ export async function adminCostRoutes(app: FastifyInstance): Promise<void> {
       createdAt: operation.createdAt.toISOString(),
       ageMs: Math.max(0, now - operation.createdAt.getTime()),
       accountId: operation.accountId,
-      ownerEmail: emailOf.get(operation.accountId) ?? null,
-      projectTitle: operation.project.title
+      ownerEmail: operation.project.user?.email ?? emailOf.get(operation.accountId) ?? null,
+      projectTitle: operation.project.title,
+      resolveEligible: operation.state === 'UNKNOWN'
     }));
 
     const status = betaStatus();
@@ -215,6 +280,7 @@ export async function adminCostRoutes(app: FastifyInstance): Promise<void> {
     const limitCents = budgetAggregate._sum.limitCents ?? 0;
     const spentCents = budgetAggregate._sum.spentCents ?? 0;
     const reservedBudgetCents = budgetAggregate._sum.reservedCents ?? 0;
+    const accountsTotalPages = Math.max(1, Math.ceil(accountsTotal / ACCOUNTS_PAGE_SIZE));
     return {
       generatedAt: new Date(now).toISOString(),
       commercial: {
@@ -232,13 +298,23 @@ export async function adminCostRoutes(app: FastifyInstance): Promise<void> {
         summary: 'all execution operations (all-time)',
         budgetTotals: 'all execution accounts',
         ledger: 'all cost events (all-time, mock router)',
-        budgets: { page: accountsPage, pageSize: ACCOUNTS_PAGE_SIZE, total: accountsTotal, returned: budgets.length, truncated: budgets.length < accountsTotal },
+        budgets: {
+          page: accountsPage,
+          pageSize: ACCOUNTS_PAGE_SIZE,
+          total: accountsTotal,
+          totalPages: accountsTotalPages,
+          returned: budgets.length,
+          truncated: budgets.length < accountsTotal,
+          hasMore: accountsTotal > accountsPage * ACCOUNTS_PAGE_SIZE
+        },
         recentOperations: { limit: operationsLimit, total: operationsTotal, returned: operations.length, truncated: operations.length < operationsTotal },
         uncertain: { limit: UNCERTAIN_LIMIT, total: uncertainTotal, returned: uncertain.length, truncated: uncertain.length < uncertainTotal }
       },
       summary: {
         estimatedCents,
         reservedCents,
+        reportedCents,
+        reconciledCents,
         confirmedCents,
         uncertainCents,
         releasedCents,

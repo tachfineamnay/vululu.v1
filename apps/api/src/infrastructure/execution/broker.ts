@@ -47,6 +47,8 @@ async function owned(tx: Tx, id: string, actor: string) {
 async function allowed(tx: Tx, actor: string, id: string, tool: Tool, revision: number, key: string) {
   if(tool.startsWith('sandbox.')&&demoDisabled()) deny(403,'tool_disabled');
   const a = await lock(tx, actor);
+  const owner = await tx.user.findUnique({ where: { id: actor }, select: { status: true } });
+  if (owner?.status === 'suspended') deny(403, 'account_suspended');
   if (!a.enabled || !a.tools.includes(tool)) deny(403, 'tool_disabled');
   if (tool === 'assistant.draft@1') {
     if (!await tx.assistantTurn.count({ where: { id: key, projectId: id, revision, providerProfile: { not: null },

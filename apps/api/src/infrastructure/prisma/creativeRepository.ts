@@ -104,7 +104,13 @@ export class PrismaCreativeRepository implements CreativeRepository {
   }
   async approve(userId: string, id: string, version: number) {
     await prisma.creativeRevision.updateMany({
-      where: { projectId: id, version, approvedAt: null, project: { userId } },
+      where: {
+        projectId: id,
+        version,
+        approvedAt: null,
+        manifest: { not: Prisma.DbNull },
+        project: { userId }
+      },
       data: { approvedAt: new Date() }
     });
   }

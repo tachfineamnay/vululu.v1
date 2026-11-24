@@ -1,7 +1,15 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { socialChannels } from './SocialConnections';
 import { api, postJson } from '../../lib/api';
+import {
+  displayRequestState,
+  evaluateRequestControls,
+  formatKind,
+  isSafeHttpsUrl,
+  isVideoKind,
+  requestStates
+} from '../../lib/publishingPresentation';
 
 type PanelConnection = {
   id: string;
@@ -15,19 +23,20 @@ type PanelRequest = {
   revision: number;
   itemVersion: number;
   scheduledAt: string | null;
-  connection: { platform: string; channel: string; displayName: string | null; revoked: boolean };
+  connection: { platform: string; channel: string; displayName: string | null; revoked: boolean; expiresAt?: string };
   state: string;
   reason: string | null;
   remoteId: string | null;
   networkReceipt: string | null;
   operationId?: string;
   execution?: string;
+  cancelOperationId?: string;
   cancellation?: string;
 };
 type Panel = {
   directEnabled: boolean;
   scheduleAuthorized: boolean;
-  revisions: { revision: number; platform: string }[];
+  revisions: { revision: number; platform: string; kind?: string }[];
   connections: PanelConnection[];
   requests: PanelRequest[];
 };
@@ -43,6 +52,9 @@ type Preview = {
   keys: (string | null)[];
   issues: string[];
   direct: boolean;
+  directReason?: 'platform_manual_only' | 'format_not_supported_for_direct' | 'direct_disabled' | null;
+  supportedScheduledKinds?: string[];
+  schedulableInFuture?: boolean;
 };
 type Cmd = { id: string; operationId: string; digest: string; state: string };
 type Operation = {
@@ -75,16 +87,6 @@ type Detail = {
   cancellation: Operation | null;
 };
 
-const requestStates: Record<string, string> = {
-  PREPARED: 'Demande préparée',
-  SENDING: 'Envoi en cours',
-  SUBMITTED: 'Soumission acceptée · publication non confirmée',
-  CANCELLING: 'Annulation en cours',
-  CANCELLED: 'Annulée',
-  PUBLISHED: 'Publication confirmée',
-  FAILED: 'Échec',
-  UNKNOWN: 'Issue inconnue · vérifier auprès du fournisseur'
-};
 const operationStates: Record<string, string> = {
   PROPOSED: 'Autorisation requise',
   QUEUED: 'En file d’exécution',
@@ -99,6 +101,8 @@ const operationStates: Record<string, string> = {
 const issueLabels: Record<string, string> = {
   caption_too_long: 'Légende, hashtags et appel à l’action trop longs pour ce réseau',
   editorial_approval_required: 'Le contenu doit être au statut Approuvé ou Planifié dans le calendrier',
+  unsupported_format: 'Le format choisi dans le calendrier n’est pas pris en charge',
+  incompatible_artifact_format: 'La création approuvée ne correspond pas au format défini dans le calendrier',
   calendar_changed: 'Le contenu du calendrier a changé depuis l’approbation de cette création',
   approved_revision_required: 'La révision n’est pas rendue et approuvée',
   variant_missing: 'Aucune déclinaison ne correspond au réseau de la création',
@@ -110,20 +114,43 @@ const reasonLabels: Record<string, string> = {
   CHANNEL_MISMATCH: 'Compte destinataire non vérifié',
   PROVIDER_UNAVAILABLE: 'Fournisseur indisponible',
   RECEIPT_UNKNOWN: 'Accusé de réception perdu',
+  MISSING_NETWORK_RECEIPT: 'Publication signalée sans preuve réseau vérifiable',
+  MANUAL_CONFIRMED_ABSENT: 'Absence confirmée manuellement chez Postiz',
+  RESOLVED_EXTERNALLY: 'Clôturée comme gérée hors Vululu (sans preuve réseau)',
   VALIDATION_FAILED: 'Contenu ou autorisation à revérifier',
   REJECTED: 'Demande refusée ou créneau non annulable',
   PROVIDER_FAILED: 'Échec signalé par le fournisseur',
   INVALID_RECEIPT: 'Accusé de réception du fournisseur invalide'
 };
+const reconcileOutcomes: Record<string, string> = {
+  published_verified: 'Publication confirmée avec preuve réseau vérifiée.',
+  provider_failed: 'Le fournisseur a signalé un échec pour cette programmation.',
+  recovered_queued: 'Postiz confirme que la programmation est toujours en file : état rétabli en soumission acceptée.',
+  still_queued: 'Programmation toujours en file chez Postiz (publication non encore confirmée).',
+  missing_network_receipt: 'Postiz signale la publication sans lien/preuve réseau vérifiable : le statut reste non confirmé.',
+  not_found_on_provider: 'Aucune programmation correspondante trouvée sur le créneau chez Postiz.',
+  not_found_without_receipt: 'Aucune programmation correspondante trouvée chez Postiz sans reçu initial. Vérifiez directement dans votre espace Postiz avant toute confirmation manuelle.',
+  ambiguous_without_receipt: 'Plusieurs publications correspondent ou aucun reçu unique ne permet de trancher sans risque de doublon. Vérifiez directement chez Postiz.',
+  no_action_needed: 'Aucune mise à jour supplémentaire renvoyée par le fournisseur.'
+};
 const actionErrors: Record<string, string> = {
   direct_disabled: 'Programmation directe désactivée sur cet environnement. Utilisez le kit manuel.',
-  connection_not_found: 'Compte de publication introuvable ou dissocié. Associez-le dans « Comptes de publication ».',
+  DISABLED: 'Programmation directe désactivée sur cet environnement. Utilisez le kit manuel.',
+  connection_not_found: 'Compte de publication introuvable. Associez-le dans « Comptes de publication ».',
+  connection_revoked: 'Ce compte de publication a été dissocié. Associez-le à nouveau dans « Comptes de publication ».',
   token_expired: 'La clé du compte a expiré. Renouvelez-la dans « Comptes de publication », puis actualisez.',
-  not_schedulable: 'Programmation impossible : date passée, contenu à approuver ou réseau non compatible.',
+  TOKEN_EXPIRED: 'La clé du compte a expiré ou été refusée par Postiz. Renouvelez-la dans « Comptes de publication ».',
+  PROVIDER_UNAVAILABLE: 'Postiz est temporairement indisponible. Aucune nouvelle soumission n’a été envoyée ; réessayez plus tard.',
+  not_schedulable: 'Programmation impossible : date passée, contenu à approuver ou réseau/format non compatible.',
   existing_publication: 'Une demande existe déjà pour cette version sur ce compte. Vérifiez-la avant d’en créer une autre.',
+  publication_outcome_unknown: 'Une tentative précédente a une issue inconnue : vérifiez chez Postiz ou résolvez-la manuellement pour éviter toute double publication.',
+  retry_required: 'Cette demande a échoué : utilisez « Préparer une nouvelle tentative » sur la demande existante si la cause le permet.',
   revision_conflict: 'La révision de la création a changé. Rechargez le contenu et choisissez la création à nouveau.',
-  unsafe_retry: 'La nouvelle tentative n’est autorisée que pour une demande en échec liée au compte ou au réseau.',
+  unsafe_retry: 'La nouvelle tentative est bloquée pour éviter une double publication : vérifiez d’abord l’état chez Postiz.',
   not_submitted: 'L’annulation n’est possible que pour une soumission acceptée par le fournisseur.',
+  cancellation_unsupported: 'L’annulation directe n’est pas prise en charge pour cette demande.',
+  schedule_already_passed: 'La date prévue est dépassée : l’annulation n’est plus possible depuis Vululu.',
+  not_unknown: 'Cette demande n’est pas en état d’issue inconnue.',
   too_late_to_cancel: 'Trop tard pour retirer cette demande locale : elle est déjà prise en charge.',
   not_proposed: 'Cette autorisation a déjà été traitée. Actualisez les reçus pour voir l’état réel.',
   approval_mismatch: 'L’empreinte de l’autorisation ne correspond plus. Actualisez puis préparez à nouveau.',
@@ -152,6 +179,7 @@ export function PublishingPanel({ id, connectionsVersion = 0 }: { id: string; co
   const [info, set] = useState<Panel>(),
     [rev, select] = useState(0),
     [p, view] = useState<Preview>(),
+    [previewLoading, setPreviewLoading] = useState(false),
     [target, destination] = useState(''),
     [channel, choose] = useState(''),
     [error, fail] = useState(''),
@@ -161,6 +189,7 @@ export function PublishingPanel({ id, connectionsVersion = 0 }: { id: string; co
     [cmd, confirm] = useState<Cmd & { label: string }>(),
     [details, detail] = useState<Record<string, Detail>>({}),
     [detailOpen, openDetail] = useState('');
+  const inFlight = useRef(false);
   const query = target ? `?target=${encodeURIComponent(target)}` : '';
   useEffect(() => {
     let active = true;
@@ -182,21 +211,29 @@ export function PublishingPanel({ id, connectionsVersion = 0 }: { id: string; co
     let active = true;
     view(undefined);
     confirm(undefined);
-    if (rev)
-      api<Preview>(`${base}/${rev}/preview${query}`)
-        .then((v) => {
-          if (active) {
-            view(v);
-            fail('');
-          }
-        })
-        .catch((e) => active && fail(actionMessage(e)));
+    if (!rev) {
+      setPreviewLoading(false);
+      return () => {
+        active = false;
+      };
+    }
+    setPreviewLoading(true);
+    api<Preview>(`${base}/${rev}/preview${query}`)
+      .then((v) => {
+        if (active) {
+          view(v);
+          fail('');
+        }
+      })
+      .catch((e) => active && fail(actionMessage(e)))
+      .finally(() => active && setPreviewLoading(false));
     return () => {
       active = false;
     };
   }, [base, rev, query, refresh, connectionsVersion]);
   async function action(fn: () => Promise<void>) {
-    if (busy) return;
+    if (inFlight.current) return;
+    inFlight.current = true;
     fail('');
     say('');
     work(true);
@@ -205,6 +242,7 @@ export function PublishingPanel({ id, connectionsVersion = 0 }: { id: string; co
     } catch (e) {
       fail(actionMessage(e));
     } finally {
+      inFlight.current = false;
       work(false);
     }
   }
@@ -277,13 +315,24 @@ export function PublishingPanel({ id, connectionsVersion = 0 }: { id: string; co
       {info?.requests.map((r) => {
         const d = details[r.id];
         const revoked = r.connection.revoked;
+        const {
+          expired,
+          canRetryReason,
+          canRetryNow,
+          canReconcileNow,
+          canCancelNow,
+          canWithdrawCancel
+        } = evaluateRequestControls(r, {
+          directEnabled: Boolean(info.directEnabled),
+          scheduleAuthorized: Boolean(info.scheduleAuthorized)
+        });
         return (
           <article key={r.id} className="pub-request">
             <div className="pub-request-head">
               <strong>
                 Création v{r.revision} · {r.connection.platform} · {accountLabel(r.connection)} · {r.connection.channel}
               </strong>{' '}
-              <span className="pill">{requestStates[r.state] ?? r.state}</span>
+              <span className="pill">{displayRequestState(r.state, r.networkReceipt)}</span>
             </div>
             <p className="hint">
               Contenu v{r.itemVersion}
@@ -292,15 +341,45 @@ export function PublishingPanel({ id, connectionsVersion = 0 }: { id: string; co
               {r.reason && ` · cause : ${reasonLabels[r.reason] ?? r.reason}`}
             </p>
             {r.remoteId && <p className="hint">reçu de soumission : {r.remoteId}</p>}
-            {r.networkReceipt && <p className="hint">preuve réseau : {r.networkReceipt}</p>}
+            {r.networkReceipt ? (
+              <p className="hint">
+                preuve réseau vérifiée :{' '}
+                {isSafeHttpsUrl(r.networkReceipt) ? (
+                  <a href={r.networkReceipt} target="_blank" rel="noopener noreferrer">
+                    {r.networkReceipt}
+                  </a>
+                ) : (
+                  <code>{r.networkReceipt}</code>
+                )}
+              </p>
+            ) : r.state === 'SUBMITTED' ? (
+              <p className="hint">preuve réseau : aucune (soumission en attente de diffusion)</p>
+            ) : r.state === 'PUBLISHED' ? (
+              <p className="pub-warning" role="status">
+                Aucune preuve réseau vérifiée n’est rattachée à cette demande. Ne la considérez pas comme confirmée sans vérification.
+              </p>
+            ) : null}
             {r.cancellation && (
               <p className="hint">annulation : {operationStates[r.cancellation] ?? r.cancellation}</p>
             )}
+            {r.state === 'UNKNOWN' && (
+              <p className="pub-warning" role="status">
+                Issue fournisseur incertaine : Vululu bloque toute relance automatique pour éviter une double publication.
+                {info.directEnabled && !revoked && !expired
+                  ? ' Lancez « Vérifier chez Postiz » (lecture seule) ou vérifiez directement votre espace Postiz avant toute résolution.'
+                  : ' Vérifiez directement dans votre espace Postiz, puis clôturez l’issue ci-dessous si besoin.'}
+              </p>
+            )}
             {revoked && (
               <p className="pub-warning" role="status">
-                Ce compte a été dissocié de Vululu. Les demandes existantes ne peuvent plus être annulées depuis ici.
+                Ce compte a été dissocié de Vululu. Les demandes existantes ne peuvent plus être vérifiées ni annulées depuis ici.
                 Associez un compte à nouveau dans « Comptes de publication », puis vérifiez chez Postiz avant toute
                 nouvelle demande.
+              </p>
+            )}
+            {!revoked && expired && (
+              <p className="pub-warning" role="status">
+                La clé de ce compte a expiré. Renouvelez-la dans « Comptes de publication » avant de vérifier, annuler ou relancer une demande.
               </p>
             )}
             <div className="actions">
@@ -320,36 +399,70 @@ export function PublishingPanel({ id, connectionsVersion = 0 }: { id: string; co
                   Retirer la demande locale
                 </button>
               )}
-              {r.state === 'FAILED' &&
-                ['TOKEN_EXPIRED', 'CHANNEL_MISMATCH', 'DISABLED'].includes(r.reason ?? '') && (
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    disabled={busy}
-                    onClick={() =>
-                      void action(async () =>
-                        confirm({
-                          ...(await postJson<Cmd>(`/api/publishing/${encodeURIComponent(r.id)}/prepare-retry`, {})),
-                          label: `Autoriser une nouvelle tentative v${r.revision}`
-                        })
-                      )
-                    }
-                  >
-                    Préparer une nouvelle tentative
-                  </button>
-                )}
-              {r.remoteId && !revoked && ['SUBMITTED', 'UNKNOWN'].includes(r.state) && (
+              {canWithdrawCancel && (
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  disabled={busy}
+                  onClick={() =>
+                    void action(async () => {
+                      await postJson(`/api/execution/${encodeURIComponent(r.cancelOperationId!)}/cancel`, {});
+                      say('Annulation locale retirée. La programmation reste en attente chez le fournisseur.');
+                      reload((n) => n + 1);
+                    })
+                  }
+                >
+                  Retirer l’annulation locale
+                </button>
+              )}
+              {canRetryReason && (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={busy || !canRetryNow}
+                  title={
+                    !info.directEnabled
+                      ? 'Programmation directe désactivée sur cet environnement'
+                      : revoked
+                        ? 'Compte dissocié'
+                        : expired
+                          ? 'Renouvelez la clé expirée dans « Comptes de publication »'
+                          : !info.scheduleAuthorized
+                            ? 'Outil postiz.schedule@1 non autorisé'
+                            : undefined
+                  }
+                  onClick={() =>
+                    void action(async () =>
+                      confirm({
+                        ...(await postJson<Cmd>(`/api/publishing/${encodeURIComponent(r.id)}/prepare-retry`, {})),
+                        label: `Autoriser une nouvelle tentative v${r.revision}`
+                      })
+                    )
+                  }
+                >
+                  Préparer une nouvelle tentative
+                </button>
+              )}
+              {canReconcileNow && (
                 <button
                   type="button"
                   className="btn btn-secondary"
                   disabled={busy}
                   onClick={() =>
                     void action(async () => {
-                      const result = await postJson<{ state: string }>(
+                      const result = await postJson<{ state: string; outcome?: string }>(
                         `/api/publishing/${encodeURIComponent(r.id)}/reconcile`,
                         {}
                       );
-                      say('Vérification effectuée. État renvoyé par le fournisseur : ' + (requestStates[result.state] ?? result.state) + '.');
+                      const detailMsg = result.outcome && reconcileOutcomes[result.outcome]
+                        ? ' ' + reconcileOutcomes[result.outcome]
+                        : '';
+                      say(
+                        'Vérification effectuée. État renvoyé par le fournisseur : ' +
+                          (requestStates[result.state] ?? result.state) +
+                          '.' +
+                          detailMsg
+                      );
                       reload((n) => n + 1);
                     })
                   }
@@ -357,25 +470,71 @@ export function PublishingPanel({ id, connectionsVersion = 0 }: { id: string; co
                   Vérifier chez Postiz
                 </button>
               )}
-              {r.state === 'SUBMITTED' &&
-                !revoked &&
-                (!r.scheduledAt || Date.parse(r.scheduledAt) > Date.now()) && (
+              {r.state === 'UNKNOWN' && (
+                <>
                   <button
                     type="button"
-                    className="btn btn-secondary"
+                    className="btn btn-ghost"
                     disabled={busy}
                     onClick={() =>
-                      void action(async () =>
-                        confirm({
-                          ...(await postJson<Cmd>(`/api/publishing/${encodeURIComponent(r.id)}/prepare-cancel`, {})),
-                          label: `Confirmer l’annulation du reçu ${r.remoteId}`
-                        })
-                      )
+                      void action(async () => {
+                        if (
+                          !window.confirm(
+                            'Confirmez-vous avoir vérifié votre espace Postiz et qu’aucune publication n’y a été créée ? Cela débloquera une nouvelle préparation explicite sans rien envoyer automatiquement.'
+                          )
+                        )
+                          return;
+                        await postJson(`/api/publishing/${encodeURIComponent(r.id)}/resolve-unknown`, {
+                          resolution: 'confirmed_absent'
+                        });
+                        say('Absence confirmée manuellement. Vous pouvez préparer une nouvelle tentative si souhaité.');
+                        reload((n) => n + 1);
+                      })
                     }
                   >
-                    Préparer l’annulation
+                    Confirmer l’absence chez Postiz
                   </button>
-                )}
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    disabled={busy}
+                    onClick={() =>
+                      void action(async () => {
+                        if (
+                          !window.confirm(
+                            'Clôturer cette demande comme déjà gérée hors Vululu ? Aucune preuve réseau ne sera fabriquée.'
+                          )
+                        )
+                          return;
+                        await postJson(`/api/publishing/${encodeURIComponent(r.id)}/resolve-unknown`, {
+                          resolution: 'confirmed_external'
+                        });
+                        say('Demande clôturée comme gérée hors Vululu (sans preuve réseau vérifiée).');
+                        reload((n) => n + 1);
+                      })
+                    }
+                  >
+                    Clôturer (gérée hors Vululu)
+                  </button>
+                </>
+              )}
+              {canCancelNow && (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={busy}
+                  onClick={() =>
+                    void action(async () =>
+                      confirm({
+                        ...(await postJson<Cmd>(`/api/publishing/${encodeURIComponent(r.id)}/prepare-cancel`, {})),
+                        label: `Confirmer l’annulation du reçu ${r.remoteId}`
+                      })
+                    )
+                  }
+                >
+                  Préparer l’annulation
+                </button>
+              )}
               <button
                 type="button"
                 className="btn btn-ghost"
@@ -425,7 +584,19 @@ export function PublishingPanel({ id, connectionsVersion = 0 }: { id: string; co
                   </div>
                   <div>
                     <dt>Preuve réseau</dt>
-                    <dd>{d.networkReceipt ?? 'Aucune : la publication n’est pas confirmée'}</dd>
+                    <dd>
+                      {d.networkReceipt ? (
+                        isSafeHttpsUrl(d.networkReceipt) ? (
+                          <a href={d.networkReceipt} target="_blank" rel="noopener noreferrer">
+                            {d.networkReceipt}
+                          </a>
+                        ) : (
+                          <code>{d.networkReceipt}</code>
+                        )
+                      ) : (
+                        'Aucune : la publication n’est pas confirmée'
+                      )}
+                    </dd>
                   </div>
                   <div>
                     <dt>Cause affichée</dt>
@@ -492,7 +663,7 @@ export function PublishingPanel({ id, connectionsVersion = 0 }: { id: string; co
           >
             {info.revisions.map((r) => (
               <option key={r.revision} value={r.revision}>
-                {r.platform} · v{r.revision}
+                {r.platform} · v{r.revision}{r.kind ? ` · ${formatKind(r.kind)}` : ''}
               </option>
             ))}
           </select>
@@ -513,7 +684,9 @@ export function PublishingPanel({ id, connectionsVersion = 0 }: { id: string; co
           >
             <option value="">Réseau de la création approuvée</option>
             {socialChannels.map((name) => (
-              <option key={name}>{name}</option>
+              <option key={name} value={name}>
+                {name === 'TikTok' ? 'TikTok (publication manuelle uniquement)' : name}
+              </option>
             ))}
           </select>
         </label>
@@ -531,7 +704,7 @@ export function PublishingPanel({ id, connectionsVersion = 0 }: { id: string; co
       {p && p.revision === rev && (
         <>
           <h3>
-            {p.platform} · {p.kind}
+            {p.platform} · {formatKind(p.kind)}
           </h3>
           <p className="hint">
             Création v{p.revision} pour le contenu v{p.itemVersion}
@@ -549,7 +722,7 @@ export function PublishingPanel({ id, connectionsVersion = 0 }: { id: string; co
             </div>
             <div>
               <dt>Format</dt>
-              <dd>{p.kind}</dd>
+              <dd>{formatKind(p.kind)}</dd>
             </div>
             <div>
               <dt>Date et heure prévues</dt>
@@ -558,11 +731,15 @@ export function PublishingPanel({ id, connectionsVersion = 0 }: { id: string; co
             <div>
               <dt>Programmation directe</dt>
               <dd>
-                {!info?.directEnabled
-                  ? 'Désactivée sur cet environnement'
-                  : p.direct
-                    ? 'Compatible'
-                    : 'Non éligible · publication manuelle'}
+                {p.directReason === 'platform_manual_only'
+                  ? 'Non prise en charge sur ce réseau · publication manuelle uniquement'
+                  : p.directReason === 'format_not_supported_for_direct'
+                    ? `Format ${formatKind(p.kind)} non pris en charge en programmation directe · publication manuelle`
+                    : !info?.directEnabled
+                      ? 'Désactivée sur cet environnement (kit manuel disponible)'
+                      : p.direct
+                        ? 'Compatible'
+                        : 'Non éligible · publication manuelle'}
               </dd>
             </div>
           </dl>
@@ -570,7 +747,7 @@ export function PublishingPanel({ id, connectionsVersion = 0 }: { id: string; co
           <div>
             {p.keys.map((key, i) => {
               const url = `/api/projects/${p.projectId}/creative/${p.revision}/${key ? 'scenes/' + key : 'master'}`;
-              return p.kind === 'short' ? (
+              return isVideoKind(p.kind) ? (
                 <video key={i} controls src={url} style={{ maxHeight: 280, maxWidth: '100%' }} />
               ) : (
                 <img
@@ -587,7 +764,7 @@ export function PublishingPanel({ id, connectionsVersion = 0 }: { id: string; co
               Télécharger le kit manuel (médias + légende)
             </a>
           )}
-          {expired.length > 0 && (
+          {expired.length > 0 && p.directReason !== 'platform_manual_only' && (
             <p className="pub-warning" role="status">
               {expired.length === 1 ? 'Un compte' : expired.length + ' comptes'} de ce réseau{' '}
               {expired.length === 1 ? 'a une clé expirée' : 'ont une clé expirée'} : renouvelez la clé dans la section
@@ -666,7 +843,20 @@ export function PublishingPanel({ id, connectionsVersion = 0 }: { id: string; co
             </>
           )}
           {!p.direct &&
-            (info?.directEnabled ? (
+            (p.directReason === 'platform_manual_only' ? (
+              <p className="hint">
+                Réseau ou format en publication manuelle. {p.platform} ne prend pas en charge la programmation directe ;
+                téléchargez le kit, puis publiez depuis le compte du réseau.
+              </p>
+            ) : p.directReason === 'format_not_supported_for_direct' ? (
+              <p className="hint">
+                Réseau ou format en publication manuelle. Le format « {formatKind(p.kind)} » n’est pas pris en charge en
+                programmation directe sur {p.platform}
+                {p.supportedScheduledKinds?.length
+                  ? ` (formats pris en charge : ${p.supportedScheduledKinds.map(formatKind).join(', ')})`
+                  : ''}. Téléchargez le kit, puis publiez depuis le compte du réseau.
+              </p>
+            ) : info?.directEnabled ? (
               <p className="hint">Réseau ou format en publication manuelle. Téléchargez le kit, puis publiez depuis le compte du réseau.</p>
             ) : (
               <p className="hint">Publication manuelle : la programmation directe est désactivée sur cet environnement.</p>
@@ -679,39 +869,51 @@ export function PublishingPanel({ id, connectionsVersion = 0 }: { id: string; co
           )}
         </>
       )}
-      {info?.scheduleAuthorized && !p && rev > 0 && (
+      {previewLoading && !p && rev > 0 && (
         <p role="status">Chargement de l’aperçu approuvé…</p>
       )}
       {cmd && (
         <section className="pub-authorize" aria-labelledby="pub-authorize-heading">
-          <h3 id="pub-authorize-heading">Autorisation requise</h3>
+          <h3 id="pub-authorize-heading">
+            {cmd.state === 'PROPOSED' ? 'Autorisation requise' : 'Opération déjà autorisée'}
+          </h3>
           <p>
             {cmd.label} · état de l’opération : {operationStates[cmd.state] ?? cmd.state} · opération{' '}
             {cmd.operationId} · empreinte {cmd.digest.slice(0, 16)}…
           </p>
-          <p className="hint">
-            Autorisez explicitement pour que le worker tente l’opération. La soumission reste refusée si le compte, la
-            date ou le contenu ne sont plus valides.
-          </p>
+          {cmd.state === 'PROPOSED' ? (
+            <p className="hint">
+              Autorisez explicitement pour que le worker tente l’opération. La soumission reste refusée si le compte, la
+              date ou le contenu ne sont plus valides.
+            </p>
+          ) : (
+            <p className="hint">
+              Cette opération est déjà enregistrée ({operationStates[cmd.state] ?? cmd.state}). Aucune seconde autorisation n’est nécessaire.
+            </p>
+          )}
           <div className="actions">
-            <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void authorize()}>
-              {cmd.label}
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              disabled={busy}
-              onClick={() =>
-                void action(async () => {
-                  await postJson(`/api/execution/${encodeURIComponent(cmd.operationId)}/cancel`, {});
-                  confirm(undefined);
-                  say('Autorisation retirée. Aucune soumission ne partira pour cette demande.');
-                  reload((n) => n + 1);
-                })
-              }
-            >
-              Annuler l’autorisation
-            </button>
+            {cmd.state === 'PROPOSED' && (
+              <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void authorize()}>
+                {cmd.label}
+              </button>
+            )}
+            {['PROPOSED', 'QUEUED'].includes(cmd.state) && (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={busy}
+                onClick={() =>
+                  void action(async () => {
+                    await postJson(`/api/execution/${encodeURIComponent(cmd.operationId)}/cancel`, {});
+                    confirm(undefined);
+                    say('Autorisation retirée. Aucune soumission ne partira pour cette demande.');
+                    reload((n) => n + 1);
+                  })
+                }
+              >
+                Annuler l’autorisation
+              </button>
+            )}
           </div>
         </section>
       )}

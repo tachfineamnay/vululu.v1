@@ -172,13 +172,15 @@ export function StudioCanvas({
   if (!scene) return <p className="hint">Aucune scène à afficher.</p>;
   const status = preview.state === 'loading'
     ? 'Actualisation de l’aperçu serveur…'
-    : preview.state === 'invalid'
-      ? 'Composition incomplète : ' + preview.message
-      : preview.state === 'error'
-        ? 'Aperçu indisponible : ' + preview.message
-        : preview.state === 'ready'
-          ? 'Aperçu exact rendu par le serveur (même moteur que le rendu final).'
-          : 'Préparation de l’aperçu…';
+    : preview.state === 'waiting'
+      ? preview.message || 'Serveur de rendu occupé · nouvelle tentative automatique…'
+      : preview.state === 'invalid'
+        ? 'Composition incomplète : ' + preview.message
+        : preview.state === 'error'
+          ? 'Aperçu indisponible : ' + preview.message
+          : preview.state === 'ready'
+            ? 'Aperçu exact rendu par le serveur (même moteur que le rendu final).'
+            : 'Préparation de l’aperçu…';
 
   return (
     <section className="studio-canvas" aria-label={'Canvas de composition · ' + scene.key}>
@@ -224,12 +226,12 @@ export function StudioCanvas({
               data-testid="studio-canvas-image"
               src={preview.url}
               alt={'Aperçu exact de la scène ' + scene.key}
-              style={{ opacity: preview.state === 'loading' ? 0.72 : 1 }}
+              style={{ opacity: preview.state === 'loading' || preview.state === 'waiting' ? 0.72 : 1 }}
               draggable={false}
             />
           ) : (
             <div className="studio-canvas-placeholder" role="status">
-              <p>{preview.state === 'error' || preview.state === 'invalid' ? status : 'Préparation de l’aperçu serveur…'}</p>
+              <p>{preview.state === 'error' || preview.state === 'invalid' || preview.state === 'waiting' ? status : 'Préparation de l’aperçu serveur…'}</p>
             </div>
           )}
           <div className={'studio-canvas-layer' + (busy ? ' is-busy' : '')}>

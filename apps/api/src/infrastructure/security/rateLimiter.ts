@@ -86,6 +86,7 @@ export const RATE_LIMITS = {
   login: { name: 'login', limit: Number(process.env.RATE_LIMIT_LOGIN || '100'), windowSeconds: 60, failClosed: true },
   activation: { name: 'activation', limit: Number(process.env.RATE_LIMIT_ACTIVATION || '50'), windowSeconds: 300, failClosed: true },
   storyboard: { name: 'storyboard', limit: Number(process.env.RATE_LIMIT_STORYBOARD || '20'), windowSeconds: 60 },
+  creativePreview: { name: 'creative_preview', limit: Number(process.env.RATE_LIMIT_CREATIVE_PREVIEW || '30'), windowSeconds: 60 },
   productionStart: { name: 'production_start', limit: Number(process.env.RATE_LIMIT_PRODUCTION_START || '10'), windowSeconds: 60 },
   productionApprove: { name: 'production_approve', limit: Number(process.env.RATE_LIMIT_APPROVE || '20'), windowSeconds: 60 },
   routing: { name: 'routing', limit: Number(process.env.RATE_LIMIT_ROUTING || '60'), windowSeconds: 60 },

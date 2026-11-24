@@ -52,6 +52,12 @@ export default function UserDetailPanel(input: {
   const [notice, setNotice] = useState('');
 
   useEffect(() => {
+    setNotice('');
+    setError('');
+    setPending(null);
+  }, [input.userId]);
+
+  useEffect(() => {
     if (detail) {
       setRoleDraft(detail.role);
     }
@@ -102,7 +108,11 @@ export default function UserDetailPanel(input: {
         result.user.email +
         ' suspendu. ' +
         formatNumber(result.revokedSessions) +
-        ' session(s) revoquee(s) ; la connexion est refusee jusqu a reactivation.'
+        ' session(s) revoquee(s)' +
+        (result.revokedTokens && result.revokedTokens > 0
+          ? ', ' + formatNumber(result.revokedTokens) + ' jeton(s) de reinitialisation invalide(s)'
+          : '') +
+        ' ; la connexion et l execution sont refusees jusqu a reactivation.'
       );
       return;
     }
