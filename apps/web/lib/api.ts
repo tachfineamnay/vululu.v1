@@ -218,7 +218,31 @@ function readCookie(name: string): string {
 }
 
 export class ApiRequestError extends Error {
-  constructor(message: string, public readonly status: number) { super(message); }
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly code?: string,
+    public readonly retryAfterSeconds?: number
+  ) {
+    super(message);
+  }
+}
+
+function parseRetryAfterSeconds(header: string | null, bodyValue: unknown): number | undefined {
+  if (typeof bodyValue === 'number' && Number.isFinite(bodyValue) && bodyValue > 0) {
+    return Math.min(30, Math.max(1, Math.ceil(bodyValue)));
+  }
+  if (!header) return undefined;
+  const numeric = Number(header.trim());
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return Math.min(30, Math.max(1, Math.ceil(numeric)));
+  }
+  const timestamp = Date.parse(header);
+  if (Number.isFinite(timestamp)) {
+    const delta = Math.ceil((timestamp - Date.now()) / 1000);
+    if (delta > 0) return Math.min(30, delta);
+  }
+  return undefined;
 }
 
 export async function apiResponse(path: string, init?: RequestInit): Promise<Response> {
@@ -238,15 +262,22 @@ export async function apiResponse(path: string, init?: RequestInit): Promise<Res
   });
   if (!response.ok) {
     let message = 'Erreur ' + response.status;
+    let code: string | undefined;
+    let retryAfterBody: unknown;
     try {
-      const data = (await response.json()) as { message?: string };
+      const data = (await response.json()) as { error?: string; message?: string; retryAfterSeconds?: number };
       if (data.message) {
         message = data.message;
       }
+      if (typeof data.error === 'string' && data.error.length > 0) {
+        code = data.error;
+      }
+      retryAfterBody = data.retryAfterSeconds;
     } catch {
       // Keep the status message.
     }
-    throw new ApiRequestError(message, response.status);
+    const retryAfterSeconds = parseRetryAfterSeconds(response.headers.get('Retry-After'), retryAfterBody);
+    throw new ApiRequestError(message, response.status, code, retryAfterSeconds);
   }
   return response;
 }

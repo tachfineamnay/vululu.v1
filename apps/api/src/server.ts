@@ -94,7 +94,10 @@ export async function buildServer({ accountMail = configuredAccountMail(), billi
   await registerAuth(app);
 
   app.setErrorHandler((error, request, reply) => {
-    const respond = (statusCode: number, body: { error: string; message: string; issues?: unknown }) => {
+    const respond = (
+      statusCode: number,
+      body: { error: string; message: string; issues?: unknown; retryAfterSeconds?: number }
+    ) => {
       logEvent('error', 'http.request.failed', { requestId: request.requestId, traceId: request.traceId, method: request.method, route: request.routeOptions?.url ?? 'unmatched', statusCode, errorCode: body.error });
       return reply.code(statusCode).send(body);
     };
@@ -105,7 +108,14 @@ export async function buildServer({ accountMail = configuredAccountMail(), billi
       if (code) return respond(code === 'billing_suspended' ? 403 : 409, { error: code, message: billingMessage(code) });
     }
     if (error instanceof HttpError) {
-      return respond(error.statusCode, { error: error.code, message: error.message });
+      if (error.retryAfterSeconds !== undefined) {
+        reply.header('Retry-After', String(error.retryAfterSeconds));
+      }
+      return respond(error.statusCode, {
+        error: error.code,
+        message: error.message,
+        ...(error.retryAfterSeconds !== undefined ? { retryAfterSeconds: error.retryAfterSeconds } : {})
+      });
     }
     if (error instanceof ApplicationError) {
       return respond(error.statusCode, { error: error.code, message: error.message });

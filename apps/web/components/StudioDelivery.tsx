@@ -26,6 +26,7 @@ export function StudioDelivery({
   onRestore,
   onView,
   onCancel,
+  onRefreshRender,
   onNotice
 }: StudioDeliveryProps) {
   const manifest = view.manifest;
@@ -43,18 +44,46 @@ export function StudioDelivery({
   const subtitleCues = view.spec.audio?.subtitles?.cues.length ?? 0;
   const state = renderState?.state;
   const rendering = state === 'queued' || state === 'running';
-  const failed = state === 'failed' || state === 'offline';
+  const cancelRequested = Boolean(renderState?.cancelRequested) && state === 'running';
+  const failed = state === 'failed';
+  const interrupted = state === 'offline' || state === 'stalled';
   const cancelled = state === 'cancelled';
+  const retryable = Boolean(renderState?.retryable ?? (failed || cancelled || interrupted));
   // Progression uniquement issue du serveur : aucune estimation locale, aucun pourcentage inventé.
   const progress = Math.max(0, Math.min(100, Math.round(renderState?.progress ?? 0)));
   const locked = busy || dirty;
   const renderLabel = failed || cancelled ? 'Relancer le rendu v' + view.version : 'Rendre le master v' + view.version;
 
+  const statusPill = manifest
+    ? approved
+      ? 'Terminé · approuvée'
+      : 'Rendu terminé · à approuver'
+    : state === 'queued'
+      ? 'En attente (file)'
+      : state === 'running'
+        ? cancelRequested
+          ? 'Annulation demandée'
+          : 'Rendu en cours'
+        : state === 'succeeded'
+          ? 'Rendu terminé · synchronisation'
+          : failed
+            ? 'Échec · réessayable'
+            : cancelled
+              ? 'Annulé · réessayable'
+              : interrupted
+                ? 'Suivi interrompu · réessayable'
+                : 'Non rendu';
+
   return (
     <section className="studio-delivery" aria-labelledby="creative-deliver">
-      <h3 id="creative-deliver" tabIndex={-1}>
-        Livraison · composition v{view.version}
-      </h3>
+      <div className="section-head">
+        <h3 id="creative-deliver" tabIndex={-1}>
+          Livraison · composition v{view.version}
+        </h3>
+        <span className="pill" data-testid="studio-delivery-state" role="status">
+          {statusPill}
+        </span>
+      </div>
       {!latest && (
         <p className="hint" role="status">
           Révision affichée : v{view.version}. La révision courante est v{expectedVersion} : un rendu ou une
@@ -183,7 +212,12 @@ export function StudioDelivery({
           {rendering ? (
             <div className="studio-render-progress" role="group" aria-label={'Progression du rendu v' + view.version}>
               <p role="status">
-                {state === 'queued' ? 'Rendu en attente' : 'Rendu en cours'} · v{view.version} ·{' '}
+                {state === 'queued'
+                  ? 'Rendu en attente'
+                  : cancelRequested
+                    ? 'Annulation demandée · arrêt en cours'
+                    : 'Rendu en cours'}{' '}
+                · v{view.version} ·{' '}
                 <span className="studio-render-progress-value">{progress} %</span>
               </p>
               <div
@@ -199,18 +233,18 @@ export function StudioDelivery({
               </div>
               <p className="hint">
                 Pourcentage transmis par le serveur : ce n’est pas une estimation locale. Le master n’est scellé
-                qu’à la fin du rendu.
+                qu’à la fin du rendu et ne peut pas être approuvé avant.
               </p>
               {onCancel ? (
                 <button
                   type="button"
                   className="btn btn-secondary"
-                  disabled={busy}
+                  disabled={busy || cancelRequested}
                   onClick={() => {
                     void onCancel();
                   }}
                 >
-                  Annuler le rendu
+                  {cancelRequested ? 'Annulation demandée…' : 'Annuler le rendu'}
                 </button>
               ) : null}
               {state === 'running' ? (
@@ -225,23 +259,49 @@ export function StudioDelivery({
             <>
               {cancelled ? (
                 <p role="status">
-                  Rendu annulé · v{view.version}. Aucun master n’a été scellé pour cette révision.
+                  Rendu annulé · v{view.version}. Aucun master n’a été scellé pour cette révision ; vous pouvez relancer un rendu.
                 </p>
               ) : null}
-              {renderState?.reason && !cancelled && (
-                <p role={failed ? 'alert' : 'status'}>{renderState.reason}</p>
-              )}
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={locked}
-                onClick={() => {
-                  onNotice('Rendu demandé pour la révision v' + view.version + '.');
-                  void onAction(async () => { await onRender(); });
-                }}
-              >
-                {renderLabel}
-              </button>
+              {failed ? (
+                <p role="alert" className="error">
+                  Échec du rendu · v{view.version}
+                  {renderState?.reason ? ' : ' + renderState.reason : '.'}
+                  {retryable ? ' Vous pouvez relancer le rendu après vérification.' : ''}
+                </p>
+              ) : null}
+              {interrupted ? (
+                <div className="stack" role="alert">
+                  <p className="error">
+                    {renderState?.reason ||
+                      'Le suivi du rendu est interrompu. Le rendu serveur peut encore évoluer sans perte.'}
+                  </p>
+                  {onRefreshRender ? (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      disabled={busy}
+                      onClick={onRefreshRender}
+                    >
+                      Actualiser le suivi
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+              {renderState?.reason && !cancelled && !failed && !interrupted ? (
+                <p role="status">{renderState.reason}</p>
+              ) : null}
+              {!interrupted ? (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={locked}
+                  onClick={() => {
+                    void onAction(async () => { await onRender(); });
+                  }}
+                >
+                  {renderLabel}
+                </button>
+              ) : null}
               <p className="hint">
                 Le rendu est produit et scellé côté serveur. Relancer un rendu déjà scellé ne remplace jamais
                 le master existant, et aucun rendu ne déclenche de publication.

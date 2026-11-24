@@ -9,7 +9,48 @@ export function projectJourney(bundle: ProjectBundle, plan?: ProductionPlanView 
   const storyboardComplete = storyboardCurrent && (!plan || plan.briefVersion !== brief?.version || scenes.length === plan.sceneCount);
   const approval = master?.approval;
   const approved = !!(master && approval && !approval.invalidatedAt && approval.checksum === master.checksum);
-  const current = !confirmed ? 'brief' : !storyboardCurrent ? 'storyboard' : !master || project.status === 'producing' || bundle.job?.status === 'failed' ? 'production' : 'finalization';
+  const runStatus = bundle.jobRun?.status ?? null;
+  const inFlight =
+    project.status === 'producing' ||
+    runStatus === 'queued' ||
+    runStatus === 'running' ||
+    runStatus === 'recovery_pending';
+  const waitingApproval = runStatus === 'waiting_approval';
+  const failedRun =
+    bundle.job?.status === 'failed' ||
+    runStatus === 'failed' ||
+    runStatus === 'timed_out' ||
+    runStatus === 'cancelled';
+  const current = !confirmed
+    ? 'brief'
+    : !storyboardCurrent
+      ? 'storyboard'
+      : !master || inFlight || failedRun
+        ? 'production'
+        : 'finalization';
+  const productionState =
+    runStatus === 'recovery_pending'
+      ? 'Reprise de la production en cours'
+      : inFlight
+        ? 'Production en cours'
+        : runStatus === 'timed_out'
+          ? 'Dernière exécution expirée (réessayable)'
+          : runStatus === 'cancelled'
+            ? 'Dernière exécution annulée (réessayable)'
+            : failedRun
+              ? 'Dernière exécution en échec (réessayable)'
+              : master
+                ? `Master v${master.version} disponible · QA ${master.qaStatus ?? 'NOT_RUN'}`
+                : 'Aucun résultat produit';
+  const finalizationState = approved
+    ? approval?.transfer
+      ? `Transfert MOCK : ${approval.transfer.status}`
+      : waitingApproval
+        ? `Master v${master!.version} approuvé · finalisation du run en cours`
+        : `Master v${master!.version} approuvé`
+    : waitingApproval && master
+      ? `Master v${master.version} prêt · en attente d’approbation`
+      : 'Approbation exacte requise';
   return {
     current,
     recommended: !confirmed ? { step: 'prepare', action: 'brief' } as const
@@ -26,11 +67,11 @@ export function projectJourney(bundle: ProjectBundle, plan?: ProductionPlanView 
         input: confirmed ? `Brief v${brief!.version} confirmé.` : 'Un brief enregistré et confirmé est requis pour générer le storyboard.',
         output: scenes.length ? `${scenes.length} scènes conservées, identifiées par leur Scene ID. Brief source : ${project.storyboardBriefVersion ?? 'non exposé'}.` : 'Le storyboard sera produit par l’action existante, sans lancer le rendu média.' },
       { key: 'production', title: 'Produire et examiner', target: master ? 'preview-heading' : 'storyboard-heading', action: master ? 'Voir le résultat et ses versions' : 'Consulter les conditions de production',
-        state: project.status === 'producing' ? 'Production en cours' : bundle.job?.status === 'failed' ? 'Dernière exécution en échec' : master ? `Master v${master.version} disponible · QA ${master.qaStatus ?? 'NOT_RUN'}` : 'Aucun résultat produit',
+        state: productionState,
         input: 'Brief confirmé, storyboard à jour et plan admissible. Le serveur vérifie ces conditions au lancement.',
         output: master ? `Master v${master.version} et ${bundle.masterVersions.length} version(s) consultables. Un résultat disponible ne prouve pas qu’il correspond aux dernières modifications du brief.` : 'Aucun master disponible. Consultez le plan et son plafond avant de lancer.' },
       { key: 'finalization', title: 'Valider et transférer', target: master ? 'qa-heading' : null, action: 'Examiner la qualité et l’approbation',
-        state: approved ? (approval?.transfer ? `Transfert MOCK : ${approval.transfer.status}` : `Master v${master!.version} approuvé`) : 'Approbation exacte requise',
+        state: finalizationState,
         input: 'Master courant, contrôle qualité et approbation de sa version exacte et de son checksum.',
         output: approved ? 'Approbation serveur consultable. Un transfert Postiz MOCK ne constitue pas une publication.' : 'Aucune approbation valide du master courant. Les versions précédentes restent consultables.' }
     ]
@@ -38,7 +79,18 @@ export function projectJourney(bundle: ProjectBundle, plan?: ProductionPlanView 
 }
 
 export function executionStatus(status: string) {
-  const labels: Record<string, string> = { pending: 'En attente', queued: 'En file', running: 'En cours', succeeded: 'Réussie', failed: 'Échec', cancelled: 'Annulée', skipped: 'Ignorée' };
+  const labels: Record<string, string> = {
+    pending: 'En attente',
+    queued: 'En file',
+    running: 'En cours',
+    waiting_approval: 'En attente d’approbation',
+    recovery_pending: 'Reprise en cours',
+    succeeded: 'Réussie',
+    failed: 'Échec (réessayable)',
+    cancelled: 'Annulée (réessayable)',
+    timed_out: 'Délai dépassé (réessayable)',
+    skipped: 'Ignorée'
+  };
   return labels[status] ?? status;
 }
 

@@ -4,6 +4,12 @@ import { creativeSpec, type CreativeSpec } from '@vululu/contracts';
 import { api, apiResponse } from '../lib/api';
 import type { StudioCompareProps } from '../lib/studioComponentTypes';
 import { previewSpecForScene } from '../lib/studioPreview';
+import {
+  isAbortError,
+  isRetryableBusyError,
+  runWithBoundedBusyRetry,
+  studioPreviewCoordinator
+} from '../lib/studioConcurrency';
 
 type ComparePreview = { url: string; sceneKey: string };
 
@@ -20,15 +26,33 @@ function singleScene(spec: CreativeSpec, sceneKey: string) {
 }
 
 /** Aperçu d'un cadre rendu par le même moteur serveur que le master (aucun rendu navigateur approximatif). */
-async function renderScene(base: string, spec: CreativeSpec, sceneKey: string): Promise<ComparePreview> {
+async function renderScene(
+  base: string,
+  spec: CreativeSpec,
+  sceneKey: string,
+  signal: AbortSignal,
+  onWaiting?: (message: string) => void
+): Promise<ComparePreview> {
   const picked = singleScene(spec, sceneKey);
   if (!picked) throw new Error('Composition sans scène à comparer.');
   const parsed = creativeSpec.safeParse(picked.single);
   if (!parsed.success) throw new Error(parsed.error.issues.map((issue) => issue.message).join(' · '));
-  const response = await apiResponse(base + '/preview', {
-    method: 'POST',
-    body: JSON.stringify(parsed.data)
-  });
+  const response = await runWithBoundedBusyRetry(
+    () =>
+      studioPreviewCoordinator.schedule(
+        () =>
+          apiResponse(base + '/preview', {
+            method: 'POST',
+            body: JSON.stringify(parsed.data),
+            signal
+          }),
+        signal
+      ),
+    {
+      signal,
+      onWaiting: (info) => onWaiting?.(info.message)
+    }
+  );
   return { url: URL.createObjectURL(await response.blob()), sceneKey: picked.scene.key };
 }
 
@@ -45,15 +69,17 @@ const palette = (spec: CreativeSpec) => JSON.stringify(spec.brand);
 /**
  * Comparaison visuelle de deux révisions : les deux aperçus viennent du moteur serveur
  * (POST .../preview pour la révision de référence, image scellée du manifest quand elle existe).
- * Aucune différence n'est inventée : le résumé est calculé sur les compositions chargées.
+ * Coordonnée par la file locale d'aperçus et protégée par reprise bornée en cas de 429 légitime.
  */
 export function StudioCompare({ base, current, versions, sceneKey, onNotice }: StudioCompareProps) {
   const [chosen, setChosen] = useState<number | null>(null);
   const [prior, setPrior] = useState<CreativeSpec | null>(null);
   const [priorPreview, setPriorPreview] = useState<ComparePreview | null>(null);
   const [currentPreview, setCurrentPreview] = useState<ComparePreview | null>(null);
-  const [phase, setPhase] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [phase, setPhase] = useState<'idle' | 'loading' | 'waiting' | 'ready' | 'error'>('idle');
+  const [waitingNote, setWaitingNote] = useState('');
   const [error, setError] = useState('');
+  const [retryToken, setRetryToken] = useState(0);
   // Référence stable au callback de notification : une prop recréée à chaque rendu du parent
   // ne doit pas relancer les aperçus serveur en boucle.
   const noticeRef = useRef(onNotice);
@@ -74,33 +100,50 @@ export function StudioCompare({ base, current, versions, sceneKey, onNotice }: S
     setPriorPreview(null);
     setCurrentPreview(null);
     setError('');
+    setWaitingNote('');
     if (reference === null) {
       setPhase('idle');
       return;
     }
     let cancelled = false;
+    const controller = new AbortController();
     const urls: string[] = [];
     setPhase('loading');
     void (async () => {
       try {
-        const loaded = await api<{ spec: CreativeSpec }>(base + '/' + reference);
+        const loaded = await api<{ spec: CreativeSpec }>(base + '/' + reference, {
+          signal: controller.signal
+        });
         const parsed = creativeSpec.safeParse(loaded.spec);
         if (!parsed.success) throw new Error(parsed.error.issues.map((issue) => issue.message).join(' · '));
-        const before = await renderScene(base, parsed.data, sceneKey);
+        const onWaiting = (message: string) => {
+          if (cancelled) return;
+          setPhase('waiting');
+          setWaitingNote(message);
+        };
+        const before = await renderScene(base, parsed.data, sceneKey, controller.signal, onWaiting);
         urls.push(before.url);
         if (cancelled) return;
         setPrior(parsed.data);
         setPriorPreview(before);
         if (!current.manifest) {
-          const now = await renderScene(base, current.spec, sceneKey);
+          const now = await renderScene(base, current.spec, sceneKey, controller.signal, onWaiting);
           urls.push(now.url);
           if (cancelled) return;
           setCurrentPreview(now);
         }
-        if (!cancelled) setPhase('ready');
+        if (!cancelled) {
+          setWaitingNote('');
+          setPhase('ready');
+        }
       } catch (caught) {
-        if (cancelled) return;
-        const message = caught instanceof Error ? caught.message : 'Comparaison indisponible.';
+        if (cancelled || controller.signal.aborted || isAbortError(caught)) return;
+        const message = isRetryableBusyError(caught)
+          ? 'Serveur de rendu occupé après plusieurs tentatives. Vous pouvez réessayer.'
+          : caught instanceof Error
+            ? caught.message
+            : 'Comparaison indisponible.';
+        setWaitingNote('');
         setPhase('error');
         setError(message);
         noticeRef.current?.('Comparaison indisponible : ' + message);
@@ -108,9 +151,10 @@ export function StudioCompare({ base, current, versions, sceneKey, onNotice }: S
     })();
     return () => {
       cancelled = true;
+      controller.abort();
       urls.forEach((url) => URL.revokeObjectURL(url));
     };
-  }, [base, reference, sceneKey, current.version, current.manifest]);
+  }, [base, reference, sceneKey, current.version, current.manifest, retryToken]);
 
   if (versions.length < 2) return null;
 
@@ -131,7 +175,7 @@ export function StudioCompare({ base, current, versions, sceneKey, onNotice }: S
         Comparer v{current.version} avec
         <select
           value={referenceLabel}
-          disabled={phase === 'loading'}
+          disabled={phase === 'loading' || phase === 'waiting'}
           onChange={(event) => setChosen(event.target.value ? Number(event.target.value) : null)}
         >
           {candidates.map((item) => (
@@ -142,9 +186,17 @@ export function StudioCompare({ base, current, versions, sceneKey, onNotice }: S
           ))}
         </select>
       </label>
+      {phase === 'waiting' && waitingNote && (
+        <p role="status" className="hint">
+          {waitingNote}
+        </p>
+      )}
       {phase === 'error' && (
         <p role="alert" className="error">
-          {error}
+          {error}{' '}
+          <button type="button" className="text-link" onClick={() => setRetryToken((n) => n + 1)}>
+            Réessayer
+          </button>
         </p>
       )}
       <div className="studio-compare-grid">
@@ -156,7 +208,13 @@ export function StudioCompare({ base, current, versions, sceneKey, onNotice }: S
               style={{ display: 'block', maxWidth: '100%', height: 'auto' }}
             />
           ) : (
-            <div className="scene-placeholder">{phase === 'loading' ? 'Rendu serveur en cours…' : 'Aperçu indisponible'}</div>
+            <div className="scene-placeholder">
+              {phase === 'waiting'
+                ? 'En attente d’un créneau serveur…'
+                : phase === 'loading'
+                  ? 'Rendu serveur en cours…'
+                  : 'Aperçu indisponible'}
+            </div>
           )}
           <figcaption>
             v{referenceLabel}
@@ -175,7 +233,13 @@ export function StudioCompare({ base, current, versions, sceneKey, onNotice }: S
               style={{ display: 'block', maxWidth: '100%', height: 'auto' }}
             />
           ) : (
-            <div className="scene-placeholder">{phase === 'loading' ? 'Rendu serveur en cours…' : 'Aperçu indisponible'}</div>
+            <div className="scene-placeholder">
+              {phase === 'waiting'
+                ? 'En attente d’un créneau serveur…'
+                : phase === 'loading'
+                  ? 'Rendu serveur en cours…'
+                  : 'Aperçu indisponible'}
+            </div>
           )}
           <figcaption>
             v{current.version} · {current.spec.width} × {current.spec.height}

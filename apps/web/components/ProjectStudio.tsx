@@ -254,6 +254,10 @@ export default function ProjectStudio({ id }: { id: string }) {
       const message = err instanceof Error ? err.message : 'Action impossible.';
       setError(message);
       notify(message, 'error');
+      // Resynchroniser l'état serveur en cas de conflit (ex. 409 job_running / version dépassée).
+      if (err instanceof Error && 'status' in err && (err as { status?: number }).status === 409) {
+        await load();
+      }
     } finally {
       actionInFlight.current = false;
       setBusy('');
@@ -371,7 +375,7 @@ export default function ProjectStudio({ id }: { id: string }) {
     if (hasUnsavedBrief && proposal.kind === 'correction') return 'Enregistrez votre brouillon avant de préparer une correction.';
     if (proposal.kind === 'correction' && correctionDrafts[proposal.sceneKey]?.instruction && correctionDrafts[proposal.sceneKey].instruction !== proposal.instruction) return 'Une instruction existe pour cette scène. Terminez-la ou effacez-la avant de reprendre cette proposition.';
     if (proposal.kind === 'brief' && !(['objective', 'audience', 'tone', 'cta'] as const).some((field) => (!hasUnsavedBrief || proposal.sources[field] === 'user' || !draftValues[field].trim()) && draftValues[field] !== proposal.fields[field])) return 'Le brouillon reprend déjà ces valeurs.';
-    if (bundle?.project.status === 'producing') return 'Une production est en cours. Reprenez cette proposition après sa fin.';
+    if (bundle?.project.status === 'producing' || ['queued', 'running', 'waiting_approval', 'recovery_pending'].includes(bundle?.jobRun?.status ?? '')) return 'Un run actif bloque cette action. Attendez sa fin ou finalisez l’approbation.';
     return busy ? 'Une action est en cours.' : undefined;
   }
   function applyProposal(proposal: MessageProposal) {
@@ -386,22 +390,38 @@ export default function ProjectStudio({ id }: { id: string }) {
     }
   }
   const planReady = !planError && plan?.ready && plan.briefVersion === bundle.brief?.version;
-  const activeRun = ['queued', 'running', 'waiting_approval', 'recovery_pending'].includes(bundle.jobRun?.status ?? '');
-  const canProduce = !!plan && bundle.scenes.length === plan.sceneCount && briefConfirmed && bundle.project.storyboardBriefVersion === bundle.brief?.version && planReady && !briefDirty && !busy && !activeRun && bundle.project.status !== 'producing';
+  const runStatus = bundle.jobRun?.status ?? null;
+  const inFlightRun = ['queued', 'running', 'recovery_pending'].includes(runStatus ?? '') || bundle.project.status === 'producing';
+  const waitingApprovalRun = runStatus === 'waiting_approval';
+  const activeRun = inFlightRun || waitingApprovalRun;
+  const retryableRun = ['failed', 'timed_out', 'cancelled'].includes(runStatus ?? '') || bundle.job?.status === 'failed';
+  const currentMasterApproved = Boolean(
+    bundle.master?.approval &&
+      !bundle.master.approval.invalidatedAt &&
+      bundle.master.approval.checksum === bundle.master.checksum
+  );
+  const canProduce = !!plan && bundle.scenes.length === plan.sceneCount && briefConfirmed && bundle.project.storyboardBriefVersion === bundle.brief?.version && planReady && !briefDirty && !busy && !activeRun;
   const job = bundle.job;
   const totalDurationSeconds = bundle.scenes.reduce((sum, scene) => sum + scene.durationSeconds, 0);
   const unavailableCorrections = Object.entries(correctionDrafts).filter(([sceneKey, draft]) => draft.instruction.trim() && !bundle.scenes.some((scene) => scene.sceneKey === sceneKey));
+  const activeRunBlockMessage = waitingApprovalRun
+    ? currentMasterApproved
+      ? 'Approbation enregistrée : attendez la finalisation du run avant une nouvelle action.'
+      : 'Un master est prêt et en attente d’approbation pour le run actif.'
+    : runStatus === 'recovery_pending'
+      ? 'Reprise de la production en cours. Attendez sa fin.'
+      : 'Une production est déjà en cours.';
   const correctionReason = busy ? 'Une action est en cours.'
     : !selectedScene?.versions.length ? 'Produisez une image de cette scène avant de la corriger.'
     : !bundle.master ? 'Produisez la vidéo complète avant de corriger une scène.'
     : !briefConfirmed ? 'Confirmez le brief avant de corriger une scène.'
     : briefDirty ? 'Enregistrez les modifications du brief avant de corriger.'
-    : bundle.project.status === 'producing' ? 'Attendez la fin de la production en cours.'
+    : activeRun ? activeRunBlockMessage
     : correction.trim().length < 3 ? 'Saisissez une instruction d’au moins trois caractères.' : '';
   const recommended = briefDirty || briefEdited ? { step: 'prepare', action: 'brief' } as const : projectJourney(bundle, planError ? null : plan).recommended;
   if (preparationInitiallyOpen.current === null) preparationInitiallyOpen.current = recommended.action === 'brief' || recommended.action === 'storyboard';
   const productionReason = busy ? 'Une action est en cours. Attendez sa fin.'
-    : activeRun || bundle.project.status === 'producing' ? 'Une production est déjà en cours.'
+    : activeRun ? activeRunBlockMessage
     : briefDirty ? 'Enregistrez les modifications du brief avant de produire.'
     : !briefConfirmed ? 'Enregistrez et confirmez le brief et son plafond avant de produire.'
     : bundle.project.storyboardBriefVersion !== bundle.brief?.version || !bundle.scenes.length ? 'Préparez les scènes pour la version confirmée du brief.'
@@ -411,7 +431,7 @@ export default function ProjectStudio({ id }: { id: string }) {
     : !plan.ready ? 'Le plan ne permet pas le lancement : consultez ses motifs dans la préparation.'
     : bundle.scenes.length !== plan.sceneCount ? 'Préparez toutes les scènes prévues par le plan.' : '';
   const storyboardReason = busy ? 'Une action est en cours. Attendez sa fin.'
-    : activeRun || bundle.project.status === 'producing' ? 'Attendez la fin de la production en cours.'
+    : activeRun ? activeRunBlockMessage
     : briefDirty ? 'Enregistrez les modifications du brief avant de préparer les scènes.'
     : !briefConfirmed ? 'Enregistrez puis confirmez le brief et son plafond pour préparer les scènes.' : '';
   const next = recommended.action === 'brief' ? { target: 'brief-heading', label: 'Préparer et confirmer le brief' }
@@ -646,11 +666,30 @@ export default function ProjectStudio({ id }: { id: string }) {
               {selectedScene.versions.length ? selectedScene.versions.map((version) => <span className="scene-version" key={version.id}>v{version.version} / {shortChecksum(version.checksum)} / {formatDate(version.createdAt)}</span>) : <span className="hint">Aucune version rendue.</span>}
             </div></details> : null}
             {unavailableCorrections.length ? <details><summary>Instructions de scènes indisponibles ({unavailableCorrections.length})</summary><p className="hint">Ces scènes ne figurent plus dans le projet. Leurs instructions restent consultables dans cet onglet.</p><dl className="journey-data">{unavailableCorrections.map(([sceneKey, draft]) => <div key={sceneKey}><dt>{sceneKey}</dt><dd className="context-copy">{draft.instruction}</dd></div>)}</dl></details> : null}
-          {job && (job.status === 'queued' || job.status === 'running') ? <p className="hint">{job.status === 'queued' ? 'Traitement en attente' : 'Traitement en cours'}</p> : null}
-          {job && job.progress > 0 && job.progress < 100 ? (
+          {waitingApprovalRun ? (
+            <p className="hint" role="status">
+              {currentMasterApproved
+                ? 'Master approuvé · finalisation du run en cours…'
+                : 'Rendu terminé · master prêt pour contrôle qualité et approbation.'}
+            </p>
+          ) : inFlightRun && job ? (
+            <p className="hint" role="status">
+              {runStatus === 'recovery_pending'
+                ? 'Reprise du traitement en cours'
+                : job.status === 'queued'
+                  ? 'Traitement en attente'
+                  : 'Traitement en cours'}
+            </p>
+          ) : null}
+          {inFlightRun && job && job.progress > 0 && job.progress < 100 ? (
             <div className="progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={job.progress}><div className="progress-bar" style={{ width: job.progress + '%' }} /></div>
           ) : null}
-          {job && job.error ? <p className="error" role="alert">{job.error}</p> : null}
+          {retryableRun && (job?.error || runStatus === 'timed_out' || runStatus === 'cancelled') ? (
+            <p className="error" role="alert">
+              {job?.error ?? (runStatus === 'timed_out' ? 'Délai de production dépassé.' : 'Production annulée.')}{' '}
+              Vous pouvez corriger les paramètres puis relancer la production.
+            </p>
+          ) : null}
 
           </section></>} inspector={<aside className="card studio-inspector stack" aria-labelledby="correction-heading">
           <div><p className="eyebrow">Scène sélectionnée</p><h2 id="correction-heading" tabIndex={-1}>{selectedScene ? selectedScene.title : 'Réglages de scène'}</h2></div>
@@ -658,16 +697,16 @@ export default function ProjectStudio({ id }: { id: string }) {
           {selectedScene ? <>
             <p className="hint">{selectedScene.sceneKey} · {selectedScene.description}</p>
             <label className="label">Durée de la scène
-              <select className="input" data-testid={'duration-' + selectedScene.sceneKey} value={selectedScene.durationSeconds} onChange={(event) => updateDuration(selectedScene.sceneKey, Number(event.target.value))} disabled={Boolean(busy) || bundle.project.status === 'producing'}>
+              <select className="input" data-testid={'duration-' + selectedScene.sceneKey} value={selectedScene.durationSeconds} onChange={(event) => updateDuration(selectedScene.sceneKey, Number(event.target.value))} disabled={Boolean(busy) || activeRun}>
                 {Array.from({ length: 15 }, (_, index) => index + 1).map((seconds) => <option key={seconds} value={seconds}>{seconds} s</option>)}
               </select>
             </label>
             <p className="hint" data-testid={'duration-origin-' + selectedScene.sceneKey}>{selectedScene.usesBriefDuration === true ? 'Suit la durée du brief à la régénération.' : selectedScene.usesBriefDuration === false ? 'Durée personnalisée, conservée à la régénération.' : 'Durée historique, conservée à la régénération.'}</p>
-            {selectedScene.usesBriefDuration !== true ? <button type="button" className="btn btn-ghost" data-testid={'duration-reset-' + selectedScene.sceneKey} onClick={() => updateDuration(selectedScene.sceneKey, null)} disabled={Boolean(busy) || !bundle.brief || briefDirty || bundle.project.status === 'producing'}>Suivre la durée du brief</button> : null}
+            {selectedScene.usesBriefDuration !== true ? <button type="button" className="btn btn-ghost" data-testid={'duration-reset-' + selectedScene.sceneKey} onClick={() => updateDuration(selectedScene.sceneKey, null)} disabled={Boolean(busy) || !bundle.brief || briefDirty || activeRun}>Suivre la durée du brief</button> : null}
             <label className="label">Instruction pour « {selectedScene.title} »
               <input ref={correctionRef} className="input" data-testid="correct-input" maxLength={500} value={correction} onChange={(event) => { const instruction = event.currentTarget.value; setCorrectionDrafts((current) => ({ ...current, [selectedScene.sceneKey]: { instruction, edited: true } })); }} disabled={Boolean(busy)} />
             </label>
-            <button className="btn btn-secondary" data-testid="correct-submit" aria-describedby="correction-help" onClick={correctScene} disabled={Boolean(busy) || !selectedScene.versions.length || !bundle.master || !briefConfirmed || briefDirty || bundle.project.status === 'producing' || correction.trim().length < 3}>Corriger « {selectedScene.title} » ({selectedScene.sceneKey})</button>
+            <button className="btn btn-secondary" data-testid="correct-submit" aria-describedby="correction-help" onClick={correctScene} disabled={Boolean(busy) || !selectedScene.versions.length || !bundle.master || !briefConfirmed || briefDirty || activeRun || correction.trim().length < 3}>Corriger « {selectedScene.title} » ({selectedScene.sceneKey})</button>
             <p className="hint" id="correction-help">{correctionReason || 'La correction crée une nouvelle version avec le plafond MOCK enregistré.'}</p>
             {unassignedCorrection.instruction ? <details><summary>Instruction non attribuée</summary><p className="context-copy">{unassignedCorrection.instruction}</p><p className="hint">Choisissez la scène à laquelle attribuer cette saisie. Une instruction déjà présente ne sera pas remplacée.</p><button type="button" className="btn btn-secondary" disabled={Boolean(busy) || !!correction} onClick={() => { setCorrectionDrafts((current) => ({ ...current, [selectedScene.sceneKey]: { instruction: unassignedCorrection.instruction, edited: true } })); setUnassignedCorrection({ instruction: '', edited: false }); }}>Attribuer à « {selectedScene.title} »</button>{correction ? <p className="hint">Effacez d’abord l’instruction de cette scène pour lui attribuer ce brouillon.</p> : null}</details> : null}
           </> : <><p className="hint">Créez le storyboard pour sélectionner une scène. L’instruction préparée ici restera non attribuée jusqu’à votre choix.</p><label className="label">Instruction non attribuée<input ref={correctionRef} className="input" data-testid="correct-input" maxLength={500} value={unassignedCorrection.instruction} onChange={(event) => setUnassignedCorrection({ instruction: event.currentTarget.value, edited: true })} disabled={Boolean(busy)} /></label></>}

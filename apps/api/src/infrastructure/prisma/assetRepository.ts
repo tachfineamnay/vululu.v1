@@ -48,7 +48,17 @@ export class PrismaAssetRepository implements AssetRepository {
       const locked = await tx.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "Project" WHERE "id" = ${projectId} AND "userId" = ${userId} FOR UPDATE`;
       if (!locked.length) throw new ApplicationError('project_not_found', 'Projet introuvable.', 404);
       const project = await tx.project.findUniqueOrThrow({ where: { id: projectId } });
-      if (project.status === 'producing' || await tx.jobRun.findFirst({ where: { projectId, status: { in: ['queued', 'running', 'waiting_approval', 'recovery_pending'] } } })) throw new ApplicationError('job_running', 'Modification impossible pendant une production.', 409);
+      const activeRun = await tx.jobRun.findFirst({
+        where: { projectId, status: { in: ['queued', 'running', 'waiting_approval', 'recovery_pending'] } },
+        select: { status: true }
+      });
+      if (project.status === 'producing' || activeRun) {
+        const message =
+          activeRun?.status === 'waiting_approval' && project.status !== 'producing'
+            ? 'Modification impossible tant qu’un run est en attente d’approbation.'
+            : 'Modification impossible pendant une production.';
+        throw new ApplicationError('job_running', message, 409);
+      }
       const versions = await tx.brandAssetVersion.findMany({ where: { id: { in: versionIds }, state: 'ready', asset: { userId, contextId: project.contextId } } });
       if (versions.length !== versionIds.length) throw new ApplicationError('asset_version_not_found', 'Actif introuvable dans ce contexte.', 404);
       if (new Set(versions.map((v) => v.assetId)).size !== versions.length) throw new ApplicationError('invalid_selection', 'Choisissez une seule version par actif.', 400);
