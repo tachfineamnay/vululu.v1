@@ -7,11 +7,20 @@ import { propose } from '../execution/broker';
 import { preview, attachments, problem } from './delivery';
 import { capabilities, publishingPlatform, ProviderFailure, PostizProvider, type PublishingProvider, type PublishingPlatform } from './provider';
 export const cipher = new AesProviderCredentialCipher(() => process.env.PUBLISHING_ENCRYPTION_KEY);
+export const SAFE_RETRY_REASONS = [
+  'TOKEN_EXPIRED',
+  'CHANNEL_MISMATCH',
+  'DISABLED',
+  'PROVIDER_UNAVAILABLE',
+  'MANUAL_CONFIRMED_ABSENT'
+] as const;
+
 export async function prepare(owner: string, itemId: string, rev: number, connectionId: string, target?: PublishingPlatform) {
   const c = await prisma.publishingConnection.findFirst({
-    where: { id: connectionId, ownerId: owner, provider: 'postiz', revoked: false }
+    where: { id: connectionId, ownerId: owner, provider: 'postiz' }
   });
   if (!c) return problem(404, 'connection_not_found');
+  if (c.revoked) return problem(409, 'connection_revoked');
   if (c.expiresAt <= new Date()) return problem(409, 'token_expired');
   const p = await preview(owner, itemId, rev, target);
   if (p.platform !== c.platform) return problem(409, 'CHANNEL_MISMATCH');
@@ -29,20 +38,41 @@ export async function prepare(owner: string, itemId: string, rev: number, connec
         revision: rev, itemId, itemVersion: p.itemVersion, connectionId, scheduledAt: new Date(p.when) },
       update: {}
     });
-    if (request.state === 'PREPARED' && request.revision === rev && await tx.executionOperation.count({ where: {
+    if (request.revision !== rev) return problem(409, 'revision_conflict');
+    if (request.state === 'UNKNOWN') return problem(409, 'publication_outcome_unknown');
+    if (request.state === 'FAILED') return problem(409, 'retry_required');
+    if (request.state !== 'PREPARED') return problem(409, 'existing_publication');
+    if (await tx.executionOperation.count({ where: {
       accountId: owner, projectId: p.projectId, key: request.submitKey, tool: 'postiz.schedule@1', state: 'CANCELLED'
     } })) return tx.publicationRequest.update({ where: { id: request.id }, data: { submitKey: randomUUID() } });
     return request;
   });
-  if (r.revision !== rev) return problem(409, 'revision_conflict');
   return command(owner, r.id, false);
 }
 export async function command(owner: string, id: string, cancelling: boolean) {
-  const r = await prisma.publicationRequest.findFirst({
-    where: { id, connection: { ownerId: owner }, creative: { project: { userId: owner } } }
+  let r = await prisma.publicationRequest.findFirst({
+    where: { id, connection: { ownerId: owner }, creative: { project: { userId: owner } } },
+    include: { connection: true }
   });
   if (!r) return problem(404, 'publication_not_found');
-  if (cancelling && r.state !== 'SUBMITTED') return problem(409, 'not_submitted');
+  if (cancelling) {
+    if (r.state !== 'SUBMITTED') return problem(409, 'not_submitted');
+    if (r.connection.revoked) return problem(409, 'connection_revoked');
+    if (r.connection.expiresAt <= new Date()) return problem(409, 'token_expired');
+    const platform = publishingPlatform.parse(r.connection.platform);
+    if (!r.remoteId || !capabilities[platform].cancel) return problem(409, 'cancellation_unsupported');
+    if (r.scheduledAt && r.scheduledAt <= new Date()) return problem(409, 'schedule_already_passed');
+    if (await prisma.executionOperation.count({ where: {
+      accountId: owner, projectId: r.projectId, key: r.cancelKey, tool: 'postiz.cancel@1', state: 'CANCELLED'
+    } })) {
+      const updated = await prisma.publicationRequest.update({
+        where: { id: r.id },
+        data: { cancelKey: randomUUID() },
+        include: { connection: true }
+      });
+      r = updated;
+    }
+  }
   const operation = await propose(owner, r.projectId, {
     key: cancelling ? r.cancelKey : r.submitKey,
     tool: cancelling ? 'postiz.cancel@1' : 'postiz.schedule@1',
@@ -52,13 +82,15 @@ export async function command(owner: string, id: string, cancelling: boolean) {
 }
 export async function retryPreparation(owner: string, id: string) {
   const row = await prisma.publicationRequest.findFirst({
-    where: { id, connection: { ownerId: owner, revoked: false, expiresAt: { gt: new Date() } } },
-    include: { connection: { select: { platform: true } } }
+    where: { id, connection: { ownerId: owner } },
+    include: { connection: { select: { platform: true, revoked: true, expiresAt: true } } }
   });
-  if (!row) return problem(404, 'connection_not_found');
+  if (!row) return problem(404, 'publication_not_found');
+  if (row.connection.revoked) return problem(409, 'connection_revoked');
+  if (row.connection.expiresAt <= new Date()) return problem(409, 'token_expired');
   if (
     row.state === 'FAILED' &&
-    ['TOKEN_EXPIRED', 'CHANNEL_MISMATCH', 'DISABLED'].includes(row.reason ?? '')
+    (SAFE_RETRY_REASONS as readonly string[]).includes(row.reason ?? '')
   ) {
     await prisma.publicationRequest.updateMany({
       where: { id, state: 'FAILED', submitKey: row.submitKey },
@@ -151,6 +183,7 @@ export async function dispatchPublication(
           if (!valid) throw new ProviderFailure('TOKEN_EXPIRED', false);
           const current = await preview(job.accountId, r.itemId, r.revision, platform);
           if (
+            !current.direct ||
             current.issues.length ||
             current.itemVersion !== r.itemVersion ||
             Date.parse(current.when) <= Date.now()
@@ -175,27 +208,199 @@ export async function dispatchPublication(
     return { costCents: 0, costBasis: 'none' };
   }
 }
-export async function reconcilePublication(owner: string, id: string, provider: PublishingProvider = new PostizProvider()) {
+export type ReconcileOutcome =
+  | 'published_verified'
+  | 'provider_failed'
+  | 'recovered_queued'
+  | 'still_queued'
+  | 'missing_network_receipt'
+  | 'not_found_on_provider'
+  | 'not_found_without_receipt'
+  | 'ambiguous_without_receipt'
+  | 'no_action_needed';
+
+export async function reconcilePublication(
+  owner: string,
+  id: string,
+  provider: PublishingProvider = new PostizProvider()
+): Promise<{
+  state: string;
+  outcome: ReconcileOutcome;
+  remoteId?: string | null;
+  networkReceipt?: string | null;
+}> {
   const row = await prisma.publicationRequest.findFirst({ where: { id, connection: { ownerId: owner } }, include: { connection: true } });
   if (!row) return problem(404, 'publication_not_found');
   const c = row.connection;
-  if (c.revoked || c.expiresAt <= new Date()) return problem(409, 'token_expired');
-  const abandonedCancellation = row.state === 'CANCELLING' && await prisma.executionOperation.count({ where: {
-    accountId: owner, projectId: row.projectId, tool: 'postiz.cancel@1', key: row.cancelKey, state: 'UNKNOWN'
-  } });
-  if (!row.remoteId || !provider.status || (!['SUBMITTED', 'UNKNOWN'].includes(row.state) && !abandonedCancellation))
-    return { state: row.state };
+  if (c.revoked) return problem(409, 'connection_revoked');
+  if (c.expiresAt <= new Date()) return problem(409, 'token_expired');
+  const abandonedCancellation =
+    row.state === 'CANCELLING' &&
+    Boolean(await prisma.executionOperation.count({ where: {
+      accountId: owner, projectId: row.projectId, tool: 'postiz.cancel@1', key: row.cancelKey, state: 'UNKNOWN'
+    } }));
+  const abandonedSubmission =
+    row.state === 'SENDING' &&
+    Boolean(await prisma.executionOperation.count({ where: {
+      accountId: owner, projectId: row.projectId, tool: 'postiz.schedule@1', key: row.submitKey, state: 'UNKNOWN'
+    } }));
+  const isAmbiguous = row.state === 'UNKNOWN' || abandonedCancellation || abandonedSubmission;
+  const platform = publishingPlatform.parse(c.platform);
   const when = row.scheduledAt ?? (await prisma.contentItem.findUnique({ where: { id: row.itemId, userId: owner } }))?.plannedAt;
-  if (!when) return { state: row.state };
-  const status = await provider.status(cipher.decrypt(c.tokenCipher, c.id + ':token'), row.remoteId, c.channel,
-    publishingPlatform.parse(c.platform), when, AbortSignal.timeout(10000));
-  if (!status || status.status === 'QUEUE' || (status.status === 'PUBLISHED' && !status.receipt)) return { state: row.state };
+  if (!when) return { state: row.state, outcome: 'no_action_needed', remoteId: row.remoteId, networkReceipt: row.networkReceipt };
+
+  // Case 1: Ambiguous outcome with lost remoteId — attempt read-only exact lookup without ever re-submitting.
+  if (!row.remoteId) {
+    if (!isAmbiguous) {
+      return { state: row.state, outcome: 'no_action_needed', remoteId: null, networkReceipt: row.networkReceipt };
+    }
+    if (!provider.findSubmission) {
+      return { state: 'UNKNOWN', outcome: 'ambiguous_without_receipt', remoteId: null, networkReceipt: null };
+    }
+    const token = cipher.decrypt(c.tokenCipher, c.id + ':token');
+    const found = await provider.findSubmission(token, c.channel, platform, when, AbortSignal.timeout(10000));
+    if (found.status === 'none') {
+      return { state: 'UNKNOWN', outcome: 'not_found_without_receipt', remoteId: null, networkReceipt: null };
+    }
+    if (found.status === 'ambiguous') {
+      return { state: 'UNKNOWN', outcome: 'ambiguous_without_receipt', remoteId: null, networkReceipt: null };
+    }
+    // Unique exact match found on provider: attach remoteId and update to the verified state without duplicating.
+    const nextState =
+      found.post?.status === 'PUBLISHED' && found.post.receipt
+        ? 'PUBLISHED'
+        : found.post?.status === 'ERROR'
+          ? 'FAILED'
+          : found.post?.status === 'QUEUE'
+            ? 'SUBMITTED'
+            : 'UNKNOWN';
+    const nextReceipt = nextState === 'PUBLISHED' ? (found.post?.receipt ?? null) : null;
+    const nextReason =
+      nextState === 'FAILED'
+        ? 'PROVIDER_FAILED'
+        : nextState === 'UNKNOWN'
+          ? 'MISSING_NETWORK_RECEIPT'
+          : null;
+    const updated = await prisma.publicationRequest.updateMany({
+      where: {
+        id,
+        state: row.state,
+        remoteId: null,
+        connection: { ownerId: owner, revoked: false, tokenCipher: c.tokenCipher }
+      },
+      data: {
+        remoteId: found.id,
+        state: nextState,
+        networkReceipt: nextReceipt,
+        reason: nextReason
+      }
+    });
+    const finalState = updated.count ? nextState : row.state;
+    const outcome: ReconcileOutcome =
+      finalState === 'PUBLISHED'
+        ? 'published_verified'
+        : finalState === 'FAILED'
+          ? 'provider_failed'
+          : finalState === 'SUBMITTED'
+            ? 'recovered_queued'
+            : 'missing_network_receipt';
+    return { state: finalState, outcome, remoteId: found.id, networkReceipt: nextReceipt };
+  }
+
+  // Case 2: Known remoteId — read provider status and reconcile honestly.
+  if (!provider.status || (!['SUBMITTED', 'UNKNOWN'].includes(row.state) && !abandonedCancellation && !abandonedSubmission)) {
+    return { state: row.state, outcome: 'no_action_needed', remoteId: row.remoteId, networkReceipt: row.networkReceipt };
+  }
+  const status = await provider.status(
+    cipher.decrypt(c.tokenCipher, c.id + ':token'),
+    row.remoteId,
+    c.channel,
+    platform,
+    when,
+    AbortSignal.timeout(10000)
+  );
+  if (!status) {
+    return { state: isAmbiguous ? 'UNKNOWN' : row.state, outcome: 'not_found_on_provider', remoteId: row.remoteId, networkReceipt: row.networkReceipt };
+  }
+  if (status.status === 'PUBLISHED' && !status.receipt) {
+    return { state: isAmbiguous ? 'UNKNOWN' : row.state, outcome: 'missing_network_receipt', remoteId: row.remoteId, networkReceipt: null };
+  }
+  if (status.status === 'QUEUE') {
+    // Recover an ambiguous cancellation/submission once provider confirms the post is queued.
+    if (isAmbiguous) {
+      const updated = await prisma.publicationRequest.updateMany({
+        where: {
+          id,
+          state: row.state,
+          remoteId: row.remoteId,
+          connection: { ownerId: owner, revoked: false, tokenCipher: c.tokenCipher }
+        },
+        data: { state: 'SUBMITTED', reason: null }
+      });
+      return {
+        state: updated.count ? 'SUBMITTED' : row.state,
+        outcome: updated.count ? 'recovered_queued' : 'still_queued',
+        remoteId: row.remoteId,
+        networkReceipt: null
+      };
+    }
+    return { state: row.state, outcome: 'still_queued', remoteId: row.remoteId, networkReceipt: null };
+  }
   const state = status.status === 'PUBLISHED' ? 'PUBLISHED' : 'FAILED';
-  const updated = await prisma.publicationRequest.updateMany({ where: { id, state: row.state, remoteId: row.remoteId,
-    connection: { ownerId: owner, revoked: false, tokenCipher: c.tokenCipher } }, data: {
-    state, networkReceipt: status.receipt ?? null, reason: state === 'FAILED' ? 'PROVIDER_FAILED' : null
-  } });
-  return { state: updated.count ? state : row.state };
+  const updated = await prisma.publicationRequest.updateMany({
+    where: {
+      id,
+      state: row.state,
+      remoteId: row.remoteId,
+      connection: { ownerId: owner, revoked: false, tokenCipher: c.tokenCipher }
+    },
+    data: {
+      state,
+      networkReceipt: status.receipt ?? null,
+      reason: state === 'FAILED' ? 'PROVIDER_FAILED' : null
+    }
+  });
+  return {
+    state: updated.count ? state : row.state,
+    outcome: state === 'PUBLISHED' ? 'published_verified' : 'provider_failed',
+    remoteId: row.remoteId,
+    networkReceipt: state === 'PUBLISHED' ? (status.receipt ?? null) : null
+  };
+}
+
+export async function resolveUnknownPublication(
+  owner: string,
+  id: string,
+  resolution: 'confirmed_absent' | 'confirmed_external'
+) {
+  const row = await prisma.publicationRequest.findFirst({
+    where: { id, connection: { ownerId: owner } },
+    include: { connection: { select: { ownerId: true } } }
+  });
+  if (!row) return problem(404, 'publication_not_found');
+  const abandonedOp =
+    ['SENDING', 'CANCELLING'].includes(row.state) &&
+    Boolean(await prisma.executionOperation.count({
+      where: {
+        accountId: owner,
+        projectId: row.projectId,
+        tool: row.state === 'CANCELLING' ? 'postiz.cancel@1' : 'postiz.schedule@1',
+        key: row.state === 'CANCELLING' ? row.cancelKey : row.submitKey,
+        state: 'UNKNOWN'
+      }
+    }));
+  if (row.state !== 'UNKNOWN' && !abandonedOp) return problem(409, 'not_unknown');
+  // Never forge a verified PUBLISHED state or networkReceipt via manual resolution.
+  const next =
+    resolution === 'confirmed_absent'
+      ? { state: 'FAILED' as const, reason: 'MANUAL_CONFIRMED_ABSENT' }
+      : { state: 'CANCELLED' as const, reason: 'RESOLVED_EXTERNALLY' };
+  const updated = await prisma.publicationRequest.updateMany({
+    where: { id: row.id, state: row.state },
+    data: next
+  });
+  if (!updated.count) return problem(409, 'state_changed');
+  return { id: row.id, state: next.state, reason: next.reason };
 }
 // Operator relay protocol, NOT a claim that upstream Postiz signs this format.
 export const webhookEnvelope = z

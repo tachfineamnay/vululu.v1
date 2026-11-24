@@ -2,17 +2,26 @@ import {markExport} from '../infrastructure/results/exports';
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@vululu/db';
 import { creativeStudio } from '../application/container';
 import { capabilities, PostizProvider, ProviderFailure, publishingPlatform } from '../infrastructure/publishing/provider';
 import { creativeSpec } from '@vululu/contracts';
-import { attachments, compatibleCalendarVersions, manualPackage, preview, problem } from '../infrastructure/publishing/delivery';
+import {
+  attachments,
+  compatibleCalendarVersions,
+  hasRenderedManifest,
+  manualPackage,
+  preview,
+  problem
+} from '../infrastructure/publishing/delivery';
 import {
   cipher,
   command,
   ingest,
   prepare,
   reconcilePublication,
+  resolveUnknownPublication,
   retryPreparation,
   webhookEnvelope
 } from '../infrastructure/publishing/service';
@@ -112,11 +121,19 @@ export async function publishingRoutes(app: FastifyInstance) {
     });
   });
   app.post('/api/publishing/:id/reconcile', auth, async (r) => {
-    try { return await reconcilePublication(r.currentUser!.id, id(r.params)); }
+    try { return await reconcilePublication(r.currentUser!.id, id(r.params), provider()); }
     catch (error) {
-      if (error instanceof ProviderFailure) return problem(503, error.reason);
+      if (error instanceof ProviderFailure) {
+        if (error.reason === 'TOKEN_EXPIRED') return problem(409, 'token_expired');
+        if (error.reason === 'DISABLED') return problem(409, 'direct_disabled');
+        return problem(503, error.reason);
+      }
       throw error;
     }
+  });
+  app.post('/api/publishing/:id/resolve-unknown', auth, (r) => {
+    const body = z.object({ resolution: z.enum(['confirmed_absent', 'confirmed_external']) }).strict().parse(r.body);
+    return resolveUnknownPublication(r.currentUser!.id, id(r.params), body.resolution);
   });
   app.delete('/api/publishing/connections/:id', auth, async (r) => {
     const uid = id(r.params), owner = r.currentUser!.id;
@@ -137,17 +154,33 @@ export async function publishingRoutes(app: FastifyInstance) {
     const owner = r.currentUser!.id,
       item = await prisma.contentItem.findFirst({ where: { id: id(r.params), userId: owner } });
     if (!item) return problem(404, 'item_not_found');
+    const compatible = await compatibleCalendarVersions(item);
     const revisions = await prisma.creativeRevision.findMany({
       where: {
         contentItemId: item.id,
-        contentVersion: { in: await compatibleCalendarVersions(item) },
+        contentVersion: { in: compatible },
         projectId: item.projectId ?? '',
         project: { userId: owner },
-        approvedAt: { not: null }
+        approvedAt: { not: null },
+        manifest: { not: Prisma.DbNull }
       },
       orderBy: { version: 'desc' },
-      select: { version: true, spec: true }
+      select: { version: true, spec: true, manifest: true }
     });
+    const eligibleRevisions = revisions
+      .filter((x) => hasRenderedManifest(x.manifest))
+      .flatMap((x) => {
+        const parsed = creativeSpec.safeParse(x.spec);
+        const delivery = parsed.success ? parsed.data.delivery : undefined;
+        if (
+          !delivery ||
+          delivery.calendar?.itemId !== item.id ||
+          !compatible.includes(delivery.calendar.version)
+        ) {
+          return [];
+        }
+        return [{ revision: x.version, platform: delivery.platform, kind: delivery.kind }];
+      });
     const requests = await prisma.publicationRequest.findMany({
       where: { itemId: item.id, connection: { ownerId: owner } },
       select: {
@@ -157,7 +190,7 @@ export async function publishingRoutes(app: FastifyInstance) {
         revision: true,
         itemVersion: true,
         scheduledAt: true,
-        connection: { select: { platform: true, channel: true, displayName: true, revoked: true } },
+        connection: { select: { platform: true, channel: true, displayName: true, revoked: true, expiresAt: true } },
         state: true,
         remoteId: true,
         networkReceipt: true,
@@ -172,25 +205,28 @@ export async function publishingRoutes(app: FastifyInstance) {
     return {
       directEnabled: enabled(),
       scheduleAuthorized: Boolean(policy?.enabled && policy.tools.includes('postiz.schedule@1')),
-      revisions: revisions.map((x) => ({
-        revision: x.version,
-        platform: creativeSpec.parse(x.spec).delivery?.platform
-      })),
+      revisions: eligibleRevisions,
       connections: await prisma.publishingConnection.findMany({
         where: { ownerId: owner, revoked: false },
         select: publicConnection
       }),
-      requests: requests.map(({ cancelKey, submitKey, ...v }) => ({
-        ...v,
-        state:
+      requests: requests.map(({ cancelKey, submitKey, ...v }) => {
+        const submitOp = ops.find((o) => o.key === submitKey);
+        const cancelOp = ops.find((o) => o.key === cancelKey);
+        const effectiveState =
           ['SENDING', 'CANCELLING'].includes(v.state) &&
-          ops.find((o) => o.key === (v.state === 'SENDING' ? submitKey : cancelKey))?.state === 'UNKNOWN'
+          (v.state === 'SENDING' ? submitOp?.state : cancelOp?.state) === 'UNKNOWN'
             ? 'UNKNOWN'
-            : v.state,
-        operationId: ops.find((o) => o.key === submitKey)?.id,
-        execution: ops.find((o) => o.key === submitKey)?.state,
-        cancellation: ops.find((o) => o.key === cancelKey)?.state
-      }))
+            : v.state;
+        return {
+          ...v,
+          state: effectiveState,
+          operationId: submitOp?.id,
+          execution: submitOp?.state,
+          cancelOperationId: cancelOp?.id,
+          cancellation: cancelOp?.state
+        };
+      })
     };
   });
   // P10 — détail d'une demande : compte exact, états d'exécution, reçu distant et journal.
@@ -210,10 +246,18 @@ export async function publishingRoutes(app: FastifyInstance) {
       select: { id: true, key: true, state: true, digest: true, maxCents: true, reportedCents: true }
     });
     const { submitKey, cancelKey, ...rest } = row;
+    const submission = ops.find((op) => op.key === submitKey) ?? null;
+    const cancellation = ops.find((op) => op.key === cancelKey) ?? null;
+    const effectiveState =
+      ['SENDING', 'CANCELLING'].includes(rest.state) &&
+      (rest.state === 'SENDING' ? submission?.state : cancellation?.state) === 'UNKNOWN'
+        ? 'UNKNOWN'
+        : rest.state;
     return {
       ...rest,
-      submission: ops.find((op) => op.key === submitKey) ?? null,
-      cancellation: ops.find((op) => op.key === cancelKey) ?? null
+      state: effectiveState,
+      submission,
+      cancellation
     };
   });
   const params = z.object({ id: z.uuid(), rev: z.coerce.number().int().positive() });
@@ -221,7 +265,12 @@ export async function publishingRoutes(app: FastifyInstance) {
   app.get(base + '/:rev/preview', auth, async (r) => {
     const { id, rev } = params.parse(r.params);
     const p = await preview(r.currentUser!.id, id, rev, target(r.query));
-    return { ...p, direct: p.direct && enabled() };
+    const directEnabled = enabled();
+    return {
+      ...p,
+      direct: p.direct && directEnabled,
+      directReason: p.directReason ?? (directEnabled ? null : 'direct_disabled')
+    };
   });
   let activePackages = 0;
   app.get(base + '/:rev/package', auth, async (r, reply) => {
@@ -248,7 +297,10 @@ export async function publishingRoutes(app: FastifyInstance) {
     const choice = z.object({ connectionId: z.uuid(), target: publishingPlatform.optional() }).strict().parse(r.body);
     return prepare(r.currentUser!.id, id, rev, choice.connectionId, choice.target);
   });
-  app.post('/api/publishing/:id/prepare-cancel', auth, (r) => command(r.currentUser!.id, id(r.params), true));
+  app.post('/api/publishing/:id/prepare-cancel', auth, (r) => {
+    if (!enabled()) return problem(409, 'direct_disabled');
+    return command(r.currentUser!.id, id(r.params), true);
+  });
   app.post('/api/publishing/:id/prepare-retry', auth, (r) => {
     if (!enabled()) return problem(409, 'direct_disabled');
     return retryPreparation(r.currentUser!.id, id(r.params));

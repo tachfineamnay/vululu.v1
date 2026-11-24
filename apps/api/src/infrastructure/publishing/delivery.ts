@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { buffer } from 'node:stream/consumers';
 import { prisma } from '@vululu/db';
-import { content, creativeSpec, type Content } from '@vululu/contracts';
+import { Prisma } from '@prisma/client';
+import { content, creativeSpec, productionCapability, type Content } from '@vululu/contracts';
 import { zipSync, strToU8 } from 'fflate';
 import type { CreativeStudio } from '../../application/creative';
 import { HttpError } from '../../errors';
@@ -10,6 +11,18 @@ import { capabilities, type Attachment, type PublishingPlatform } from './provid
 export const problem = (status: number, code: string): never => {
   throw new HttpError(status, code, code);
 };
+export function hasRenderedManifest(manifest: unknown): boolean {
+  if (manifest === null || manifest === undefined) return false;
+  if (manifest === Prisma.DbNull || manifest === Prisma.JsonNull) return false;
+  return typeof manifest === 'object' && !Array.isArray(manifest);
+}
+export function isCompatibleArtifactFormat(format: string, kind: string): boolean {
+  const capability = productionCapability(format);
+  if (!capability) return false;
+  if (format === 'Video') return kind === 'short' || kind === 'landscape';
+  if (capability.studio === 'square') return kind === 'square' || kind === 'portrait';
+  return capability.studio === kind;
+}
 // The creative approval binds editorial content. Moving the unchanged item through review
 // does not invalidate the artwork, but any intervening change (including time or archive)
 // requires an explicit new linked revision. Commands still pin the exact current version.
@@ -47,7 +60,7 @@ export async function preview(owner: string, itemId: string, revision: number, t
       contentVersion: { in: compatible }
     }
   });
-  if (!rev?.manifest || !rev.approvedAt) return problem(409, 'approved_revision_required');
+  if (!hasRenderedManifest(rev?.manifest) || !rev?.approvedAt) return problem(409, 'approved_revision_required');
   const spec = creativeSpec.parse(rev.spec),
     d = spec.delivery;
   if (!d || d.calendar?.itemId !== itemId || !compatible.includes(d.calendar.version))
@@ -61,8 +74,20 @@ export async function preview(owner: string, itemId: string, revision: number, t
   const issues: string[] = [];
   if (item.archived || !['APPROVED', 'SCHEDULED'].includes(item.status))
     issues.push('editorial_approval_required');
+  if (!productionCapability(v.format))
+    issues.push('unsupported_format');
+  else if (!isCompatibleArtifactFormat(v.format, d.kind))
+    issues.push('incompatible_artifact_format');
   if ([...caption].length > capabilities[platform].caption) issues.push('caption_too_long');
   const keys = d.kind === 'carousel' ? spec.scenes.map((s) => s.key) : [undefined];
+  const supportedScheduledKinds = capabilities[platform].scheduled;
+  const direct = supportedScheduledKinds.includes(d.kind);
+  const directReason: 'platform_manual_only' | 'format_not_supported_for_direct' | null = direct
+    ? null
+    : supportedScheduledKinds.length === 0
+      ? 'platform_manual_only'
+      : 'format_not_supported_for_direct';
+  const when = item.plannedAt.toISOString();
   return {
     itemId,
     itemVersion: item.version,
@@ -72,10 +97,13 @@ export async function preview(owner: string, itemId: string, revision: number, t
     sourcePlatform: d.platform,
     kind: d.kind,
     caption,
-    when: item.plannedAt.toISOString(),
+    when,
     keys,
     issues,
-    direct: capabilities[platform].scheduled.includes(d.kind)
+    direct,
+    directReason,
+    supportedScheduledKinds,
+    schedulableInFuture: Date.parse(when) > Date.now()
   };
 }
 export async function attachments(

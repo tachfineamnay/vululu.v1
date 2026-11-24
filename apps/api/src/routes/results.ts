@@ -4,7 +4,7 @@ import { prisma } from '@vululu/db';
 import { cipher } from '../infrastructure/publishing/service';
 import { HttpError } from '../errors';
 import { history, report, reminder, monday, purge } from '../infrastructure/results/store';
-import { missing, readPost } from '../infrastructure/results/provider';
+import { missing, readPost, type MetricsUnavailableReason } from '../infrastructure/results/provider';
 import { rateLimitPreHandler } from '../infrastructure/security/rateLimiter';
 export async function resultsRoutes(app: FastifyInstance) {
   const auth = { preHandler: [app.authenticate] },
@@ -66,27 +66,30 @@ export async function resultsRoutes(app: FastifyInstance) {
       });
       if (!p) throw new HttpError(404, 'publication_not_found', 'Publication introuvable.');
       const c = p.connection,
-        absent = { metrics: missing(), retrievedAt: null, source: 'Postiz · LinkedIn' };
-      if (
-        !p.remoteId ||
-        process.env.POSTIZ_ANALYTICS_ENABLED !== '1' ||
-        c.revoked ||
-        c.expiresAt <= new Date()
-      )
-        return absent;
+        source = 'Postiz · ' + c.platform,
+        absent = (unavailableReason: MetricsUnavailableReason) => ({
+          metrics: missing(),
+          retrievedAt: null,
+          source,
+          unavailableReason,
+        });
+      if (!p.remoteId) return absent('missing_remote_id');
+      if (process.env.POSTIZ_ANALYTICS_ENABLED !== '1') return absent('analytics_disabled');
+      if (c.revoked) return absent('connection_revoked');
+      if (c.expiresAt <= new Date()) return absent('connection_expired');
       let token: string;
       try {
         token = cipher.decrypt(c.tokenCipher, c.id + ':token');
       } catch {
-        return absent;
+        return absent('credentials_unreadable');
       }
-      const result = await readPost(p.remoteId, token);
-      if (
-        !(await prisma.publishingConnection.count({
-          where: { id: c.id, ownerId: userId, revoked: false, expiresAt: { gt: new Date() } },
-        }))
-      )
-        return absent;
+      const result = await readPost(p.remoteId, token, fetch, c.platform);
+      const stillActive = await prisma.publishingConnection.findFirst({
+        where: { id: c.id, ownerId: userId },
+        select: { revoked: true, expiresAt: true },
+      });
+      if (!stillActive || stillActive.revoked) return absent('connection_revoked');
+      if (stillActive.expiresAt <= new Date()) return absent('connection_expired');
       if (result.retrievedAt) {
         const { impressions, engagement, clicks } = result.metrics;
         const measured = (n: number | string) => (typeof n === 'number' ? BigInt(n) : null);

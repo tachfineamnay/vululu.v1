@@ -62,6 +62,7 @@ export function Editor({
     }
   }
   const retry = useRef({ body: '', key: '' });
+  const inFlight = useRef(false);
   function patch<K extends keyof Content>(k: K, v: Content[K]) {
     set((d) => ({ ...d, [k]: v }));
   }
@@ -106,17 +107,18 @@ export function Editor({
   const locked = !['IDEA', 'DRAFT'].includes(initial.status) && draft.status !== 'DRAFT';
   const projectHref = (projectId: string) => `/projects/${encodeURIComponent(projectId)}?${new URLSearchParams({ item: initial.id, offer: initial.offerId })}`;
   async function start() {
-    if (busy || dirty) return;
+    if (inFlight.current || busy || dirty) return;
+    inFlight.current = true;
     working(true); fail('');
     try {
       const project = await postJson<{ projectId: string }>(`/api/calendar/${initial.id}/project`, { expectedVersion: initial.version, platform });
       router.push(projectHref(project.projectId));
     } catch (error) { fail(error instanceof Error ? error.message : 'Le projet n’a pas pu être créé.'); }
-    finally { working(false); }
+    finally { inFlight.current = false; working(false); }
   }
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (busy) return;
+    if (inFlight.current || busy) return;
     const instant = available[late && available.length > 1 ? 1 : 0];
     if (!instant) {
       fail('Heure locale inexistante. Choisissez une autre heure.');
@@ -135,6 +137,7 @@ export function Editor({
       );
       return;
     }
+    inFlight.current = true;
     working(true);
     fail('');
     try {
@@ -154,6 +157,7 @@ export function Editor({
     } catch (err) {
       fail(err instanceof Error ? err.message : 'Enregistrement impossible.');
     } finally {
+      inFlight.current = false;
       working(false);
     }
   }
@@ -287,10 +291,26 @@ export function Editor({
                     value={v.format}
                     onChange={(e) => update({ format: e.target.value as typeof v.format })}
                   >
-                    {!(availableFormats[v.platform] as readonly string[]).includes(v.format) && <option value={v.format}>{v.format} (ancien choix)</option>}
-                    {availableFormats[v.platform].map((f) => <option key={f} value={f}>{productionCapability(f)?.label}</option>)}
+                    {!(availableFormats[v.platform] as readonly string[]).includes(v.format) && (
+                      <option value={v.format}>{v.format} (non pris en charge · ancien choix)</option>
+                    )}
+                    {availableFormats[v.platform].map((f) => (
+                      <option key={f} value={f}>
+                        {productionCapability(f)?.label}
+                        {v.platform === 'TikTok' || f !== 'Affiche' ? ' · kit manuel' : ''}
+                      </option>
+                    ))}
                   </select>
                 </label>
+                {!productionCapability(v.format) ? (
+                  <p className="hint cal-error" role="status">
+                    Format « {v.format} » non pris en charge pour le rendu et la programmation directe. Sélectionnez un format compatible.
+                  </p>
+                ) : v.platform === 'TikTok' || v.format !== 'Affiche' ? (
+                  <p className="hint">
+                    Format pris en charge au Studio en kit manuel uniquement (la programmation directe Postiz ne couvre que les posts image compatibles).
+                  </p>
+                ) : null}
                 <label>
                   Légende
                   <textarea
@@ -447,7 +467,12 @@ export function Editor({
             ))}
           </select>
         </label>
-        <p className="hint">Passez de l’idée au brouillon, puis à la relecture et à l’approbation. L’état éditorial n’envoie rien au réseau.</p>
+        <p className="hint">
+          Passez de l’idée au brouillon, puis à la relecture et à l’approbation. L’état éditorial n’envoie rien au réseau
+          {draft.status === 'PUBLISHED'
+            ? ' : « Publication déclarée » reste une note interne et ne crée aucune preuve réseau vérifiée dans Résultats.'
+            : '.'}
+        </p>
         {!!draft.version && (
           <label>
             <input
