@@ -93,7 +93,8 @@ describe('sélection explicite d une direction artistique', () => {
     const reread = await directions.list(user, project);
     expect(reread.selectedVersion).toBe(2);
     expect(reread.directions.map((row) => row.version).sort()).toEqual([1, 2, 3]);
-    expect(await directions.decisions(user, project)).toEqual({});
+    // Le service expose l'état complet via list() : les décisions sont un champ de cet état.
+  expect((await directions.list(user, project)).decisions).toEqual({});
   });
 
   it('refuse une direction rejetée et accepte une autre', async () => {

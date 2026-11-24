@@ -298,7 +298,11 @@ export async function runNextStudioRender(deps?: StudioRenderDeps) {
             : audio
               ? 'audio'
               : 'render_failed';
-      logEvent('warn', 'studio.render.failed', { jobId: job.id, code });
+      // Les messages d'erreur libres peuvent contenir des données sensibles.
+      const detail = error instanceof Error && ['creative_asset_integrity', 'creative_cache_integrity', 'creative_master_integrity'].includes(error.message)
+        ? error.message
+        : code;
+      logEvent('warn', 'studio.render.failed', { jobId: job.id, code, detail });
       await finish(
         cancelled ? 'cancelled' : 'failed',
         cancelled

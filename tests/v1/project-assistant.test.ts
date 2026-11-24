@@ -55,6 +55,9 @@ beforeEach(async () => {
   project = (await prisma.project.create({ data: { contextId: context, userId: owner, title: 'Campagne atelier', objective: b.goal, platform: 'Instagram', format: 'Video' } })).id;
   offer = (await prisma.confirmedOffer.create({ data: { contextId: context, name: b.offer } })).id;
   await prisma.executionAccount.create({ data: { userId: owner, enabled: true, limitCents: 32, tools: ['assistant.draft@1'] } });
+  // Le brainstorming marketing exige une décision de ressources confirmée (P02) : aucune ressource ici.
+  const assetsConfirmed = await app.inject({ method: 'POST', url: '/api/projects/' + project + '/assets/confirm', headers: own, payload: { noAssets: true } });
+  expect(assetsConfirmed.statusCode).toBe(200);
 });
 afterEach(async () => {
   vi.unstubAllEnvs();

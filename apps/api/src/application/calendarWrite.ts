@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { CalendarItem, CalendarMutation, Content } from '@vululu/contracts';
+import { content, type CalendarItem, type CalendarMutation, type Content } from '@vululu/contracts';
 import { HttpError } from '../errors';
 import { checkEdit, conflict } from './calendarPolicy';
 
@@ -28,14 +28,17 @@ export async function writeContent(tx: CalendarWriteTransaction, cmd: CalendarMu
   }
   if ((previous?.version ?? 0) !== expectedVersion)
     conflict('Version dépassée. Rechargez le calendrier avant de réessayer.');
-  checkEdit(previous, data, now);
-  await tx.verifyLinks(data);
-  if (!data.archived && data.status === 'SCHEDULED') {
-    const booked = new Set(await tx.bookedPlatforms(new Date(data.plannedAt)));
-    if (data.variants.some((v) => booked.has(v.platform)))
+  // Normalise les valeurs par défaut du contrat (hashtags, etc.) AVANT l'écriture : la réponse
+  // de création et le rejeu idempotent renvoient ainsi exactement la même forme.
+  const normalized = content.parse(data);
+  checkEdit(previous, normalized, now);
+  await tx.verifyLinks(normalized);
+  if (!normalized.archived && normalized.status === 'SCHEDULED') {
+    const booked = new Set(await tx.bookedPlatforms(new Date(normalized.plannedAt)));
+    if (normalized.variants.some((v) => booked.has(v.platform)))
       conflict('Une publication est déjà planifiée sur cette plateforme à cette minute.');
   }
-  const snapshot = { ...data, id, version: expectedVersion + 1 };
+  const snapshot = { ...normalized, id, version: expectedVersion + 1 };
   await tx.append(snapshot, digest);
   return snapshot;
 }

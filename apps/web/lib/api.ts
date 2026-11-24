@@ -245,6 +245,53 @@ function parseRetryAfterSeconds(header: string | null, bodyValue: unknown): numb
   return undefined;
 }
 
+type BusyRetryOptions = {
+  attempts?: number;
+  delaysMs?: number[];
+  signal?: AbortSignal;
+  onWait?: (attempt: number, attempts: number) => void;
+};
+
+function abortError(): Error {
+  return typeof DOMException === 'function'
+    ? new DOMException('Opération annulée.', 'AbortError')
+    : Object.assign(new Error('Opération annulée.'), { name: 'AbortError' });
+}
+
+async function waitForRetry(delayMs: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) {
+    await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+    return;
+  }
+  if (signal.aborted) throw abortError();
+  await new Promise<void>((resolve, reject) => {
+    const onAbort = () => { clearTimeout(timer); reject(abortError()); };
+    const timer = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve(); }, delayMs);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+/**
+ * Attend un créneau de rendu borné sans relever les limites de concurrence : une lecture
+ * idempotente (aperçu) qui reçoit 429 « rendu en cours » est rejouée quelques fois avec un
+ * délai croissant, puis abandonne en conservant l'erreur du serveur. Les autres erreurs
+ * (409, 422, 5xx) ne sont jamais rejouées.
+ */
+export async function withBusyRetry<T>(operation: () => Promise<T>, options: BusyRetryOptions = {}): Promise<T> {
+  const attempts = Math.max(1, options.attempts ?? 5);
+  const delays = options.delaysMs && options.delaysMs.length ? options.delaysMs : [400, 900, 1600, 2500];
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      const busy = error instanceof ApiRequestError && error.status === 429;
+      if (!busy || attempt >= attempts) throw error;
+      options.onWait?.(attempt, attempts);
+      await waitForRetry(delays[Math.min(attempt - 1, delays.length - 1)], options.signal);
+    }
+  }
+}
+
 export async function apiResponse(path: string, init?: RequestInit): Promise<Response> {
   const method = (init && init.method ? init.method : 'GET').toUpperCase();
   const headers: Record<string, string> = init && init.body ? { 'Content-Type': 'application/json' } : {};

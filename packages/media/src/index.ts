@@ -9,6 +9,7 @@ import { composeScene } from './sceneComposition';
 import { COMPOSITION_VERSION, validTextLayout, type SceneTextLayout } from './textLayout';
 export { COMPOSITION_VERSION, type SceneTextLayout } from './textLayout';
 export { inspectAsset, type AssetInspection } from './assetInspection';
+export { createMediaTempDir } from './temp';
 
 /**
  * Frequence de sortie imposee au master : 30 images/s constants.
@@ -244,7 +245,7 @@ function findFfprobe(): string {
 }
 
 /** Duree de la premiere piste audio, en secondes. Echec explicite, jamais supposse. */
-async function probeAudioDuration(file: string): Promise<number> {
+export async function probeAudioDuration(file: string): Promise<number> {
   const result = await runCapture(findFfprobe(), [
     '-v', 'error', '-protocol_whitelist', 'file,pipe', '-select_streams', 'a:0',
     '-show_entries', 'stream=duration', '-of', 'default=noprint_wrappers=1:nokey=1', file

@@ -1,9 +1,8 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
-import { inspectAsset } from '@vululu/media';
+import { createMediaTempDir, inspectAsset } from '@vululu/media';
 import type { MediaRequest } from '@vululu/contracts';
 // Probe first, then decode the entire selected video stream: an MP4 header alone is not evidence of a usable clip.
 export async function verifyOutput(bytes: Buffer, r: MediaRequest) {
@@ -13,7 +12,7 @@ export async function verifyOutput(bytes: Buffer, r: MediaRequest) {
   if (`${m.width}:${m.height}` !== r.size) throw Error('media_output_dimensions');
   if (r.kind === 'video') {
     if (Math.abs(Number(m.duration) - r.seconds) > 0.12) throw Error('media_output_duration');
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'vululu-media-check-'));
+    const dir = await createMediaTempDir('vululu-media-check-');
     try {
       const file = path.join(dir, 'clip.mp4');
       await fs.writeFile(file, bytes);

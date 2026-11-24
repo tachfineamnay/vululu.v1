@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { renderScene } from '../packages/media/src/index';
 
 /**
@@ -14,6 +14,19 @@ import { renderScene } from '../packages/media/src/index';
  * édition Studio, rendu média local, revue et approbation, téléchargement de l'artefact,
  * persistance après rechargement.
  */
+/**
+ * Ouvre « Composition et versions » de façon idempotente : après un rechargement, la direction
+ * choisie peut arriver après le premier clic et remonter l'éditeur (fermeture du détail).
+ */
+async function openComposition(page: Page): Promise<void> {
+  const summary = page.getByText('Composition et versions', { exact: true });
+  const timeline = page.getByRole('combobox', { name: 'Timeline' });
+  await expect(async () => {
+    if (!(await timeline.isVisible().catch(() => false))) await summary.click();
+    await expect(timeline).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 30_000 });
+}
+
 const stamp = Date.now();
 const email = process.env.QA_USER_EMAIL ?? process.env.DEMO_EMAIL ?? '';
 const password = process.env.QA_USER_PASSWORD ?? process.env.DEMO_PASSWORD ?? '';
@@ -123,7 +136,8 @@ test('parcours client QA : de la connexion au livrable approuvé, puis déconnex
   expect(directions.selectedVersion).toBe(1);
 
   // 9. Édition Studio : modifier un calque texte, prévisualiser, enregistrer une révision.
-  await page.getByText('Composition et versions', { exact: true }).click();
+  await expect(page.getByTestId('direction-chosen')).toBeVisible();
+  await openComposition(page);
   const composition = page.getByRole('combobox', { name: 'Timeline' });
   await expect(composition).toBeVisible();
   const textLayer = page.getByRole('button', { name: /^Calque \d+ · texte/ }).first();
@@ -185,7 +199,9 @@ test('parcours client QA : de la connexion au livrable approuvé, puis déconnex
 
   // 12. Persistance : après rechargement, la direction choisie et l'approbation restent serveur.
   await page.reload();
-  await page.getByText('Composition et versions', { exact: true }).click();
+  // Après édition, le pointeur serveur est sur la nouvelle révision du Studio, pas sur la
+  // direction d'origine : le badge « direction choisie » ne s'applique plus (vérifié via l'API).
+  await openComposition(page);
   await expect(page.getByRole('button', { name: 'Version approuvée' })).toBeDisabled();
   const after = await (await page.request.get('/api/projects/' + projectId + '/creative/directions')).json();
   // Éditer la direction choisie déplace le pointeur serveur sur la nouvelle révision : la

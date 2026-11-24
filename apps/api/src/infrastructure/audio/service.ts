@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { buffer } from 'node:stream/consumers';
 import { prisma } from '@vululu/db';
@@ -13,7 +12,7 @@ import {
   creativeSpec,
   isVideoOutput
 } from '@vululu/contracts';
-import { inspectAsset, mediaRun, normalizeForAsr } from '@vululu/media';
+import { createMediaTempDir, inspectAsset, mediaRun, normalizeForAsr } from '@vululu/media';
 import { assets, creativeStudio } from '../../application/container';
 import { HttpError } from '../../errors';
 import { proposeTx } from '../execution/broker';
@@ -149,7 +148,7 @@ async function transcribe(
   const selection = selectTranscriptionProvider();
   if ('code' in selection) return fail(selection.code, selection.message);
   const provider = new GeminiTranscriptionProvider(selection.config);
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'vululu-asr-'));
+  const dir = await createMediaTempDir('vululu-asr-');
   try {
     const source = path.join(dir, 'source.' + (version.mimeType === 'audio/wav' ? 'wav' : 'mp3'));
     await fs.writeFile(source, bytes);

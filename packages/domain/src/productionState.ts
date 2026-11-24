@@ -34,7 +34,9 @@ export type StepRunState = (typeof STEP_RUN_STATES)[number];
 const JOB_TRANSITIONS: Readonly<Record<JobRunState, readonly JobRunState[]>> = {
   queued: ['running', 'cancelled', 'failed'],
   running: ['waiting_approval', 'recovery_pending', 'succeeded', 'failed', 'cancelled', 'timed_out'],
-  waiting_approval: ['succeeded', 'failed', 'cancelled', 'recovery_pending'],
+  // Une attente d'approbation peut expirer : sans transition terminale autorisée, le run
+  // resterait « waiting_approval » et le verrou job_running bloquerait toute correction.
+  waiting_approval: ['succeeded', 'failed', 'cancelled', 'recovery_pending', 'timed_out'],
   recovery_pending: ['running', 'failed', 'cancelled', 'timed_out'],
   succeeded: [],
   failed: [],
@@ -45,7 +47,7 @@ const JOB_TRANSITIONS: Readonly<Record<JobRunState, readonly JobRunState[]>> = {
 const STEP_TRANSITIONS: Readonly<Record<StepRunState, readonly StepRunState[]>> = {
   pending: ['running', 'cancelled', 'failed'],
   running: ['waiting_approval', 'succeeded', 'failed', 'cancelled', 'timed_out'],
-  waiting_approval: ['succeeded', 'failed', 'cancelled'],
+  waiting_approval: ['succeeded', 'failed', 'cancelled', 'timed_out'],
   succeeded: [],
   failed: [],
   cancelled: [],

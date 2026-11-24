@@ -137,13 +137,6 @@ export async function proposeTx(tx: Tx, actor: string, projectId: string, input:
     if (!parsed.success) deny(422, 'agent_params_invalid');
     // Valeur validée : c'est elle qui est hachée puis exécutée (aucune divergence digest/params).
     params = parsed.data;
-    const versionId = (parsed.data as { versionId?: unknown }).versionId;
-    if (definition.scope === 'assets' && typeof versionId === 'string') {
-      const confirmed = await tx.projectAssetSelection.count({
-        where: { projectId, assetVersionId: versionId, project: { userId: actor } }
-      });
-      if (!confirmed) deny(422, 'asset_not_confirmed');
-    }
     digest = createHash('sha256')
       .update(JSON.stringify([projectId, p.tool, p.revision, p.key, contentChecksum(params)]))
       .digest('hex');
@@ -174,6 +167,19 @@ export async function proposeTx(tx: Tx, actor: string, projectId: string, input:
   if (prev) {
     if (prev.digest !== digest) deny(409, 'key_payload_conflict');
     return prev;
+  }
+  // La ressource confirmée est vérifiée APRÈS la propriété, l'autorisation d'outil et la clé
+  // d'idempotence : un appelant étranger reçoit 404, une clé réutilisée 409, jamais un code
+  // qui révélerait l'état de confirmation d'une ressource.
+  if (params !== undefined) {
+    const definition = tools[p.tool];
+    const versionId = (params as { versionId?: unknown }).versionId;
+    if (definition.scope === 'assets' && typeof versionId === 'string') {
+      const confirmed = await tx.projectAssetSelection.count({
+        where: { projectId, assetVersionId: versionId, project: { userId: actor } }
+      });
+      if (!confirmed) deny(422, 'asset_not_confirmed');
+    }
   }
   const o = await tx.executionOperation.create({
     data: {

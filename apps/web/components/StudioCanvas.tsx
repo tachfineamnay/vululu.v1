@@ -171,7 +171,7 @@ export function StudioCanvas({
 
   if (!scene) return <p className="hint">Aucune scène à afficher.</p>;
   const status = preview.state === 'loading'
-    ? 'Actualisation de l’aperçu serveur…'
+    ? preview.message || 'Actualisation de l’aperçu serveur…'
     : preview.state === 'waiting'
       ? preview.message || 'Serveur de rendu occupé · nouvelle tentative automatique…'
       : preview.state === 'invalid'

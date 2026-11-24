@@ -233,6 +233,15 @@ export default function ProjectStudio({ id }: { id: string }) {
     };
   }, [load]);
 
+  // Un run durable reste « running » pendant ses étapes approbation/transfert. On rafraîchit
+  // le bundle tant qu'il est actif pour réactiver les actions dès sa fin, sans contourner le verrou.
+  const runActive = ['queued', 'running', 'waiting_approval', 'recovery_pending'].includes(bundle?.jobRun?.status ?? '') || bundle?.project.status === 'producing';
+  useEffect(() => {
+    if (!runActive) return;
+    const timer = window.setInterval(() => { void load(); }, 2500);
+    return () => window.clearInterval(timer);
+  }, [runActive, load]);
+
   useEffect(() => {
     if (loading || !bundle || initialWorkFocused.current) return;
     initialWorkFocused.current = true;
@@ -708,6 +717,7 @@ export default function ProjectStudio({ id }: { id: string }) {
             </label>
             <button className="btn btn-secondary" data-testid="correct-submit" aria-describedby="correction-help" onClick={correctScene} disabled={Boolean(busy) || !selectedScene.versions.length || !bundle.master || !briefConfirmed || briefDirty || activeRun || correction.trim().length < 3}>Corriger « {selectedScene.title} » ({selectedScene.sceneKey})</button>
             <p className="hint" id="correction-help">{correctionReason || 'La correction crée une nouvelle version avec le plafond MOCK enregistré.'}</p>
+            {activeRun ? <p className="hint" role="status" data-testid="correction-run-wait">{activeRunBlockMessage} La page s’actualise automatiquement.</p> : null}
             {unassignedCorrection.instruction ? <details><summary>Instruction non attribuée</summary><p className="context-copy">{unassignedCorrection.instruction}</p><p className="hint">Choisissez la scène à laquelle attribuer cette saisie. Une instruction déjà présente ne sera pas remplacée.</p><button type="button" className="btn btn-secondary" disabled={Boolean(busy) || !!correction} onClick={() => { setCorrectionDrafts((current) => ({ ...current, [selectedScene.sceneKey]: { instruction: unassignedCorrection.instruction, edited: true } })); setUnassignedCorrection({ instruction: '', edited: false }); }}>Attribuer à « {selectedScene.title} »</button>{correction ? <p className="hint">Effacez d’abord l’instruction de cette scène pour lui attribuer ce brouillon.</p> : null}</details> : null}
           </> : <><p className="hint">Créez le storyboard pour sélectionner une scène. L’instruction préparée ici restera non attribuée jusqu’à votre choix.</p><label className="label">Instruction non attribuée<input ref={correctionRef} className="input" data-testid="correct-input" maxLength={500} value={unassignedCorrection.instruction} onChange={(event) => setUnassignedCorrection({ instruction: event.currentTarget.value, edited: true })} disabled={Boolean(busy)} /></label></>}
         </aside>} />

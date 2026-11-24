@@ -349,7 +349,8 @@ describe('BETA01 — free beta over HTTP and PostgreSQL (no payment, no external
     const support = await fixtureUser('support');
     const queue = await app.inject({ method: 'GET', url: '/api/support/cases', headers: support.headers });
     expect(queue.statusCode).toBe(200);
-    expect((queue.json() as { id: string }[]).some((row) => row.id === ticketId)).toBe(true);
+    const queueItems = (queue.json() as { items: { id: string }[] }).items;
+    expect(queueItems.some((row) => row.id === ticketId)).toBe(true);
     const reply = await app.inject({
       method: 'POST',
       url: '/api/support/cases/' + ticketId,
@@ -359,6 +360,7 @@ describe('BETA01 — free beta over HTTP and PostgreSQL (no payment, no external
     expect(reply.statusCode).toBe(200);
     // The tester still sees the case in their own space.
     const mine = await app.inject({ method: 'GET', url: '/api/billing/tickets', headers: betaUser.headers });
+    // /api/billing/tickets renvoie un tableau (threads), la page curseur ne concerne que le support.
     expect((mine.json() as { id: string }[]).some((row) => row.id === ticketId)).toBe(true);
 
     // Outside beta, feedback is refused with an explicit code, never silently accepted.

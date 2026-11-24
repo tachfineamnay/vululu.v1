@@ -174,7 +174,8 @@ it('controlled HTTP fixtures only: claim → durable poll → verified asset →
   const video = {
     ...input(2),
     kind: 'video',
-    size: '1280:720',
+    // Le projet fixture est en portrait : le fournisseur n'accepte que 720:1280.
+    size: '720:1280',
     seconds: 5,
     referenceVersion: g.outputVersion
   };
@@ -186,7 +187,7 @@ it('controlled HTTP fixtures only: claim → durable poll → verified asset →
     '-f',
     'lavfi',
     '-i',
-    'color=c=blue:s=1280x720:r=15',
+    'color=c=blue:s=720x1280:r=15',
     '-t',
     '5',
     '-threads',
@@ -249,7 +250,8 @@ it('missing credential, unavailable deployment, missing reference, budget denial
       ...input(),
       kind: 'video',
       seconds: 5,
-      size: '1280:720',
+      // Le projet fixture est en portrait : le fournisseur n'accepte que 720:1280.
+      size: '720:1280',
       referenceVersion: 'foreign'
     })
   ).rejects.toMatchObject({ statusCode: 404 });

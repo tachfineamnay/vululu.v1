@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { buildMixArgs, mixTracks } from '../packages/media/src/audio';
-import { assembleMaster, mediaRun, renderScene, runQa } from '../packages/media/src/index';
+import { assembleMaster, mediaRun, probeAudioDuration, renderScene, runQa } from '../packages/media/src/index';
 
 /**
  * P12-07 — régressions du pipeline média réel.
@@ -52,8 +52,8 @@ describe('mixage audio borné à la durée du master', () => {
       ],
       durationSeconds: 3.5, out, run: mediaRun
     });
-    const probe = await mediaRun(['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', out]);
-    expect(Math.abs(Number(probe.trim()) - 3.5)).toBeLessThanOrEqual(0.06);
+    // Sonde ffprobe du paquet (jamais ffmpeg avec des arguments ffprobe).
+    expect(Math.abs((await probeAudioDuration(out)) - 3.5)).toBeLessThanOrEqual(0.06);
   });
 });
 

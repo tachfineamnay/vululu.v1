@@ -13,6 +13,9 @@ describe('V1-01-D machine a etats metier', () => {
     expect(assertJobRunTransition('queued', 'running').changed).toBe(true);
     expect(assertJobRunTransition('running', 'waiting_approval').changed).toBe(true);
     expect(assertJobRunTransition('waiting_approval', 'succeeded').changed).toBe(true);
+    // Une attente d'approbation qui expire doit pouvoir devenir terminale (sinon run bloqué).
+    expect(assertJobRunTransition('waiting_approval', 'timed_out').changed).toBe(true);
+    expect(assertStepRunTransition('waiting_approval', 'timed_out').changed).toBe(true);
     expect(assertStepRunTransition('pending', 'running').changed).toBe(true);
     expect(assertStepRunTransition('running', 'succeeded').changed).toBe(true);
     expect(isTerminalJobRunState('succeeded')).toBe(true);

@@ -254,6 +254,25 @@ test('verticale Studio V1 complete (deterministe, correction ciblee, MOCK)', asy
   await expect(page.locator('[data-testid=master-video]')).toBeVisible();
   await expect(page.locator('[data-testid=transfer-status]')).toContainText('acknowledged');
 
+  // DSH-04 — un run encore actif (approbation/transfert) verrouille la correction côté UI
+  // comme côté serveur. On force cet état pour vérifier le message et la réactivation auto.
+  await page.route('**/api/projects/' + projectId, async (route) => {
+    const response = await route.fetch();
+    const bundle = (await response.json()) as Record<string, unknown>;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ...bundle, jobRun: { ...((bundle.jobRun as object) ?? {}), status: 'running' } })
+    });
+  });
+  await page.reload();
+  await expect(page.locator('[data-testid=correction-run-wait]')).toBeVisible();
+  await expect(page.locator('[data-testid=correct-submit]')).toBeDisabled();
+  await page.unroute('**/api/projects/' + projectId);
+  await page.reload();
+  await expect(page.locator('[data-testid=correction-run-wait]')).toHaveCount(0);
+  await expect(page.locator('[data-testid=correct-submit]')).toBeEnabled();
+
   await page.getByRole('button', { name: 'Sortir' }).click();
   await expect(page).toHaveURL(/\/login$/);
   await page.goto('/projects/' + projectId);

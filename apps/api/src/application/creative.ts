@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { buffer } from 'node:stream/consumers';
 import {
@@ -12,6 +11,7 @@ import {
 } from '@vululu/contracts';
 import type { ArtifactStoragePort } from '@vululu/application';
 import {
+  createMediaTempDir,
   creativeFrame,
   assembleMaster,
   buildAssText,
@@ -191,7 +191,7 @@ export class CreativeStudio {
     const master = row.manifest?.master;
     if (!master) throw new HttpError(409, 'creative_unrendered', 'Rendez la révision avant d’exporter sa piste audio.');
     const reader = this.reader(master);
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'vululu-audio-'));
+    const dir = await createMediaTempDir('vululu-audio-');
     try {
       const source = path.join(dir, 'master.mp4');
       await fs.writeFile(source, await buffer((await reader.get(master.key)).stream));
@@ -326,7 +326,7 @@ export class CreativeStudio {
   }
   async preview(userId: string, id: string, spec: CreativeSpec) {
     const p = await this.repo.project(userId, id),
-      dir = await fs.mkdtemp(path.join(os.tmpdir(), 'creative-preview-'));
+      dir = await createMediaTempDir('creative-preview-');
     try {
       return (await this.draw(spec, spec.scenes[0], await this.checked(userId, p, spec), dir)).bytes;
     } finally {
@@ -340,7 +340,7 @@ export class CreativeStudio {
   async previewVideo(userId: string, id: string, spec: CreativeSpec, hooks: { isCancelled?: () => boolean } = {}) {
     const p = await this.repo.project(userId, id),
       sources = await this.checked(userId, p, spec),
-      dir = await fs.mkdtemp(path.join(os.tmpdir(), 'vululu-creative-video-'));
+      dir = await createMediaTempDir('vululu-creative-video-');
     try {
       const clips: NonNullable<Parameters<typeof assembleMaster>[0]['motion']>['clips'] = [],
         paths: string[] = [],
@@ -404,7 +404,7 @@ export class CreativeStudio {
       p = await this.repo.project(userId, id),
       sources = await this.checked(userId, p, spec);
     const cache = (await this.repo.previous(userId, id, version))?.frames;
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'vululu-creative-'));
+    const dir = await createMediaTempDir('vululu-creative-');
     const frames: Frame[] = [],
       paths: string[] = [];
     const persistFrame = async (bytes: Buffer): Promise<ObjectRef> => {

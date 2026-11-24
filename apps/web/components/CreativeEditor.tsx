@@ -700,7 +700,7 @@ export function CreativeEditor({ bundle, serverHead, serverRenders, calendarSour
                       role={videoPreview.state === 'error' || videoPreview.state === 'invalid' ? 'alert' : 'status'}
                     >
                       {videoPreview.state === 'loading'
-                        ? 'Préparation de l’aperçu vidéo par le serveur…'
+                        ? videoPreview.message || 'Préparation de l’aperçu vidéo par le serveur…'
                         : videoPreview.state === 'waiting'
                           ? videoPreview.message || 'Serveur de rendu vidéo occupé · nouvelle tentative automatique…'
                           : videoPreview.state === 'invalid'

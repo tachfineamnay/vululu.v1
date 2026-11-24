@@ -68,6 +68,14 @@ beforeAll(async () => {
       objective: 'Présenter',
     },
   });
+  // Le plan marketing exige une décision de ressources confirmée (P02) : aucune ressource ici.
+  const assetsConfirmed = await app.inject({
+    method: 'POST',
+    url: '/api/projects/' + project + '/assets/confirm',
+    headers: h,
+    payload: { noAssets: true },
+  });
+  expect(assetsConfirmed.statusCode).toBe(200);
   for (const [i, id] of ids.entries()) {
     const r = await app.inject({
       method: 'POST',

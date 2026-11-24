@@ -2,8 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 vi.hoisted(() => {
   process.env.APP_ENV = 'test';
   process.env.V0_TEST_DB = '1';
-  process.env.DATABASE_URL_TEST = 'postgresql://vululu@127.0.0.1:55432/vululu_v1_00_test?schema=public';
-  process.env.DATABASE_URL = process.env.DATABASE_URL_TEST;
   process.env.SESSION_SECRET = globalThis.crypto.randomUUID();
 });
 
