@@ -1,0 +1,14 @@
+# T01-D — certification locale de régression
+
+Date : 2026-11-24 ; SHA testé : `7738823`. Aucune modification de code.
+
+- Docker : refus du pipe dans la sandbox, mais `docker version`, `docker context ls` et `docker info` fonctionnent hors sandbox (moteur 29.8.1). WSL dans la sandbox renvoie `E_ACCESSDENIED` ; aucun outil MCP Docker local n’est exposé.
+- Projet `vululu-qa` identifié par son label ; `vululu-qa-db-1` sain, `127.0.0.1:3193 -> 5432`. La base `vululu_codex_t01d_test`, initialement absente, a été créée pour cette exécution. Les bases existantes et Lumira n’ont pas été modifiées.
+- `pnpm exec prisma migrate deploy --schema packages/db/prisma/schema.prisma`, puis `pnpm exec prisma migrate status --schema packages/db/prisma/schema.prisma` : 42 migrations appliquées sur la base neuve, schéma à jour. `pnpm exec prisma generate --schema packages/db/prisma/schema.prisma` : code 0 après Vitest. Une génération concurrente avait échoué avec `EPERM` sur le DLL verrouillé ; la relance après Vitest a réussi.
+- FFmpeg et FFprobe natifs `.v0/ffmpeg/ffmpeg-9.0.2-essentials_build/bin` : encodage H.264 et lecture FFprobe 64×64 réussis. `FFMPEG_PATH` et `FFPROBE_PATH` pointent vers ces binaires ; `TEMP` et `TMP` vers `.v1/tmp`.
+- `pnpm exec vitest run --reporter=dot` sur la base isolée via `VULULU_QA_DATABASE_URL`, en bêta et avec qualification Stripe désactivée : **105 fichiers réussis, 2 ignorés ; 743 tests réussis, 0 échec, 15 ignorés**, code 0, durée 828,56 s. Journal local ignoré : `.v1/t01d-vitest.log`. Baseline historique : 664 réussis, 14 échecs, 15 ignorés ; périmètre de tests ayant évolué, les volumes ne sont pas directement comparables.
+- Test indépendant initial : 290 réussis et 1 ignoré. Un autre groupe initial a subi trois erreurs de connexion de boucle locale dans la sandbox ; `pnpm exec vitest run tests/v1/python-client-contract.test.ts` hors sandbox : 5 réussis. La suite complète sur l’hôte ne présente aucun échec de ce fichier.
+- Depuis `services/python-tools`, `.venv/Scripts/python.exe -m pytest -q` : **37 réussis**, une dépréciation, code 0.
+- `pnpm exec vitest run tests/v1/result-payload.test.ts tests/render-concurrency-recovery.test.ts tests/studio-concurrency-ui.test.tsx tests/publishing-workflow.test.ts tests/publishing-results-ui.test.tsx tests/v1/admin-support-hardening.test.ts tests/admin-support-ui.test.tsx tests/media-p12-07-regressions.test.ts tests/media-duration-integrity.test.ts tests/creative-frame.test.ts` : **10 fichiers, 90 tests réussis**, code 0, durée 118 s. Les tests qui utilisent des mocks restent des preuves de contrat, pas de fournisseur réel.
+
+Aucun push, déploiement, appel payant ni nettoyage destructif. La base isolée est conservée pour reproduction. Le répertoire non suivi `services/python-tools/pytest-of-hp/` a été produit par pytest et conservé. Aucun correctif de code ni commit de correctif n’a été nécessaire.
