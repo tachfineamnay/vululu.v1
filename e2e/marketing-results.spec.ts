@@ -28,6 +28,7 @@ test('C11 · historique et semaine suivante sans publier ni dupliquer', async ({
       objective: 'Expliquer le savoir-faire',
     })
   ).project.id;
+  await post('/api/projects/' + p + '/assets/confirm', { noAssets: true });
   const campaign = (await post('/api/campaigns', { name: 'Série ' + suffix })).campaign.id;
   expect(
     (

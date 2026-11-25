@@ -5,7 +5,7 @@ test('mobile creation → desktop edit → authorized job → interrupted sessio
   context,
   browser
 }) => {
-  test.setTimeout(120000);
+  test.setTimeout(480000);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const login = await page.request.post('/api/auth/login', {
@@ -23,8 +23,12 @@ test('mobile creation → desktop edit → authorized job → interrupted sessio
   await page.getByTestId('project-title').fill('Collection Horizon');
   await page.getByTestId('project-objective').fill('Présenter la collection de céramiques.');
   await page.getByTestId('project-next').click();
-  await page.getByTestId('project-context').selectOption(ctx);
+  await page.getByTestId('project-channel-Instagram').click();
+  await page.getByTestId('project-format-Video').click();
+  await page.getByText('Durée et réglages différables', { exact: true }).click();
+  await page.getByTestId('project-scene-duration').selectOption('1');
   await page.getByTestId('project-next').click();
+  await page.getByTestId('project-context').selectOption(ctx);
   await page.getByTestId('project-next').click();
   await page.getByTestId('project-submit').click();
   await expect(page.getByTestId('project-title-heading')).toHaveText('Collection Horizon');
@@ -74,10 +78,18 @@ test('mobile creation → desktop edit → authorized job → interrupted sessio
     await context.setOffline(true);
     await expect(page.getByTestId('studio-connection')).toContainText('Hors ligne');
     await expect
-      .poll(async () => (await (await d.request.get('/api/projects/' + id)).json()).job?.status, {
-        timeout: 50000
+      .poll(async () => (await (await d.request.get('/api/projects/' + id)).json()).jobRun?.status, {
+        timeout: 240000
       })
-      .toBe('succeeded');
+      .toBe('waiting_approval');
+    const rendered = await (await d.request.get('/api/projects/' + id)).json();
+    expect(rendered.master?.id).toBeTruthy();
+    expect(rendered.master?.checksum).toBeTruthy();
+    const approval = await d.request.post('/api/projects/' + id + '/approve', {
+      headers, data: { artifactVersionId: rendered.master.id, checksum: rendered.master.checksum }
+    });
+    expect(approval.status()).toBe(200);
+    await expect.poll(async () => (await (await d.request.get('/api/projects/' + id)).json()).job?.status, { timeout: 180000 }).toBe('succeeded');
     await context.setOffline(false);
     await expect(page.getByTestId('studio-connection')).toHaveText('En direct');
     await expect(page.getByTestId('job-status')).toContainText('succeeded');
@@ -88,7 +100,9 @@ test('mobile creation → desktop edit → authorized job → interrupted sessio
     const dl = page.waitForEvent('download');
     await page.getByRole('link', { name: 'Exporter le master v2' }).click();
     const file = await (await dl).path();
-    expect((await fs.readFile(file!)).subarray(1, 4).toString()).toBe('PNG');
+    const bytes = await fs.readFile(file!);
+    expect(bytes.length).toBeGreaterThan(1024);
+    expect(bytes.subarray(4, 8).toString()).toBe('ftyp');
     for (const width of [390, 768, 1024, 1440]) {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
       await page.evaluate(() => window.scrollTo(0, 0));

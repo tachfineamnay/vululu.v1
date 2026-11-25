@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { test, expect } from '@playwright/test';
 
-test('livraison réelle : versions exactes, téléchargement, approbation obsolète et transfert MOCK', async ({ page, playwright }) => {
-  test.setTimeout(300000);
+test('livraison réelle : versions exactes, téléchargement, approbation obsolète et transfert MOCK', async ({ page, playwright, baseURL }) => {
+  test.setTimeout(600000);
   await page.goto('/login');
   await page.getByLabel('Email', { exact: true }).fill(process.env.DEMO_EMAIL!); await page.getByLabel('Mot de passe', { exact: true }).fill(process.env.DEMO_PASSWORD!);
   await page.getByTestId('login-submit').click(); await expect(page).toHaveURL(/\/$/);
@@ -31,6 +31,7 @@ test('livraison réelle : versions exactes, téléchargement, approbation obsol�
   await page.getByRole('button', { name: 'Charger les sorties du run', exact: true }).click(); await expect(page.getByTestId('run-outputs')).toBeVisible();
   await page.getByRole('navigation', { name: 'Étapes du projet' }).getByRole('link', { name: 'Finaliser', exact: true }).click();
   await page.getByTestId('approve').click(); await expect(page.getByTestId('current-approved-version')).toHaveText('v1');
+  await expect.poll(async () => (await getBundle()).jobRun?.status, { timeout: 180000 }).toBe('succeeded');
   await page.getByTestId('scene-' + first.scenes[0].sceneKey).press('Enter'); await expect(page.getByTestId('scene-' + first.scenes[0].sceneKey)).toHaveAttribute('aria-pressed', 'true'); await page.getByTestId('correct-input').fill('Mettre en valeur le sujet de cette scène fictive.');
   await page.route('**' + endpoint + '/scenes/' + first.scenes[0].sceneKey + '/correct', (route) => route.fulfill({ status: 503, json: { message: 'Correction non confirmée pour la recette' } }));
   await page.getByTestId('correct-submit').click(); await expect(page.getByTestId('studio-error')).toContainText('Correction non confirmée'); await expect(page.getByTestId('correct-input')).toHaveValue('Mettre en valeur le sujet de cette scène fictive.'); await expect(page.getByTestId('master-version')).toHaveText('Master v1');
@@ -74,9 +75,9 @@ test('livraison réelle : versions exactes, téléchargement, approbation obsol�
   await page.unroute('**/api/projects/' + project.id);
   await page.getByRole('button', { name: 'Réessayer le résultat', exact: true }).press('Enter'); await expect(page.getByRole('main').getByRole('alert')).toHaveCount(0);
   const invalidVersion = await page.request.get(endpoint + '/master?version=0'); expect(invalidVersion.status()).toBe(400);
-  const anonymous = await playwright.request.newContext({ baseURL: 'http://127.0.0.1:3100' });
+  const anonymous = await playwright.request.newContext({ baseURL });
   expect((await anonymous.get(endpoint + '/master?version=1')).status()).toBe(401); await anonymous.dispose();
-  const foreign = await playwright.request.newContext({ baseURL: 'http://127.0.0.1:3100' });
+  const foreign = await playwright.request.newContext({ baseURL });
   const foreignLogin = await foreign.post('/api/auth/login', { data: { email: process.env.FOREIGN_EMAIL, password: process.env.FOREIGN_PASSWORD } });
   expect(foreignLogin.status()).toBe(200);
   const owner = await (await page.request.get('/api/auth/me')).json();

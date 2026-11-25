@@ -8,7 +8,8 @@ test('audit : retour arrière, copie locale du Studio, conflit de révision, err
   const title = 'Audit saisies ' + Date.now();
   const pr = await page.request.post('/api/projects', { headers, data: { contextId: context.id, title, objective: 'Présenter une activité', platform: 'Instagram', format: 'Video' } }); expect(pr.status()).toBe(201); const { project } = await pr.json(); const endpoint = '/api/projects/' + project.id;
   await page.reload(); await page.getByRole('link', { name: title, exact: true }).click(); await expect(page).toHaveURL(new RegExp('/projects/' + project.id));
-  await expect(page.getByTestId('correct-submit')).toBeDisabled(); await expect(page.getByTestId('correct-submit')).not.toContainText('SCENE-003');
+  await expect(page.getByTestId('correct-submit')).toHaveCount(0);
+  await expect(page.getByTestId('correct-input')).toBeVisible();
   await expect(page.getByTestId('advanced-production')).not.toHaveAttribute('open'); await expect(page.getByTestId('studio-assistance')).not.toHaveAttribute('open');
   await page.getByTestId('brief-audience').fill('Public à conserver'); await page.getByTestId('brief-tone').fill('Clair et direct'); await page.getByTestId('brief-cta').fill('Découvrir cette activité');
   await page.getByTestId('advanced-production').locator('summary').press('Enter'); await page.getByLabel('Direction artistique simulée', { exact: true }).fill('Direction à conserver');

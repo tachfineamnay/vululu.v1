@@ -119,7 +119,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const result = await prisma.$transaction(async (tx) => {
       // Serialise les mutations de comptes : deux admins ne peuvent pas retirer
       // simultanement les deux derniers super_admin actifs.
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended('admin:user_administration', 61704))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('admin:user_administration', 61704))`;
       const target = await tx.user.findUnique({
         where: { id: params.id },
         select: { id: true, email: true, role: true, status: true, suspendedAt: true }

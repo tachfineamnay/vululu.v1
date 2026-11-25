@@ -51,5 +51,8 @@ test('parcours et flow : mêmes données, dépendances, indisponibilités et rep
   await expect(reuse).toHaveAttribute('href', '/projects/new?context=' + context.id);
   await reuse.click(); await expect(page).toHaveURL(new RegExp('/projects/new\\?context=' + context.id));
   await page.getByTestId('project-title').fill('Projet réutilisé'); await page.getByTestId('project-objective').fill('Une nouvelle idée'); await page.getByTestId('project-next').click();
+  await page.getByTestId('project-channel-Instagram').click();
+  await page.getByTestId('project-format-Affiche').click();
+  await page.getByTestId('project-next').click();
   await expect(page.getByTestId('project-context')).toHaveValue(context.id);
 });

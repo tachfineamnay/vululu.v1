@@ -18,6 +18,9 @@ async function mockStudio(page: Page) {
   await page.route('**/api/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === '/api/auth/me') return route.fulfill({ json: { user: { id: state.owner } } });
+    // Le flux n'est pas couvert par cette fixture : 503 représente une indisponibilité
+    // temporaire, contrairement à 404 qui révoque désormais l'accès au projet.
+    if (path.endsWith('/studio/state')) return route.fulfill({ status: 503, json: { error: 'fixture_unavailable' } });
     const projectMatch = path.match(/^\/api\/projects\/(projet-[12])$/);
     if (projectMatch) {
       const project = { id: projectMatch[1], title: 'Projet de recette', status: 'review', platform: 'Instagram', format: 'Video', objective: brief.objective, sceneDurationSeconds: 5, contextId: context.id, storyboardBriefVersion: 1 };
@@ -132,9 +135,13 @@ test('une ancienne instruction sans scène reste récupérable et ne remplace au
   test.setTimeout(60000);
   const state = await mockStudio(page);
   state.scenesAvailable = false;
+  await page.addInitScript((draft) => {
+    if (!sessionStorage.getItem('t02-legacy-fixture-seeded')) {
+      sessionStorage.setItem('vululu:studio-draft:v1:compte-1:projet-1', JSON.stringify({ ...draft, correctionScene: '' }));
+      sessionStorage.setItem('t02-legacy-fixture-seeded', '1');
+    }
+  }, legacyDraft);
   await page.goto('/projects/projet-1');
-  await page.evaluate((draft) => sessionStorage.setItem('vululu:studio-draft:v1:compte-1:projet-1', JSON.stringify({ ...draft, correctionScene: '' })), legacyDraft);
-  await page.reload();
   const input = page.getByTestId('correct-input');
   await expect(input).toHaveValue('Ancienne instruction');
   await expect.poll(() => page.evaluate(() => sessionStorage.getItem('vululu:studio-draft:v1:compte-1:projet-1') ?? '')).toContain('unassignedCorrection');

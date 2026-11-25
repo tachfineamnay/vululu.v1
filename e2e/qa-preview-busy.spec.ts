@@ -43,7 +43,7 @@ test('aperçu Studio : attente bornée sur 429 creative_busy, sans clic manuel',
       await route.fulfill({
         status: 429,
         contentType: 'application/json',
-        body: JSON.stringify({ code: 'creative_busy', message: 'Rendu en cours, réessayez.' })
+        body: JSON.stringify({ error: 'creative_busy', message: 'Rendu en cours, réessayez.' })
       });
       return;
     }
@@ -53,7 +53,7 @@ test('aperçu Studio : attente bornée sur 429 creative_busy, sans clic manuel',
   await page.goto('/projects/' + projectId);
   await page.getByText('Composition et versions', { exact: true }).click();
   const canvas = page.getByTestId('studio-canvas-image');
-  await expect(page.getByText(/nouvel essai automatique/).first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/nouvelle tentative automatique/).first()).toBeVisible({ timeout: 20_000 });
   await expect(canvas).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText(/Aperçu indisponible/)).toHaveCount(0);
   expect(previewCalls).toBeGreaterThanOrEqual(3);

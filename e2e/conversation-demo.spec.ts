@@ -31,6 +31,10 @@ test('conversation MOCK : brouillon relu, proposition obsolete et correction exp
   await page.getByTestId('scene-SCENE-005').click(); await expect(page.locator('.studio-inspector')).toContainText('Découvrir la lampe');
   await page.getByTestId('produce').click(); await expect(page.getByTestId('status-badge')).toHaveText('Aperçu prêt', { timeout: 180000 });
   const before = await bundle();
+  expect(before.master?.id).toBeTruthy(); expect(before.master?.checksum).toBeTruthy();
+  const approval = await page.request.post('/api/projects/' + project.id + '/approve', { headers, data: { artifactVersionId: before.master.id, checksum: before.master.checksum } });
+  expect(approval.status()).toBe(200);
+  await expect.poll(async () => (await bundle()).jobRun?.status, { timeout: 180000 }).toBe('succeeded');
   await page.getByTestId('chat-input').fill('SCENE-003: Mettre le produit au premier plan.'); await page.getByTestId('chat-send').click();
   const correctionButton = page.getByRole('button', { name: 'Préremplir la correction', exact: true }); await expect(correctionButton).toBeEnabled();
   await correctionButton.click(); await expect(page.getByTestId('scene-SCENE-003')).toHaveAttribute('aria-pressed', 'true'); await expect(page.getByTestId('correct-input')).toHaveValue('Mettre le produit au premier plan.');

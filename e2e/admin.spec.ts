@@ -66,6 +66,20 @@ test.describe('Admin Vululu — super_admin, refus user et navigation', () => {
     await expect(userPage.getByRole('heading', { name: 'Accès refusé', level: 1 })).toBeVisible({ timeout: 120000 });
     const forbidden = await userContext.request.get(apiBase + '/api/admin/overview');
     expect(forbidden.status()).toBe(403);
+
+    // Suspendre uniquement le compte fictif créé par ce test et vérifier la révocation réelle.
+    await page.locator('#tab-users').click();
+    await page.getByLabel('Recherche', { exact: true }).fill(invitedEmail);
+    await page.getByRole('button', { name: 'Filtrer', exact: true }).click();
+    const row = page.getByRole('row').filter({ hasText: invitedEmail });
+    await row.getByRole('button', { name: 'Ouvrir la fiche' }).click();
+    await page.getByRole('button', { name: 'Suspendre le compte' }).click();
+    await page.getByRole('dialog', { name: 'Suspendre le compte' }).getByRole('button', { name: 'Suspendre', exact: true }).click();
+    await expect(row).toContainText('Suspendu');
+    expect((await userContext.request.get(apiBase + '/api/auth/me')).status()).toBe(401);
+    const deniedLogin = await userContext.request.post(apiBase + '/api/auth/login', { data: { email: invitedEmail, password: invitedPassword } });
+    expect(deniedLogin.status()).toBe(403);
+    expect((await deniedLogin.json()).error).toBe('account_suspended');
     await userContext.close();
   });
 

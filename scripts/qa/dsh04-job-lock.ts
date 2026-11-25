@@ -82,7 +82,7 @@ async function main() {
   const correct1 = await request('/api/projects/' + id + '/scenes/' + sceneKey + '/correct', 'POST', {
     instruction: 'Rendre le sujet plus visible sans changer la mise en page.'
   });
-  const code = correct1.json && typeof correct1.json.code === 'string' ? correct1.json.code : '';
+  const code = correct1.json && typeof correct1.json.error === 'string' ? correct1.json.error : '';
   console.log('CORRECT_IMMEDIATE=' + correct1.status + ' CODE=' + code);
 
   const runStart = Date.now();

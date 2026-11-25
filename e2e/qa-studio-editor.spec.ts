@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 
 /**
@@ -197,6 +198,8 @@ test('Studio QA : calques, inspecteur, timeline, aperçus, sous-titres, audio, r
   await expect(approve).toBeEnabled({ timeout: 180_000 });
   await approve.click();
   await expect(panel.getByRole('button', { name: 'Version approuvée', exact: true })).toBeDisabled();
+  const rendered = await (await page.request.get('/api/projects/' + project.id + '/creative/' + revision)).json();
+  const digest = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 
   const sceneExport = panel.getByRole('link', { name: 'Exporter la scène SCENE-001', exact: true });
   const [sceneDownload] = await Promise.all([page.waitForEvent('download'), sceneExport.click()]);
@@ -204,6 +207,7 @@ test('Studio QA : calques, inspecteur, timeline, aperçus, sous-titres, audio, r
   expect(scenePath).toBeTruthy();
   const sceneBytes = await fs.readFile(scenePath!);
   expect(sceneBytes.subarray(0, 8)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  expect(digest(sceneBytes)).toBe(rendered.manifest.frames.find((frame: { sceneKey: string }) => frame.sceneKey === 'SCENE-001').sha256);
 
   const masterLink = panel.getByRole('link', { name: new RegExp('^Exporter le master v' + revision) });
   const [masterDownload] = await Promise.all([page.waitForEvent('download'), masterLink.click()]);
@@ -212,6 +216,7 @@ test('Studio QA : calques, inspecteur, timeline, aperçus, sous-titres, audio, r
   const masterBytes = await fs.readFile(masterPath!);
   expect(masterBytes.length).toBeGreaterThan(1024);
   expect(masterBytes.subarray(4, 8).toString()).toBe('ftyp');
+  expect(digest(masterBytes)).toBe(rendered.manifest.master.sha256);
 
   const srtLink = panel.getByRole('link', { name: 'Sous-titres (SRT)', exact: true });
   const [srtDownload] = await Promise.all([page.waitForEvent('download'), srtLink.click()]);
@@ -220,12 +225,19 @@ test('Studio QA : calques, inspecteur, timeline, aperçus, sous-titres, audio, r
   const srt = await fs.readFile(srtPath!, 'utf8');
   expect(srt).toContain('Sous-titre QA');
   expect(srt).toMatch(/00:00:0[0-9],\d{3} --> 00:00:0[0-9],\d{3}/);
+  const srtResponse = await page.request.get((await srtLink.getAttribute('href'))!);
+  expect(srtResponse.ok()).toBe(true);
+  expect(digest(Buffer.from(srt))).toBe(digest(await srtResponse.body()));
 
   const m4aLink = panel.getByRole('link', { name: 'Exporter la piste audio (M4A)', exact: true });
   const [m4aDownload] = await Promise.all([page.waitForEvent('download'), m4aLink.click()]);
   const m4aPath = await m4aDownload.path();
   expect(m4aPath).toBeTruthy();
-  expect((await fs.readFile(m4aPath!)).length).toBeGreaterThan(1024);
+  const m4a = await fs.readFile(m4aPath!);
+  expect(m4a.length).toBeGreaterThan(1024);
+  const audioResponse = await page.request.get((await m4aLink.getAttribute('href'))!);
+  expect(audioResponse.ok()).toBe(true);
+  expect(digest(m4a)).toBe(digest(await audioResponse.body()));
 
   // 8. Persistance : après rechargement, la révision courante reste approuvée et exportable.
   await page.reload();

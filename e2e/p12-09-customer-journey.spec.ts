@@ -36,7 +36,8 @@ test('parcours : étapes cliquables, portes d’assets et continuité après raf
 
   // Les étapes franchies pointent vers une section réelle et le focus suit la navigation.
   await journey.getByTestId('journey-step-brainstorm').press('Enter');
-  await expect(page.locator('#brainstorm-heading')).toBeVisible();
+  await expect(page).toHaveURL(/#brainstorm-locked-heading$/);
+  await expect(page.locator('#brainstorm-locked-heading')).toBeVisible();
 
   // État serveur : aucune direction choisie au départ, puis sélection persistée (P12-05).
   const directions = await (await page.request.get('/api/projects/' + project.id + '/creative/directions', { headers })).json();

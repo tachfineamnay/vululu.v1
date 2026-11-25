@@ -77,8 +77,10 @@ test('marques et références : création, erreur conservée, recherche, révisi
   await page.getByTestId('project-title').fill('Projet de recette du contexte');
   await page.getByTestId('project-objective').fill('Faire connaître cet univers éditorial.');
   await page.getByTestId('project-next').click();
-  await expect(page.getByTestId('project-context')).toHaveValue(contextId);
+  await page.getByTestId('project-channel-Instagram').click();
+  await page.getByTestId('project-format-Affiche').click();
   await page.getByTestId('project-next').click();
+  await expect(page.getByTestId('project-context')).toHaveValue(contextId);
   await page.getByTestId('project-next').click();
   await page.getByTestId('project-submit').click();
   await expect(page.getByTestId('project-title-heading')).toHaveText('Projet de recette du contexte');
@@ -100,12 +102,8 @@ test('marques et références : création, erreur conservée, recherche, révisi
   await expect(page.getByText('Droits à confirmer : cette version ne peut pas être sélectionnée pour un projet.', { exact: false })).toBeVisible();
   await page.getByRole('link', { name: 'Retour au projet', exact: true }).click();
   await expect(page).toHaveURL(projectUrl);
-  const resourcesHref = await page
-    .getByRole('link', {
-      name: 'Consulter les ressources du projet',
-      exact: true,
-      includeHidden: true
-    })
+  const resourcesHref = await page.getByTestId('campaign-journey')
+    .getByRole('link', { name: 'Préparer mes ressources', exact: true })
     .getAttribute('href');
   expect(resourcesHref).toContain('/assets?context=' + contextId);
   await page.goto(resourcesHref!);

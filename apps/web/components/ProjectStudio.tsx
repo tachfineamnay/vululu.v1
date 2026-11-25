@@ -489,9 +489,9 @@ export default function ProjectStudio({ id }: { id: string }) {
           delivered={bundle.project.status === 'transferred'}
           results={false}
           hrefs={{
-            brainstorm: '#brainstorm-heading',
-            directions: '#art-directions-heading',
-            selection: '#art-directions-heading',
+            brainstorm: assetDecision?.confirmed ? '#brainstorm-heading' : '#brainstorm-locked-heading',
+            directions: assetDecision?.confirmed ? '#art-directions-heading' : '#brainstorm-locked-heading',
+            selection: assetDecision?.confirmed ? '#art-directions-heading' : '#brainstorm-locked-heading',
             creation: '#composition-heading',
             review: '#preview-heading',
             approval: '#preview-heading',

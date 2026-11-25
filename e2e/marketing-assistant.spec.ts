@@ -34,6 +34,11 @@ test('Studio : une proposition réglementée nécessite une relecture et reste d
     name: 'Entretien individuel',
     confirmed: true
   });
+  const assetsDecision = await page.request.post('/api/projects/' + project.id + '/assets/confirm', {
+    headers,
+    data: { noAssets: true }
+  });
+  expect(assetsDecision.status()).toBe(200);
   await page.goto('/projects/' + project.id);
   const title = page.getByText('Assistant marketing · plan de la semaine', {
     exact: true
@@ -58,9 +63,10 @@ test('Studio : une proposition réglementée nécessite une relecture et reste d
     .check();
   await approve.click();
   await expect(panel.getByText(/· Approuvé$/)).toBeVisible();
+  const projectUrl = page.url();
   await page.context().clearCookies();
   await login();
-  await page.reload();
+  await page.goto(projectUrl);
   await title.click();
   await expect(panel.getByText(/· Approuvé$/)).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });

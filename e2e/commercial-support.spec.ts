@@ -23,22 +23,22 @@ test('C12 · customer ticket, restricted support reply, admin oversight', async 
     await u.p.getByLabel('Objet', { exact: true }).fill(ticket);
     await u.p.getByLabel('Message', { exact: true }).fill('Fixture : comment lire le solde ?');
     await u.p.getByRole('button', { name: 'Ouvrir un dossier' }).click();
-    await expect(u.p.getByText(ticket + ' · OPEN')).toBeVisible();
+    await expect(u.p.locator('summary').filter({ hasText: ticket })).toContainText('En attente d’assistance');
     await s.p.goto('/support');
-    await s.p.getByText(ticket + ' · OPEN').click();
+    await s.p.locator('summary').filter({ hasText: ticket }).click();
     const currentTicket = s.p.locator('details').filter({hasText: ticket});
     await currentTicket
       .getByLabel('Réponse', { exact: true })
       .fill('Le solde réservé est distinct du solde disponible.');
     await currentTicket.getByRole('combobox', { name: 'État' }).selectOption('IN_PROGRESS');
     await currentTicket.getByRole('button', { name: 'Enregistrer', exact: true }).click();
-    await expect(s.p.getByText(ticket + ' · IN_PROGRESS')).toBeVisible();
+    await expect(s.p.locator('summary').filter({ hasText: ticket })).toContainText('En cours');
     expect((await s.p.request.get('/api/admin/commerce')).status()).toBe(403);
     await a.p.goto('/admin/commerce');
     await expect(a.p.getByRole('heading', { name: /^Commerce/ })).toBeVisible();
-    await expect(a.p.getByText(ticket + ' · IN_PROGRESS')).toBeVisible();
+    await expect(a.p.locator('summary').filter({ hasText: ticket })).toContainText('En cours');
     await u.p.reload();
-    await u.p.getByText(ticket + ' · IN_PROGRESS').click();
+    await u.p.locator('summary').filter({ hasText: ticket }).click();
     await expect(u.p.locator('details').filter({hasText:ticket}).getByText('Le solde réservé est distinct du solde disponible.')).toBeVisible();
   } finally {
     await Promise.all([u.ctx.close(), s.ctx.close(), a.ctx.close()]);

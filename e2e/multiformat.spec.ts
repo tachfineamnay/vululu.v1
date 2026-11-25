@@ -64,7 +64,7 @@ test('Studio : préparer et exporter les pages indépendantes d’un carrousel',
   await page.getByRole('button', { name: 'Rendre le master v1' }).click();
   await expect(page.getByAltText('Export rendu')).toBeVisible();
   await page.getByRole('combobox', { name: 'Timeline' }).selectOption('1');
-  const link = page.getByRole('link', { name: 'Exporter la scène 2' });
+  const link = page.getByRole('link', { name: 'Exporter la scène SCENE-002', exact: true });
   expect((await page.request.get((await link.getAttribute('href'))!)).headers()['content-type']).toContain(
     'image/png'
   );
